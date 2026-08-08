@@ -30,52 +30,33 @@ const getTeamColors = (teamName: string, isGK: boolean) => {
   return { prim: '#3b82f6', sec: '#1e3a8a', text: '#ffffff' }; 
 };
 
+export const normalizeTeamName = (t: string) => {
+    if (!t) return '';
+    const c = t.replace(/['"״׳.-]/g, '').replace(/\s+/g, '').toLowerCase();
+    
+    if (c.includes('מכבי') && (c.includes('תא') || c.includes('תלאביב'))) return 'maccabi_ta';
+    if (c.includes('הפועל') && (c.includes('תא') || c.includes('תלאביב'))) return 'hapoel_ta';
+    if (c.includes('מכבי') && c.includes('חיפה')) return 'maccabi_haifa';
+    if (c.includes('הפועל') && c.includes('חיפה')) return 'hapoel_haifa';
+    if (c.includes('הפועל') && c.includes('ירושלים')) return 'hapoel_jlm';
+    if (c.includes('ביתר') && c.includes('ירושלים')) return 'beitar_jlm';
+    if (c.includes('מכבי') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'))) return 'maccabi_pt';
+    if (c.includes('הפועל') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'))) return 'hapoel_pt';
+    if (c.includes('בש') || c.includes('בארשבע')) return 'bs';
+    if (c.includes('קש') || c.includes('שמונה')) return 'ks';
+    if (c.includes('ריינה')) return 'reineh';
+    if (c.includes('אשדוד')) return 'ashdod';
+    if (c.includes('טבריה')) return 'tiberias';
+    if (c.includes('סכנין')) return 'sakhnin';
+    if (c.includes('נתניה')) return 'netanya';
+    if (c.includes('חדרה')) return 'hadera';
+    
+    return c;
+};
+
 const isTeamMatch = (t1: string, t2: string) => {
     if (!t1 || !t2) return false;
-    const normalize = (s: string) => s.replace(/['"״׳.-]/g, '').replace(/\s+/g, '').toLowerCase();
-    const c1 = normalize(t1);
-    const c2 = normalize(t2);
-
-    if (c1 === c2) return true;
-
-    const isMaccabiTA = (c: string) => c.includes('מכבי') && (c.includes('תא') || c.includes('תלאביב'));
-    if (isMaccabiTA(c1) && isMaccabiTA(c2)) return true;
-
-    const isHapoelTA = (c: string) => c.includes('הפועל') && (c.includes('תא') || c.includes('תלאביב'));
-    if (isHapoelTA(c1) && isHapoelTA(c2)) return true;
-
-    const isMaccabiHaifa = (c: string) => c.includes('מכבי') && c.includes('חיפה');
-    if (isMaccabiHaifa(c1) && isMaccabiHaifa(c2)) return true;
-
-    const isHapoelHaifa = (c: string) => c.includes('הפועל') && c.includes('חיפה');
-    if (isHapoelHaifa(c1) && isHapoelHaifa(c2)) return true;
-    
-    const isHapoelJlm = (c: string) => c.includes('הפועל') && c.includes('ירושלים');
-    if (isHapoelJlm(c1) && isHapoelJlm(c2)) return true;
-    
-    const isBeitarJlm = (c: string) => c.includes('ביתר') && c.includes('ירושלים');
-    if (isBeitarJlm(c1) && isBeitarJlm(c2)) return true;
-
-    const isMaccabiPT = (c: string) => c.includes('מכבי') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'));
-    if (isMaccabiPT(c1) && isMaccabiPT(c2)) return true;
-
-    const isHapoelPT = (c: string) => c.includes('הפועל') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'));
-    if (isHapoelPT(c1) && isHapoelPT(c2)) return true;
-
-    const isBS = (c: string) => c.includes('בש') || c.includes('בארשבע');
-    if (isBS(c1) && isBS(c2)) return true;
-
-    const isKS = (c: string) => c.includes('קש') || c.includes('שמונה');
-    if (isKS(c1) && isKS(c2)) return true;
-
-    if (c1.includes('ריינה') && c2.includes('ריינה')) return true;
-    if (c1.includes('אשדוד') && c2.includes('אשדוד')) return true;
-    if (c1.includes('טבריה') && c2.includes('טבריה')) return true;
-    if (c1.includes('סכנין') && c2.includes('סכנין')) return true;
-    if (c1.includes('נתניה') && c2.includes('נתניה')) return true;
-    if (c1.includes('חדרה') && c2.includes('חדרה')) return true;
-
-    return false;
+    return normalizeTeamName(t1) === normalizeTeamName(t2);
 };
 
 const Jersey = ({ primary, secondary, textColor, text }: { primary: string, secondary: string, textColor: string, text: string }) => {
@@ -551,7 +532,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     if (from === 'bench') {
       if (currentActiveLineup.length >= 11) return showToast(`❌ ההרכב מלא (11/11). קודם הורד שחקן לספסל כדי לפנות מקום!`, 'error');
       
-      const sameTeamCountInLineup = currentActiveLineup.filter(p => isTeamMatch(p.team, player.team)).length;
+      const normalizedPlayerTeam = normalizeTeamName(player.team);
+      const sameTeamCountInLineup = currentActiveLineup.filter(p => normalizeTeamName(p.team) === normalizedPlayerTeam).length;
       
       let maxAllowedFromTeam = 2;
       if (isCupModeActive) {
@@ -623,10 +605,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       const maxAllowedFromTeam = isPlayoffRound ? 3 : 2;
 
       newLineup.forEach(p => { 
-        let foundKey = Object.keys(teamCounts).find(k => isTeamMatch(k, p.team));
-        if (!foundKey) foundKey = p.team;
-        teamCounts[foundKey] = (teamCounts[foundKey] || 0) + 1; 
-        if (teamCounts[foundKey] > maxAllowedFromTeam) teamViolation = true; 
+        const normalizedTeam = normalizeTeamName(p.team);
+        teamCounts[normalizedTeam] = (teamCounts[normalizedTeam] || 0) + 1;
+        if (teamCounts[normalizedTeam] > maxAllowedFromTeam) teamViolation = true;
       });
 
       if (teamViolation) return showToast(`❌ חוק לוזון: מקסימום ${maxAllowedFromTeam} שחקנים מאותה קבוצה (${playerIn.team}) בהרכב!`, 'error');
