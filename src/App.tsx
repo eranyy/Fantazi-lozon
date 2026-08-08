@@ -35,7 +35,7 @@ const App: React.FC = () => {
     window.location.href = window.location.pathname + '?refresh=' + new Date().getTime();
   };
 
-  const isEran = loggedInUser?.email?.toLowerCase() === 'eranyy@gmail.com' || loggedInUser?.role === UserRole.ADMIN || loggedInUser?.role === UserRole.SUPER_ADMIN;
+  const isEran = loggedInUser?.role === UserRole.ADMIN || loggedInUser?.role === UserRole.SUPER_ADMIN;
   const displayName = isEran ? 'ערן' : (loggedInUser?.name || '');
 
   // 🟢 הלוגיקה החכמה של התראות הפוש 🟢
