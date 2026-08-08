@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db, auth, functions } from './firebaseConfig'; 
-import { analyzeMatchImage, generateAISummary, generateRumors } from './geminiService'; 
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, query, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { generateAISummary, generateRumors } from './geminiService';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, getDoc, addDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server } from 'lucide-react';
-import { parseFantasyExcel } from './utils/FantasyExcelParser'; 
+import { DownloadCloud, Users, RefreshCw, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server } from 'lucide-react';
+
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
 
