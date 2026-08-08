@@ -9,7 +9,7 @@ export interface ParsedPlayer {
   breakdown: any[];
 }
 
-const cleanTeamName = (teamName: string): string => {
+export const cleanTeamName = (teamName: string): string => {
   if (!teamName) return 'לא ידוע';
   let cleaned = teamName.replace(/["'״׳]/g, '').trim();
   
