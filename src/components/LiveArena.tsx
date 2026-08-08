@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3 } from 'lucide-react';
 import { db, functions } from '../firebaseConfig';
@@ -89,6 +89,13 @@ const getFormation = (lineup: any[]) => {
 };
 
 const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isModerator, loggedInUser, isAdmin }) => {
+  const teamsById = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (let i = 0; i < teams.length; i++) {
+      map[teams[i].id] = teams[i];
+    }
+    return map;
+  }, [teams]);
   
   const [fixtures, setFixtures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,7 +177,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const markAsRead = (teamId: string) => {
       const updated = { ...readReceipts };
       if (teamId !== 'all') {
-          const team = teams.find(t => t.id === teamId);
+          const team = teamsById[teamId];
           if (team) {
               updated[teamId] = getLatestTransferTimestamp(team);
               setReadReceipts(updated);
@@ -217,7 +224,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   };
 
   const getTeamLiveEvents = (teamId: string) => {
-    const team = teams.find(t => t.id === teamId);
+    const team = teamsById[teamId];
     if (!team) return { goals: 0, yellows: 0, reds: 0 };
     let goals = 0, yellows = 0, reds = 0;
     const currentLineup = applySubstitutionsToLineup(team);
@@ -246,7 +253,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   };
 
   const getUntouchedCount = (teamId: string) => {
-      const team = teams.find(t => t.id === teamId);
+      const team = teamsById[teamId];
       if (!team) return 0;
       const currentLineup = applySubstitutionsToLineup(team);
       const roundSubs = (team.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
@@ -264,7 +271,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   };
 
   const calculateTeamScore = (teamId: string) => {
-    const team = teams.find(t => t.id === teamId);
+    const team = teamsById[teamId];
     if (!team) return 0;
     let total = 0;
     const currentLineup = applySubstitutionsToLineup(team);
@@ -328,7 +335,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     currentMatches.forEach((match: any) => {
       const hName = TEAM_NAMES[match.h] || match.h; const aName = TEAM_NAMES[match.a] || match.a;
       const hScore = calculateTeamScore(match.h); const aScore = calculateTeamScore(match.a);
-      const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
+        const hTeam = teamsById[match.h]; const aTeam = teamsById[match.a];
       const hLineup = applySubstitutionsToLineup(hTeam); const aLineup = applySubstitutionsToLineup(aTeam);
       const hFormation = getFormation(hLineup); const aFormation = getFormation(aLineup);
 
@@ -566,7 +573,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         else if (awayScore > homeScore) { aPts = (awayScore - homeScore >= 20) ? 3 : 2; aW = 1; hL = 1; hResult = 'L'; aResult = 'W'; } 
         else { hPts = 1; aPts = 1; hD = 1; aD = 1; hResult = 'D'; aResult = 'D'; }
 
-        const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
+        const hTeam = teamsById[match.h]; const aTeam = teamsById[match.a];
 
         if(hTeam) {
           const hLineupForExcel = applySubstitutionsToLineup(hTeam);
@@ -735,7 +742,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         logsToRender.push(...(t.transfers || []).filter((tr:any) => tr.round === currentRound).map((tr:any) => ({...tr, teamName: t.teamName, teamId: t.id})));
                     });
                 } else {
-                    const team = teams.find(t => t.id === logTeamId);
+                    const team = teamsById[logTeamId];
                     logsToRender = (team?.transfers || []).filter((tr:any) => tr.round === currentRound).map((tr:any) => ({...tr, teamName: team.teamName, teamId: team.id}));
                 }
 
@@ -895,8 +902,8 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
             const hEvents = getTeamLiveEvents(match.h); const aEvents = getTeamLiveEvents(match.a);
             const hUntouched = getUntouchedCount(match.h); const aUntouched = getUntouchedCount(match.a);
             
-            const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
-            const expandedTeamObj = isExpanded ? teams.find(t => t.id === expandedTeamId) : null;
+            const hTeam = teamsById[match.h]; const aTeam = teamsById[match.a];
+            const expandedTeamObj = isExpanded ? teamsById[expandedTeamId as string] : null;
             const isEditable = isAdmin || isModerator || (loggedInUser && expandedTeamObj && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(expandedTeamObj.teamName));
             
             return (
@@ -1080,7 +1087,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       </div>
 
       {untouchedModal && (() => {
-          const team = teams.find(t => t.id === untouchedModal.teamId);
+          const team = teamsById[untouchedModal.teamId];
           const currentLineup = applySubstitutionsToLineup(team);
           const untouchedPlayers = currentLineup.filter((p: any) => {
               const hasPlayed = (p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0))) || (Number(p.points) !== 0);
@@ -1153,7 +1160,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       })()}
 
       {auditModal && (() => {
-          const hTeam = teams.find(t => t.id === auditModal.hId); const aTeam = teams.find(t => t.id === auditModal.aId);
+          const hTeam = teamsById[auditModal.hId]; const aTeam = teamsById[auditModal.aId];
           const hName = TEAM_NAMES[auditModal.hId] || auditModal.hId; const aName = TEAM_NAMES[auditModal.aId] || auditModal.aId;
           const hLineup = applySubstitutionsToLineup(hTeam).sort((a:any,b:any) => POS_ORDER[a.position] - POS_ORDER[b.position]);
           const aLineup = applySubstitutionsToLineup(aTeam).sort((a:any,b:any) => POS_ORDER[a.position] - POS_ORDER[b.position]);
