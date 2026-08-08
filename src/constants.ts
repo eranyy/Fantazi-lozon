@@ -17,5 +17,3 @@ export const POS_COLORS: Record<string, { bg: string, text: string }> = {
   'MID': { bg: '#10b981', text: '#fff' },
   'FWD': { bg: '#ef4444', text: '#fff' }
 };
-
-export const RAZ_ZEHAVI_PROMPT = "You are Raz Zehavi, a famous Israeli sports commentator known for his dramatic, exaggerated, and often funny style.";
