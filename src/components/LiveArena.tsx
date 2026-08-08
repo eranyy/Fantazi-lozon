@@ -325,10 +325,11 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (currentMatches.length === 0) return setAppAlert({title: 'שגיאה', msg: 'אין נתונים לייצוא למחזור הנוכחי', type: 'error'});
 
     let csvContent = `סיכום זירה - מחזור ${currentRound}\n\n`;
+    const teamsMap = new Map(teams.map(t => [t.id, t]));
     currentMatches.forEach((match: any) => {
       const hName = TEAM_NAMES[match.h] || match.h; const aName = TEAM_NAMES[match.a] || match.a;
       const hScore = calculateTeamScore(match.h); const aScore = calculateTeamScore(match.a);
-      const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
+      const hTeam = teamsMap.get(match.h); const aTeam = teamsMap.get(match.a);
       const hLineup = applySubstitutionsToLineup(hTeam); const aLineup = applySubstitutionsToLineup(aTeam);
       const hFormation = getFormation(hLineup); const aFormation = getFormation(aLineup);
 
@@ -554,6 +555,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       };
       const emptyStats = { started: false, played60: false, notInSquad: false, notPlayedIn16: false, won: false, goals: 0, assists: 0, cleanSheet: false, conceded: 0, yellow: false, secondYellow: false, red: false, penaltyWon: 0, penaltyMissed: 0, penaltySaved: 0, ownGoals: 0, assistOwnGoal: 0 };
       const matchesDataForSummary: any[] = []; const excelSyncRows: any[] = []; 
+      const teamsMap = new Map(teams.map(t => [t.id, t]));
 
       for (const match of currentMatches) {
         const homeScore = calculateTeamScore(match.h); const awayScore = calculateTeamScore(match.a);
@@ -566,7 +568,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         else if (awayScore > homeScore) { aPts = (awayScore - homeScore >= 20) ? 3 : 2; aW = 1; hL = 1; hResult = 'L'; aResult = 'W'; } 
         else { hPts = 1; aPts = 1; hD = 1; aD = 1; hResult = 'D'; aResult = 'D'; }
 
-        const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
+        const hTeam = teamsMap.get(match.h); const aTeam = teamsMap.get(match.a);
 
         if(hTeam) {
           const hLineupForExcel = applySubstitutionsToLineup(hTeam);
@@ -888,18 +890,20 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         </div>
 
         <div className="grid grid-cols-1 gap-6">
-          {currentMatches.map((match: any, idx: number) => {
-            const hScore = calculateTeamScore(match.h); const aScore = calculateTeamScore(match.a);
-            const isExpanded = expandedTeamId === match.h || expandedTeamId === match.a;
-            
-            const hEvents = getTeamLiveEvents(match.h); const aEvents = getTeamLiveEvents(match.a);
-            const hUntouched = getUntouchedCount(match.h); const aUntouched = getUntouchedCount(match.a);
-            
-            const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
-            const expandedTeamObj = isExpanded ? teams.find(t => t.id === expandedTeamId) : null;
-            const isEditable = isAdmin || isModerator || (loggedInUser && expandedTeamObj && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(expandedTeamObj.teamName));
-            
-            return (
+          {(() => {
+            const teamsMap = new Map(teams.map(t => [t.id, t]));
+            return currentMatches.map((match: any, idx: number) => {
+              const hScore = calculateTeamScore(match.h); const aScore = calculateTeamScore(match.a);
+              const isExpanded = expandedTeamId === match.h || expandedTeamId === match.a;
+
+              const hEvents = getTeamLiveEvents(match.h); const aEvents = getTeamLiveEvents(match.a);
+              const hUntouched = getUntouchedCount(match.h); const aUntouched = getUntouchedCount(match.a);
+
+              const hTeam = teamsMap.get(match.h); const aTeam = teamsMap.get(match.a);
+              const expandedTeamObj = isExpanded ? teamsMap.get(expandedTeamId!) : null;
+              const isEditable = isAdmin || isModerator || (loggedInUser && expandedTeamObj && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(expandedTeamObj.teamName));
+
+              return (
               <div key={idx} className={`bg-slate-900/60 backdrop-blur-md rounded-[32px] border transition-all duration-300 overflow-hidden flex flex-col ${isExpanded ? 'border-slate-500 shadow-[0_0_30px_rgba(255,255,255,0.05)]' : 'border-slate-800 shadow-xl hover:border-slate-700'}`}>
                 <div className="p-0">
                   <div className={`flex items-stretch justify-between w-full h-full min-h-[90px] relative transition-colors ${isExpanded ? 'bg-slate-900/80' : 'hover:bg-slate-800/40'}`}>
@@ -1075,7 +1079,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                 </div>
               </div>
             );
-          })}
+          })})()}
         </div>
       </div>
 
