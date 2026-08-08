@@ -47,7 +47,7 @@ const App: React.FC = () => {
       if (Notification.permission === 'granted' && loggedInUser) {
         const fetchSilentToken = async () => {
           try {
-            const token = await getToken(messaging, { vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" });
+            const token = await getToken(messaging, { vapidKey: import.meta.env.VITE_VAPID_KEY });
             if (token) {
               await setDoc(doc(db, "users", loggedInUser.id), { fcmToken: token }, { merge: true });
             }
@@ -67,7 +67,7 @@ const App: React.FC = () => {
       setPushStatus(permission as any);
 
       if (permission === 'granted') {
-        const token = await getToken(messaging, { vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" });
+        const token = await getToken(messaging, { vapidKey: import.meta.env.VITE_VAPID_KEY });
         if (token && loggedInUser) {
           await setDoc(doc(db, "users", loggedInUser.id), { fcmToken: token }, { merge: true });
           alert('מעולה! ההתראות הופעלו בהצלחה 🔔');
