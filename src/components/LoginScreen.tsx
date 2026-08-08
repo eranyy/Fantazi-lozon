@@ -25,7 +25,7 @@ const requestPushPermission = async (userId: string) => {
       console.log("המשתמש אישר קבלת התראות!");
       
       const token = await getToken(messaging, {
-        vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" 
+        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY
       });
 
       if (token) {
