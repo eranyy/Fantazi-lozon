@@ -7,6 +7,7 @@ import html2canvas from 'html2canvas';
 const ALLOWED_FORMATIONS = ['5-3-2', '5-4-1', '4-5-1', '4-4-2', '4-3-3', '3-5-2', '3-4-3'];
 
 const DEFAULT_SEASONS = [
+  { season: 13, champ: 'תומאלי', runnerUp: 'חראלה', cup: 'חמסילי', relegated: '' },
   { season: 12, champ: 'חמסילי', runnerUp: 'חראלה', cup: "פיצ'יצ'י", relegated: 'טמפה' },
   { season: 11, champ: 'חראלה', runnerUp: "פיצ'יצ'י", cup: 'טמפה', relegated: 'טמפה' },
   { season: 10, champ: 'חמסילי', runnerUp: 'חולוניה', cup: 'חראלה', relegated: 'תומאלי' },
@@ -26,7 +27,8 @@ const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/[
 const getHistoricalName = (tName: string) => {
     if (!tName) return '';
     const n = cleanStr(tName);
-    if (n.includes('חמסילי') || n.includes('חמסה')) return 'חמסילי';
+    if (n.includes('חמסילי')) return 'חמסילי';
+    if (n.includes('חמסה')) return 'חמסה';
     if (n.includes('חראלה')) return 'חראלה';
     if (n.includes('טמפה')) return 'טמפה';
     if (n.includes('תומאלי')) return 'תומאלי';
