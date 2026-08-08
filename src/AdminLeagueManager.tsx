@@ -63,7 +63,7 @@ const Jersey = ({ primary, secondary, textColor, text }: { primary: string, seco
   );
 };
 
-const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) => {
+const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
   const [activeSubTab, setActiveSubTab] = useState<'table' | 'rules' | 'hof' | 'records' | 'power' | 'top_players'>(initialSubTab || 'table');
   const [teams, setTeams] = useState<any[]>([]);
   const [historySeasons, setHistorySeasons] = useState<any[]>(DEFAULT_SEASONS);
