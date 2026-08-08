@@ -63,7 +63,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
   const [deleteConfirmPostId, setDeleteConfirmPostId] = useState<string | null>(null);
   const [likesModalData, setLikesModalData] = useState<{ isOpen: boolean, likers: string[] }>({ isOpen: false, likers: [] });
 
-  const isAdmin = loggedInUser?.role === UserRole.ADMIN || loggedInUser?.email?.toLowerCase() === 'eranyy@gmail.com';
+  const isAdmin = loggedInUser?.role === UserRole.ADMIN || loggedInUser?.role === UserRole.SUPER_ADMIN;
 
   useEffect(() => {
     if (currentRound) {
