@@ -245,7 +245,7 @@ const App: React.FC = () => {
         {activeTab === 'live' && <LiveArena currentRound={currentRound} teams={teams} isModerator={isModerator} loggedInUser={{...loggedInUser, name: displayName}} isAdmin={isEran} />}
         {activeTab === 'lineup' && <LineupManager teams={teams} loggedInUser={{...loggedInUser, name: displayName}} currentRound={currentRound} isAdmin={isEran} />}
         {activeTab === 'fixtures' && <FixturesTab currentRound={currentRound} isAdmin={isEran} />}
-        {activeTab === 'table' && <div className="max-w-4xl mx-auto"><AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" /></div>}
+        {activeTab === 'table' && <div className="max-w-4xl mx-auto"><AdminLeagueManager inline={true} initialSubTab="table" /></div>}
         {activeTab === 'settings' && <AdminSettings onClose={() => setActiveTab('home')} isAdmin={isEran} />}
         {activeTab === 'cup' && <CupTab />}
       </main>
