@@ -127,33 +127,12 @@ const App: React.FC = () => {
 
     const fallbackTimer = setTimeout(() => setIsInitializing(false), 2000);
     try {
-      const unsubTeams = onSnapshot(collection(db, "users"), (snapshot) => { 
-        const loadedTeams = snapshot.docs.map(d => d.data() as Team);
-        setTeams(loadedTeams); 
-        
-        setLoggedInUser(prev => {
-           if (!prev) return prev;
-           const dbRecord = loadedTeams.find(t => t.id === prev.id) as any; 
-           
-           if (dbRecord) {
-               const newName = dbRecord.name || dbRecord.manager || prev.name;
-               const newTeamName = dbRecord.teamName || prev.teamName;
-               if (newName !== prev.name || newTeamName !== prev.teamName) {
-                   return { ...prev, name: newName, teamName: newTeamName };
-               }
-           }
-           return prev;
-        });
-      });
-
       const unsubSettings = onSnapshot(doc(db, "leagueData", "settings"), (docSnap) => {
         if(docSnap.exists() && docSnap.data().currentRound) setCurrentRound(docSnap.data().currentRound);
         else setDoc(doc(db, "leagueData", "settings"), { currentRound: 27 });
       });
 
       const init = async () => {
-        const user = authService.getSession();
-        if (user) setLoggedInUser(user);
         try {
           const usersSnap = await getDocs(collection(db, "users"));
           if (usersSnap.empty) { for (const team of MOCK_TEAMS) await setDoc(doc(db, "users", team.id), team); }
@@ -164,6 +143,61 @@ const App: React.FC = () => {
         setIsInitializing(false);
       };
       init();
+
+      const unsubTeams = onSnapshot(collection(db, "users"), (snapshot) => {
+        const loadedTeams = snapshot.docs.map(d => d.data() as Team);
+        setTeams(loadedTeams);
+
+        const sessionUser = authService.getSession();
+
+        setLoggedInUser(prev => {
+           // If we don't have a user in state, try to rehydrate from session
+           const userToRehydrate = prev || sessionUser;
+           if (!userToRehydrate || !userToRehydrate.id) return prev;
+
+           const dbRecord = loadedTeams.find(t => t.id === userToRehydrate.id) as any;
+
+           if (dbRecord) {
+               // Rehydrate user from the database record using the session email check to verify
+               const isMainManager = dbRecord.email?.toLowerCase().trim() === userToRehydrate.email?.toLowerCase().trim();
+
+               let role = 'USER';
+               if (isMainManager) {
+                   role = dbRecord.role || 'USER';
+               }
+
+               const newName = dbRecord.name || dbRecord.manager || userToRehydrate.name || 'User';
+               const newTeamName = dbRecord.teamName || userToRehydrate.teamName || '';
+               const newRole = role as UserRole;
+               const newTeamId = dbRecord.id;
+
+               if (!prev ||
+                   prev.name !== newName ||
+                   prev.teamName !== newTeamName ||
+                   prev.role !== newRole ||
+                   prev.teamId !== newTeamId) {
+
+                   // Always return the secure rehydrated object to ensure role and other details are from the server
+                   return {
+                       ...userToRehydrate,
+                       name: newName,
+                       teamName: newTeamName,
+                       role: newRole,
+                       teamId: newTeamId
+                   };
+               }
+           }
+
+           // If not in database yet but we just logged in, return what we have (e.g. admin without team)
+           if (!prev && sessionUser) {
+               // This covers edge cases where a user might be authenticated but not have a specific team document
+               return sessionUser as User;
+           }
+
+           return prev;
+        });
+      });
+
       return () => { unsubTeams(); unsubSettings(); clearTimeout(fallbackTimer); };
     } catch (e) { clearTimeout(fallbackTimer); setIsInitializing(false); }
   }, []);
