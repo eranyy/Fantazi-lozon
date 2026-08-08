@@ -1038,7 +1038,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                           ...(expandedTeamObj.squad || []),
                           ...(expandedTeamObj.players || [])
                         ];
-                        const playerMap = new Map(allPossiblePlayers.map((p: any) => [p.name, p]));
+
+                        const playerMap = new Map();
+                        for (const p of allPossiblePlayers) {
+                          if (!playerMap.has(p.name)) {
+                            playerMap.set(p.name, p);
+                          }
+                        }
 
                         return (
                           <div className="mt-4 bg-slate-900 border border-slate-700 rounded-[20px] p-4">
