@@ -273,6 +273,27 @@ const App: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {/* 🔔 באנר "להציק" ולהזכיר למנג'ר להפעיל התראות פוש 🔔 */}
+      {pushStatus !== 'granted' && pushStatus !== 'unsupported' && (
+        <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-6 md:w-96 bg-gradient-to-r from-slate-900 via-amber-950/90 to-slate-900 border-2 border-yellow-500/50 p-4 rounded-2xl shadow-[0_10px_30px_rgba(234,179,8,0.25)] z-[999] animate-in slide-in-from-bottom-5 duration-500 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400 shrink-0 animate-bounce">
+              <Bell className="w-5 h-5 fill-current" />
+            </div>
+            <div>
+              <div className="text-sm font-black text-white leading-tight">אל תפספס שום שער! ⚽</div>
+              <div className="text-[11px] font-bold text-slate-300 mt-0.5">הפעל התראות פוש לקבלת עדכוני לייב.</div>
+            </div>
+          </div>
+          <button 
+            onClick={handleRequestPush}
+            className="bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-black text-xs px-3.5 py-2 rounded-xl shadow-lg shrink-0 active:scale-95 transition-transform"
+          >
+            הפעל! 🔔
+          </button>
+        </div>
+      )}
       
       <main className="flex-1 overflow-x-hidden p-4 md:p-8 relative z-10">
         {activeTab === 'home' && <SocialFeed teams={teams} currentRound={currentRound} loggedInUser={{...loggedInUser, name: displayName}} onNavigate={() => setActiveTab('table')} />}
