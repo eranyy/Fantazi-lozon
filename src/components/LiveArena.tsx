@@ -1032,14 +1032,27 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         const roundSubs = (expandedTeamObj?.transfers || []).filter((t:any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
                         if (roundSubs.length === 0) return null;
 
+                        const allPossiblePlayers = [
+                          ...(expandedTeamObj.published_lineup || []),
+                          ...(expandedTeamObj.published_subs_out || []),
+                          ...(expandedTeamObj.squad || []),
+                          ...(expandedTeamObj.players || [])
+                        ];
+
+                        const playerMap = new Map();
+                        for (const p of allPossiblePlayers) {
+                          if (!playerMap.has(p.name)) {
+                            playerMap.set(p.name, p);
+                          }
+                        }
+
                         return (
                           <div className="mt-4 bg-slate-900 border border-slate-700 rounded-[20px] p-4">
                             <h4 className="text-white font-black flex items-center gap-2 mb-3"><RefreshCw className="w-4 h-4 text-orange-500" /> חילופי מחצית שבוצעו ({roundSubs.length}/3)</h4>
                             <div className="flex flex-col gap-2">
                               {roundSubs.map((sub: any, idx: number) => {
-                                const allPossiblePlayers = [...(expandedTeamObj.published_lineup || []), ...(expandedTeamObj.published_subs_out || []), ...(expandedTeamObj.squad || []), ...(expandedTeamObj.players || [])];
-                                const pOut = allPossiblePlayers.find(p => p.name === sub.playerOut) || { name: sub.playerOut, points: 0, position: '' };
-                                const pIn = allPossiblePlayers.find(p => p.name === sub.playerIn) || { name: sub.playerIn, points: 0, position: '' };
+                                const pOut = playerMap.get(sub.playerOut) || { name: sub.playerOut, points: 0, position: '' };
+                                const pIn = playerMap.get(sub.playerIn) || { name: sub.playerIn, points: 0, position: '' };
 
                                 return (
                                   <div key={idx} className="flex items-center justify-between bg-slate-800/50 p-2.5 md:p-3 rounded-xl border border-slate-700">
