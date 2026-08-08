@@ -999,13 +999,29 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                     className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold"
                   >
                     <option value="ALL">📣 כל המשתמשים (שידור גורף לכולם)</option>
-                    {users.filter(u => u.id !== 'system' && u.id !== 'admin').map(u => {
-                      const displayName = u.teamName ? `${u.teamName} (${u.manager || u.name || ''})` : `${u.name || u.email || 'אדמין ערן'} [מנהל על]`;
-                      return (
-                        <option key={u.id} value={u.id}>
-                          👤 {displayName} {u.fcmToken ? '✅ רשום לפוש' : '❌ ללא פוש'}
-                        </option>
-                      );
+                    {users.filter(u => u.id !== 'system' && u.id !== 'admin').flatMap(u => {
+                      const opts = [];
+                      if (u.teamName) {
+                        opts.push(
+                          <option key={u.id} value={u.id}>
+                            👤 {u.teamName} - מנג'ר ראשי ({u.manager || u.name || ''}) {u.fcmToken ? '✅ רשום לפוש' : '❌ ללא פוש'}
+                          </option>
+                        );
+                        if (u.assistantName) {
+                          opts.push(
+                            <option key={`${u.id}_assistant`} value={u.id}>
+                              👤 {u.teamName} - מנג'ר משנה ({u.assistantName}) {u.fcmToken ? '✅ רשום לפוש' : '❌ ללא פוש'}
+                            </option>
+                          );
+                        }
+                      } else {
+                        opts.push(
+                          <option key={u.id} value={u.id}>
+                            👤 {u.name || u.email || 'אדמין ערן'} [מנהל על] {u.fcmToken ? '✅ רשום לפוש' : '❌ ללא פוש'}
+                          </option>
+                        );
+                      }
+                      return opts;
                     })}
                   </select>
                 </div>
