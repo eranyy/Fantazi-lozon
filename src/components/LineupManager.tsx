@@ -1660,7 +1660,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         </div>
       )}
 
-      {selectedPlayer && (
+      {selectedPlayer && (() => {
+        const isStarting = !!lineup.find(p => p.id === selectedPlayer.id);
+        return (
         <div className="fixed inset-0 z-[3000] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setSelectedPlayer(null)}></div>
           <div className="relative w-full max-w-sm bg-[#0f172a] rounded-t-[40px] sm:rounded-[40px] border border-slate-700/60 p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 duration-300 overflow-hidden">
@@ -1691,11 +1693,11 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
             <div className="grid grid-cols-2 gap-3 mb-3 relative z-10">
               {canEditLineup && (
                 <button 
-                  onClick={() => { togglePlayerPosition(selectedPlayer, lineup.find(p => p.id === selectedPlayer.id) ? 'lineup' : 'bench'); setSelectedPlayer(null); }}
-                  className={`flex flex-col items-center justify-center py-4 rounded-2xl border transition-all active:scale-95 shadow-lg ${lineup.find(p => p.id === selectedPlayer.id) ? 'bg-gradient-to-br from-red-500/10 to-red-900/30 border-red-500/30 text-red-400 hover:border-red-400/50' : 'bg-gradient-to-br from-green-500/10 to-emerald-900/30 border-green-500/30 text-green-400 hover:border-green-400/50'}`}
+                  onClick={() => { togglePlayerPosition(selectedPlayer, isStarting ? 'lineup' : 'bench'); setSelectedPlayer(null); }}
+                  className={`flex flex-col items-center justify-center py-4 rounded-2xl border transition-all active:scale-95 shadow-lg ${isStarting ? 'bg-gradient-to-br from-red-500/10 to-red-900/30 border-red-500/30 text-red-400 hover:border-red-400/50' : 'bg-gradient-to-br from-green-500/10 to-emerald-900/30 border-green-500/30 text-green-400 hover:border-green-400/50'}`}
                 >
-                  <span className="text-2xl mb-1 drop-shadow-md">{lineup.find(p => p.id === selectedPlayer.id) ? '⬇️' : '⬆️'}</span>
-                  <span className="font-black text-sm tracking-wide">{lineup.find(p => p.id === selectedPlayer.id) ? 'הורד לספסל' : 'העלה להרכב'}</span>
+                  <span className="text-2xl mb-1 drop-shadow-md">{isStarting ? '⬇️' : '⬆️'}</span>
+                  <span className="font-black text-sm tracking-wide">{isStarting ? 'הורד לספסל' : 'העלה להרכב'}</span>
                 </button>
               )}
               <button 
@@ -1712,7 +1714,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {showTransferModal && isMyTeam && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[2000] flex items-center justify-center p-4">
