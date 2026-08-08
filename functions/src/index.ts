@@ -459,10 +459,20 @@ export const sendCustomPushNotification = onCall(
                 title,
                 body: message,
             },
+            data: {
+                title,
+                body: message,
+            },
             webpush: {
+                headers: {
+                    Urgency: 'high'
+                },
                 notification: {
-                    icon: '/icon-192.png',
-                    badge: '/icon-192.png'
+                    title,
+                    body: message,
+                    icon: '/app-icon.png',
+                    badge: '/app-icon.png',
+                    requireInteraction: true
                 }
             }
         });
