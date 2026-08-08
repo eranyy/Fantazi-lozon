@@ -935,11 +935,12 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     setIsSaving(true);
     try {
       const validIds = new Set(adminSquad.map(x => x.id));
+      const adminSquadMap = new Map(adminSquad.map(x => [x.id, x]));
       
       const deletedPlayers = (myTeam.squad || []).filter((p: any) => !validIds.has(p.id));
 
-      const updatedLineup = (myTeam.published_lineup || []).filter((x:any) => validIds.has(x.id)).map((x:any) => adminSquad.find(a => a.id === x.id)!);
-      const updatedSubs = (myTeam.published_subs_out || []).filter((x:any) => validIds.has(x.id)).map((x:any) => adminSquad.find(a => a.id === x.id)!);
+      const updatedLineup = (myTeam.published_lineup || []).filter((x:any) => validIds.has(x.id)).map((x:any) => adminSquadMap.get(x.id)!);
+      const updatedSubs = (myTeam.published_subs_out || []).filter((x:any) => validIds.has(x.id)).map((x:any) => adminSquadMap.get(x.id)!);
       
       const existingIds = new Set([...updatedLineup.map((x:any) => x.id), ...updatedSubs.map((x:any) => x.id)]);
       const newlyAddedToAdmin = adminSquad.filter(x => !existingIds.has(x.id));
