@@ -271,11 +271,19 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (currentLineup) total += currentLineup.reduce((sum: number, p: any) => sum + (Number(p.points) || 0), 0);
     
     const roundSubs = (team.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
-    roundSubs.forEach((sub: any) => {
+    if (roundSubs.length > 0) {
         const allPossibleOutPlayers = [...(team.published_subs_out || []), ...(team.squad || []), ...(team.players || [])];
-        const benchedPlayerOut = allPossibleOutPlayers.find((p: any) => p.name === sub.playerOut);
-        if (benchedPlayerOut) total += (Number(benchedPlayerOut.points) || 0);
-    });
+        const playerMap = new Map();
+        for (const p of allPossibleOutPlayers) {
+            if (!playerMap.has(p.name)) {
+                playerMap.set(p.name, p);
+            }
+        }
+        roundSubs.forEach((sub: any) => {
+            const benchedPlayerOut = playerMap.get(sub.playerOut);
+            if (benchedPlayerOut) total += (Number(benchedPlayerOut.points) || 0);
+        });
+    }
     return total;
   };
 
