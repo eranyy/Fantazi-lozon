@@ -6,10 +6,9 @@ import { doc, onSnapshot, updateDoc, addDoc, collection, getDoc, setDoc, serverT
 import { httpsCallable } from 'firebase/functions';
 import { UserRole } from '../types';
 import html2canvas from 'html2canvas';
+import { TEAM_NAMES } from '../constants';
 
 interface LiveArenaProps { teams?: any[]; currentRound?: number; isModerator?: boolean; loggedInUser?: any; isAdmin?: boolean; }
-
-const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
 const POS_ORDER: Record<string, number> = { 'GK': 1, 'שוער': 1, 'DEF': 2, 'הגנה': 2, 'בלם': 2, 'מגן': 2, 'MID': 3, 'קשר': 3, 'קישור': 3, 'FWD': 4, 'חלוץ': 4, 'התקפה': 4 };
 

@@ -4,10 +4,9 @@ import { UserRole } from '../types';
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { Heart, MessageCircle, Share2, Trash2, Image as ImageIcon, Send, Trophy, Shield, Goal, CalendarDays, BarChart2, Plus, X, ChevronRight, ChevronLeft, MapPin, Tv, Clock, RefreshCw, Edit2, Users } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { TEAM_NAMES } from '../constants';
 
 interface SocialFeedProps { teams: any[]; currentRound: number; loggedInUser: any; onNavigate?: (tab: string) => void; }
-
-const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
 const translateTeam = (enName: string) => {
   if (!enName) return '';

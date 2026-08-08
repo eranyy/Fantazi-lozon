@@ -11,6 +11,15 @@ export const MOCK_TEAMS: any[] = [
   }
 ];
 
+export const TEAM_NAMES: Record<string, string> = {
+  tumali: 'תומאלי',
+  tampa: 'טמפה',
+  pichichi: "פיצ'יצ'י",
+  hamsili: 'חמסילי',
+  harale: 'חראלה',
+  holonia: 'חולוניה'
+};
+
 export const POS_COLORS: Record<string, { bg: string, text: string }> = {
   'GK': { bg: '#fbbf24', text: '#000' },
   'DEF': { bg: '#3b82f6', text: '#fff' },

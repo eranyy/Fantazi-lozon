@@ -4,6 +4,7 @@ import { Team, Player, User } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, doc, updateDoc, arrayUnion, onSnapshot, addDoc } from 'firebase/firestore';
 import { GoogleGenAI } from "@google/genai";
+import { TEAM_NAMES } from '../constants';
 
 interface LineupManagerProps { teams: Team[]; loggedInUser: User | null; currentRound: number; isAdmin: boolean; }
 
@@ -453,9 +454,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         const myMatch = currentMatches.find((m: any) => m.h === myTeam.id || m.a === myTeam.id);
         if (myMatch) {
             const oppId = myMatch.h === myTeam.id ? myMatch.a : myMatch.h;
-            const TEAM_NAMES_FALLBACK: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
             const oppTeam = teams.find(t => t.id === oppId);
-            const oppName = oppTeam?.teamName || TEAM_NAMES_FALLBACK[oppId] || oppId;
+            const oppName = oppTeam?.teamName || TEAM_NAMES[oppId] || oppId;
             opponentStr = `*נגד:* ${oppName}\n`;
         }
     }
