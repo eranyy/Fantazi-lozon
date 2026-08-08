@@ -232,16 +232,25 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     });
 
     const roundSubs = (team.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
-    roundSubs.forEach((sub: any) => {
+    if (roundSubs.length > 0) {
         const allPossibleOutPlayers = [...(team.published_subs_out || []), ...(team.squad || []), ...(team.players || [])];
-        const benchedPlayerOut = allPossibleOutPlayers.find((p: any) => p.name === sub.playerOut);
-        if (benchedPlayerOut && benchedPlayerOut.stats) {
-            goals += (benchedPlayerOut.stats.goals || 0);
-            if (benchedPlayerOut.stats.yellow) yellows += 1;
-            if (benchedPlayerOut.stats.secondYellow) yellows += 1;
-            if (benchedPlayerOut.stats.red) reds += 1;
+        const playerMap = new Map<string, any>();
+        for (const p of allPossibleOutPlayers) {
+            if (!playerMap.has(p.name)) {
+                playerMap.set(p.name, p);
+            }
         }
-    });
+
+        roundSubs.forEach((sub: any) => {
+            const benchedPlayerOut = playerMap.get(sub.playerOut);
+            if (benchedPlayerOut && benchedPlayerOut.stats) {
+                goals += (benchedPlayerOut.stats.goals || 0);
+                if (benchedPlayerOut.stats.yellow) yellows += 1;
+                if (benchedPlayerOut.stats.secondYellow) yellows += 1;
+                if (benchedPlayerOut.stats.red) reds += 1;
+            }
+        });
+    }
     return { goals, yellows, reds };
   };
 
@@ -271,11 +280,20 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (currentLineup) total += currentLineup.reduce((sum: number, p: any) => sum + (Number(p.points) || 0), 0);
     
     const roundSubs = (team.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
-    roundSubs.forEach((sub: any) => {
+    if (roundSubs.length > 0) {
         const allPossibleOutPlayers = [...(team.published_subs_out || []), ...(team.squad || []), ...(team.players || [])];
-        const benchedPlayerOut = allPossibleOutPlayers.find((p: any) => p.name === sub.playerOut);
-        if (benchedPlayerOut) total += (Number(benchedPlayerOut.points) || 0);
-    });
+        const playerMap = new Map<string, any>();
+        for (const p of allPossibleOutPlayers) {
+            if (!playerMap.has(p.name)) {
+                playerMap.set(p.name, p);
+            }
+        }
+
+        roundSubs.forEach((sub: any) => {
+            const benchedPlayerOut = playerMap.get(sub.playerOut);
+            if (benchedPlayerOut) total += (Number(benchedPlayerOut.points) || 0);
+        });
+    }
     return total;
   };
 
@@ -1032,14 +1050,21 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         const roundSubs = (expandedTeamObj?.transfers || []).filter((t:any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
                         if (roundSubs.length === 0) return null;
 
+                        const allPossiblePlayers = [...(expandedTeamObj.published_lineup || []), ...(expandedTeamObj.published_subs_out || []), ...(expandedTeamObj.squad || []), ...(expandedTeamObj.players || [])];
+                        const playerMap = new Map<string, any>();
+                        for (const p of allPossiblePlayers) {
+                            if (!playerMap.has(p.name)) {
+                                playerMap.set(p.name, p);
+                            }
+                        }
+
                         return (
                           <div className="mt-4 bg-slate-900 border border-slate-700 rounded-[20px] p-4">
                             <h4 className="text-white font-black flex items-center gap-2 mb-3"><RefreshCw className="w-4 h-4 text-orange-500" /> חילופי מחצית שבוצעו ({roundSubs.length}/3)</h4>
                             <div className="flex flex-col gap-2">
                               {roundSubs.map((sub: any, idx: number) => {
-                                const allPossiblePlayers = [...(expandedTeamObj.published_lineup || []), ...(expandedTeamObj.published_subs_out || []), ...(expandedTeamObj.squad || []), ...(expandedTeamObj.players || [])];
-                                const pOut = allPossiblePlayers.find(p => p.name === sub.playerOut) || { name: sub.playerOut, points: 0, position: '' };
-                                const pIn = allPossiblePlayers.find(p => p.name === sub.playerIn) || { name: sub.playerIn, points: 0, position: '' };
+                                const pOut = playerMap.get(sub.playerOut) || { name: sub.playerOut, points: 0, position: '' };
+                                const pIn = playerMap.get(sub.playerIn) || { name: sub.playerIn, points: 0, position: '' };
 
                                 return (
                                   <div key={idx} className="flex items-center justify-between bg-slate-800/50 p-2.5 md:p-3 rounded-xl border border-slate-700">
