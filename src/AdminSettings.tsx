@@ -528,24 +528,42 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         const playerPointsMap: Record<string, { points: number, team: string, fantasyTeam: string, rawName: string }> = {};
         const cleanForMatch = (name: string) => name.toLowerCase().replace(/['"״׳`\-\s().]/g, '');
 
+        const dbPlayersMap = new Map<string, any>();
+        const dbPlayersFallbackMap = new Map<string, any>();
+
+        dbPlayers.forEach(p => {
+            if (!p.name) return;
+            const cleanName = cleanForMatch(p.name);
+            if (!dbPlayersMap.has(cleanName)) {
+                dbPlayersMap.set(cleanName, p);
+            }
+
+            const dbParts = p.name.split(' ');
+            if (dbParts.length >= 2) {
+                const initial = dbParts[0].charAt(0);
+                const lastName = cleanForMatch(dbParts[dbParts.length - 1]);
+                const fallbackKey = `${initial}_${lastName}`;
+                if (!dbPlayersFallbackMap.has(fallbackKey)) {
+                    dbPlayersFallbackMap.set(fallbackKey, p);
+                }
+            }
+        });
+
         data.valueRanges.forEach((rangeData: any) => {
             const rows = rangeData.values;
             if (!rows) return;
             rows.forEach((row: any[]) => {
-                const playerName = row[0]?.trim(); const pointsStr = row[10]?.trim(); 
+                const playerName = row[0]?.trim(); const pointsStr = row[10]?.trim();
                 if (playerName && playerName !== 'שם שחקן' && pointsStr) {
                     const points = parseInt(pointsStr);
                     if (!isNaN(points)) {
-                        let matchedDbPlayer = dbPlayers.find(p => cleanForMatch(p.name) === cleanForMatch(playerName));
+                        const cleanPlayerName = cleanForMatch(playerName);
+                        let matchedDbPlayer = dbPlayersMap.get(cleanPlayerName);
                         if (!matchedDbPlayer && playerName.includes('.')) {
                            const parts = playerName.split('.');
                            if (parts.length >= 2) {
                                const initial = parts[0].trim().charAt(0); const lastName = cleanForMatch(parts[1]);
-                               matchedDbPlayer = dbPlayers.find(p => {
-                                   const dbParts = p.name.split(' ');
-                                   if (dbParts.length >= 2) return initial === dbParts[0].charAt(0) && cleanForMatch(dbParts[dbParts.length - 1]) === lastName;
-                                   return false;
-                               });
+                               matchedDbPlayer = dbPlayersFallbackMap.get(`${initial}_${lastName}`);
                            }
                         }
                         const finalName = matchedDbPlayer ? matchedDbPlayer.name : playerName;
@@ -555,7 +573,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                 }
             });
         });
-
         const topPlayers = Object.values(playerPointsMap).sort((a, b) => b.points - a.points).slice(0, 50);
         await setDoc(doc(db, 'leagueData', 'top_players'), { players: topPlayers.map(p => ({ name: p.rawName, team: p.team, points: p.points, fantasyTeamName: p.fantasyTeam })), lastUpdated: new Date().toISOString() });
         showMessage(`✅ הצלחה! האפליקציה פירקה ${roundSheets.length} מחזורים באפס תקלות! 👑`, 'success');
