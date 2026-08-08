@@ -115,7 +115,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const [endSeasonPwd, setEndSeasonPwd] = useState('');
-  const [seasonArchiveName, setSeasonArchiveName] = useState('LUZON 13 - 2024');
+  const [seasonArchiveName, setSeasonArchiveName] = useState('LUZON 14 - 2026');
   const [cupWinner, setCupWinner] = useState(''); 
   
   const [tableDriveUrl, setTableDriveUrl] = useState('');

@@ -600,7 +600,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       if (activeApiKey) {
         try {
           const ai = new GoogleGenAI({ apiKey: activeApiKey });
-          const prompt = `אתה אנליסט כדורגל ופנטזי בכיר וחד. כתוב פוסט סיכום מקצועי ומעמיק למחזור ${currentRound} של ליגת "פנטזי לוזון 13". אלו תוצאות המשחקים של המחזור שהסתיים: ${matchesDataForSummary.map(m => `${m.hName} ${m.homeScore} - ${m.awayScore} ${m.aName}`).join('\n')} הנחיות קריטיות: - כתוב פוסט מרתק, מקצועי, עם ניתוח קצר לכל משחק. למה קבוצה אחת ניצחה? - אל תהיה רובוטי. אל תחזור על תבניות. - השתמש באימוג'ים מתאימים. - ללא תגיות מיוחדות כמו # או כוכביות. - הפוסט יפורסם ברשת חברתית פנימית של הליגה, תתנהג כמו פרשן שמוביל את השיח.`;
+          const prompt = `אתה אנליסט כדורגל ופנטזי בכיר וחד. כתוב פוסט סיכום מקצועי ומעמיק למחזור ${currentRound} של ליגת "פנטזי לוזון 14". אלו תוצאות המשחקים של המחזור שהסתיים: ${matchesDataForSummary.map(m => `${m.hName} ${m.homeScore} - ${m.awayScore} ${m.aName}`).join('\n')} הנחיות קריטיות: - כתוב פוסט מרתק, מקצועי, עם ניתוח קצר לכל משחק. למה קבוצה אחת ניצחה? - אל תהיה רובוטי. אל תחזור על תבניות. - השתמש באימוג'ים מתאימים. - ללא תגיות מיוחדות כמו # או כוכביות. - הפוסט יפורסם ברשת חברתית פנימית של הליגה, תתנהג כמו פרשן שמוביל את השיח.`;
           const response = await ai.models.generateContent({ model: "gemini-1.5-flash-latest", contents: [{ parts: [{ text: prompt }] }] });
           const aiText = response.text;
           if (aiText) {

@@ -21,8 +21,8 @@ const App: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   
-  // 🟢 התיקון: ערך התחלתי שונה ל-27 🟢
-  const [currentRound, setCurrentRound] = useState(27);
+  // 🟢 ערך התחלתי למחזור 1 לקראת עונת לוזון 14 🟢
+  const [currentRound, setCurrentRound] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // 🟢 סטייט חדש ששומר את מצב ההתראות של המשתמש
@@ -129,7 +129,7 @@ const App: React.FC = () => {
     try {
       const unsubSettings = onSnapshot(doc(db, "leagueData", "settings"), (docSnap) => {
         if(docSnap.exists() && docSnap.data().currentRound) setCurrentRound(docSnap.data().currentRound);
-        else setDoc(doc(db, "leagueData", "settings"), { currentRound: 27 });
+        else setDoc(doc(db, "leagueData", "settings"), { currentRound: 1 });
       });
 
       const init = async () => {
@@ -226,7 +226,7 @@ const App: React.FC = () => {
     ];
   }, [loggedInUser, isEran]);
 
-  if (isInitializing) return <div className="h-screen bg-[#0B1120] flex items-center justify-center font-black text-green-500 animate-pulse text-4xl italic">LUZON 13</div>;
+  if (isInitializing) return <div className="h-screen bg-[#0B1120] flex items-center justify-center font-black text-green-500 animate-pulse text-4xl italic">LUZON 14</div>;
   if (!loggedInUser) return <LoginScreen onLogin={setLoggedInUser} />;
 
   return (
@@ -234,7 +234,7 @@ const App: React.FC = () => {
       
       <header className="h-[72px] bg-[#0B1120]/70 backdrop-blur-2xl border-b border-white/5 flex items-center justify-between px-6 sticky top-0 z-[100] shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="font-black italic text-3xl tracking-tighter drop-shadow-lg text-white">LUZON <span className="text-green-500">13</span></span>
+          <span className="font-black italic text-3xl tracking-tighter drop-shadow-lg text-white">LUZON <span className="text-green-500">14</span></span>
           <div className="h-4 w-[1px] bg-white/20 hidden sm:block"></div>
           <span className="text-[10px] font-black bg-green-500/10 border border-green-500/30 text-green-400 px-3 py-1 rounded-full uppercase tracking-widest hidden sm:flex items-center gap-1 shadow-inner">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]"></span>
