@@ -2,15 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Trophy, Swords, CalendarDays, Crown, Star, Flame } from 'lucide-react';
-
-const TEAM_NAMES: Record<string, string> = { 
-  tumali: 'תומאלי', 
-  tampa: 'טמפה', 
-  pichichi: "פיצ'יצ'י", 
-  hamsili: 'חמסילי', 
-  harale: 'חראלה', 
-  holonia: 'חולוניה' 
-};
+import { TEAM_NAMES } from '../constants';
 
 // נתוני בסיס לעונה 13 כדי שהתצוגה תיראה מושלמת מיד גם אם לא הגרלת
 const DEFAULT_LANNISTER = ['tumali', 'hamsili', 'tampa'];

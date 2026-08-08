@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { CalendarDays, Flame, CheckCircle2, Clock, ChevronRight, ChevronLeft, MapPin, Tv } from 'lucide-react';
-
-const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
+import { TEAM_NAMES } from '../constants';
 
 // הוספנו את isAdmin ל-props כדי לדעת אם להציג את עורך ההיסטוריה
 interface FixturesTabProps {
