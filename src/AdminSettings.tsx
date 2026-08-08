@@ -105,7 +105,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [teamToDelete, setTeamToDelete] = useState<any | null>(null); 
   const [newUser, setNewUser] = useState({ teamName: '', manager: '', assistantName: '', email: '', assistantEmail: '', role: 'USER', isApproved: true, assistants: [] as any[] });
   
   const [showEndSeason, setShowEndSeason] = useState(false);
@@ -122,7 +121,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [isSyncingTable, setIsSyncingTable] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [squadsDriveUrl, setSquadsDriveUrl] = useState('');
-  const [transfersDriveUrl, setTransfersDriveUrl] = useState('');
   
   const [playoffRoundsInput, setPlayoffRoundsInput] = useState<string>(''); 
   const [cupSettings, setCupSettings] = useState<any>({ isOpen: false, stage: 'groups', activeTeams: [], groupStandings: {} });
