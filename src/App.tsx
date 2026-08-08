@@ -89,19 +89,19 @@ const App: React.FC = () => {
         const presenceDocId = isEran ? 'admin_eran' : loggedInUser.id;
 
         await setDoc(doc(db, 'presence', presenceDocId), {
-          name: displayName,
-          email: loggedInUser.email,
+          name: displayName || 'מנהל',
+          email: loggedInUser.email || '',
           lastSeen: serverTimestamp(),
-          teamName: loggedInUser.teamName
+          teamName: loggedInUser.teamName || 'מנהל המערכת'
         }, { merge: true });
 
         const lastLogTime = sessionStorage.getItem('last_radar_log');
         const now = Date.now();
         if (!lastLogTime || now - Number(lastLogTime) > 30 * 60 * 1000) {
            await addDoc(collection(db, 'login_logs'), {
-             name: displayName,
+             name: displayName || 'מנהל',
              email: loggedInUser.email || 'N/A',
-             teamName: loggedInUser.teamName,
+             teamName: loggedInUser.teamName || 'מנהל המערכת',
              deviceType: isMobileDevice ? 'Mobile' : 'Desktop',
              timestamp: new Date().toISOString()
            });
