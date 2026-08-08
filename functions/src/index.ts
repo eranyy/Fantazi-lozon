@@ -427,19 +427,27 @@ export const fetchLiveFixtures = onCall(
 export const sendCustomPushNotification = onCall(
     { region: 'us-west1', cors: true },
     async (request) => {
-        const { title, message } = request.data || {};
+        const { title, message, targetUserId } = request.data || {};
         if (!title || !message) {
             throw new functions.https.HttpsError('invalid-argument', 'Title and message are required.');
         }
 
-        const usersSnap = await db.collection('users').get();
         const tokens: string[] = [];
-        usersSnap.forEach(doc => {
-            const data = doc.data();
-            if (data.fcmToken && typeof data.fcmToken === 'string') {
-                tokens.push(data.fcmToken);
+
+        if (targetUserId && targetUserId !== 'ALL') {
+            const userDoc = await db.collection('users').doc(targetUserId).get();
+            if (userDoc.exists && userDoc.data()?.fcmToken && typeof userDoc.data()?.fcmToken === 'string') {
+                tokens.push(userDoc.data()!.fcmToken);
             }
-        });
+        } else {
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach(doc => {
+                const data = doc.data();
+                if (data.fcmToken && typeof data.fcmToken === 'string') {
+                    tokens.push(data.fcmToken);
+                }
+            });
+        }
 
         if (tokens.length === 0) {
             return { success: true, count: 0, message: 'No registered FCM tokens found.' };

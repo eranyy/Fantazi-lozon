@@ -607,6 +607,14 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
               const aiPostRef = await addDoc(collection(db, 'social_posts'), { authorName: 'האנליסט AI 🤖', handle: '@luzon_analyst', teamId: 'system', isVerified: true, type: 'article', content: aiText, likes: Math.floor(Math.random() * 20) + 10, likedBy: [], comments: [], timestamp: new Date(Date.now() + 2000).toISOString() });
               backupData.generatedPostIds.push(aiPostRef.id);
           }
+
+          try {
+              const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
+              await sendPushFunc({
+                  title: `סיום מחזור ${currentRound} ⚽`,
+                  message: `סיום דרמטי למחזור ${currentRound}! פוסט הסיכום של האנליסט והטבלה המעודכנת עלו עכשיו לאפליקציה.`
+              });
+          } catch (pushErr) { console.error("Round close push notification error:", pushErr); }
         } catch (aiErr) { console.error("AI Summary failed:", aiErr); }
       }
 

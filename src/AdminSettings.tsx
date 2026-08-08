@@ -146,6 +146,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [manualRound, setManualRound] = useState('');
   const [pushTitle, setPushTitle] = useState('פנטזי לוזון 14 ⚽');
   const [pushMessage, setPushMessage] = useState('');
+  const [pushTargetUserId, setPushTargetUserId] = useState('ALL');
   const [isSendingPush, setIsSendingPush] = useState(false);
 
   useEffect(() => {
@@ -264,12 +265,17 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const handleSendCustomPush = async () => {
     if (!pushTitle.trim() || !pushMessage.trim()) return showMessage('❌ חסרה כותרת או הודעה!', 'error');
     setIsSendingPush(true);
-    showMessage('שולח התראת פוש לכל המכשירים ברשת... 📢', 'info');
+    const targetLabel = pushTargetUserId === 'ALL' ? 'לכל המכשירים' : 'למנג\'ר הנבחר';
+    showMessage(`שולח התראת פוש ${targetLabel}... 📢`, 'info');
     try {
       const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
-      const res: any = await sendPushFunc({ title: pushTitle.trim(), message: pushMessage.trim() });
+      const res: any = await sendPushFunc({ 
+        title: pushTitle.trim(), 
+        message: pushMessage.trim(),
+        targetUserId: pushTargetUserId
+      });
       if (res.data && res.data.success) {
-        showMessage(`✅ ההתראה נשלחה בהצלחה ל-${res.data.count || 0} מנג'רים!`, 'success');
+        showMessage(`✅ ההתראה נשלחה בהצלחה ל-${res.data.count || 0} מכשירים/מנג'רים!`, 'success');
         setPushMessage('');
       } else {
         showMessage('❌ שגיאה בשליחת התראה', 'error');
@@ -985,6 +991,22 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               </p>
 
               <div className="space-y-4 relative z-10">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 mb-2">נמען ההתראה (למי לשלוח)</label>
+                  <select 
+                    value={pushTargetUserId} 
+                    onChange={(e) => setPushTargetUserId(e.target.value)} 
+                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold"
+                  >
+                    <option value="ALL">📣 כל המשתמשים (שידור גורף לכולם)</option>
+                    {users.filter(u => u.id !== 'system' && u.id !== 'admin').map(u => (
+                      <option key={u.id} value={u.id}>
+                        👤 {u.teamName} ({u.name}) {u.fcmToken ? '✅ רשום לפוש' : '❌ ללא פוש'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-black text-slate-400 mb-2">כותרת ההתראה</label>
                   <input 
