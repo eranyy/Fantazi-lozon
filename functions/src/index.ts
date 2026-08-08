@@ -423,3 +423,42 @@ export const fetchLiveFixtures = onCall(
         return { success: true, source: successfulScraper, matches: finalMatches };
     }
 );
+
+export const sendCustomPushNotification = onCall(
+    { region: 'us-west1', cors: true },
+    async (request) => {
+        const { title, message } = request.data || {};
+        if (!title || !message) {
+            throw new functions.https.HttpsError('invalid-argument', 'Title and message are required.');
+        }
+
+        const usersSnap = await db.collection('users').get();
+        const tokens: string[] = [];
+        usersSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.fcmToken && typeof data.fcmToken === 'string') {
+                tokens.push(data.fcmToken);
+            }
+        });
+
+        if (tokens.length === 0) {
+            return { success: true, count: 0, message: 'No registered FCM tokens found.' };
+        }
+
+        const response = await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: {
+                title,
+                body: message,
+            },
+            webpush: {
+                notification: {
+                    icon: '/icon-192.png',
+                    badge: '/icon-192.png'
+                }
+            }
+        });
+
+        return { success: true, count: response.successCount, failed: response.failureCount };
+    }
+);

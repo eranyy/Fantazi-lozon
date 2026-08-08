@@ -142,8 +142,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [editingMatchIndex, setEditingMatchIndex] = useState<number | null>(null);
   const [editingMatchData, setEditingMatchData] = useState<any>(null);
 
-  // === NEW STATE FOR TIME MACHINE ===
+  // === NEW STATE FOR TIME MACHINE & PUSH NOTIFICATIONS ===
   const [manualRound, setManualRound] = useState('');
+  const [pushTitle, setPushTitle] = useState('פנטזי לוזון 14 ⚽');
+  const [pushMessage, setPushMessage] = useState('');
+  const [isSendingPush, setIsSendingPush] = useState(false);
 
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -255,6 +258,27 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         console.error("שגיאה בעדכון המחזור:", error);
         showMessage("הייתה בעיה בעדכון מספר המחזור במסד הנתונים.", 'error');
       }
+    }
+  };
+
+  const handleSendCustomPush = async () => {
+    if (!pushTitle.trim() || !pushMessage.trim()) return showMessage('❌ חסרה כותרת או הודעה!', 'error');
+    setIsSendingPush(true);
+    showMessage('שולח התראת פוש לכל המכשירים ברשת... 📢', 'info');
+    try {
+      const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
+      const res: any = await sendPushFunc({ title: pushTitle.trim(), message: pushMessage.trim() });
+      if (res.data && res.data.success) {
+        showMessage(`✅ ההתראה נשלחה בהצלחה ל-${res.data.count || 0} מנג'רים!`, 'success');
+        setPushMessage('');
+      } else {
+        showMessage('❌ שגיאה בשליחת התראה', 'error');
+      }
+    } catch (e: any) {
+      console.error(e);
+      showMessage('❌ שגיאה בשליחת התראה: ' + (e.message || 'שגיאה במערכת'), 'error');
+    } finally {
+      setIsSendingPush(false);
     }
   };
 
@@ -948,6 +972,50 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                 {(loading || isSyncingTable) ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Flame className="w-5 h-5" />}
                 {(loading || isSyncingTable) ? 'מחשב נתונים...' : 'חשב טבלה, מומנטום ופיצ\'רים עכשיו 🧮'}
               </button>
+            </div>
+
+            {/* 📢 מערכת שליחת התראות פוש (לכל המשתמשים) 📢 */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-yellow-500/40 shadow-xl relative overflow-hidden mt-6 animate-in fade-in zoom-in-95">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 blur-[50px] pointer-events-none rounded-full"></div>
+              <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
+                <Bell className="text-yellow-400" /> מערכת שליחת התראות פוש (לכל המשתמשים)
+              </h3>
+              <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
+                כאן תוכל לשלוח הודעת פוש מתפרצת ישירות למכשירים של כל המנג'רס בליגה שאישרו קבלת התראות באפליקציה.
+              </p>
+
+              <div className="space-y-4 relative z-10">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 mb-2">כותרת ההתראה</label>
+                  <input 
+                    type="text" 
+                    value={pushTitle} 
+                    onChange={(e) => setPushTitle(e.target.value)} 
+                    placeholder="פנטזי לוזון 14 ⚽" 
+                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold" 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black text-slate-400 mb-2">תוכן ההתראה (הודעה)</label>
+                  <textarea 
+                    rows={3}
+                    value={pushMessage} 
+                    onChange={(e) => setPushMessage(e.target.value)} 
+                    placeholder="הקלד כאן את תוכן ההתראה שברצונך לשלוח לכולם..." 
+                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold resize-none" 
+                  />
+                </div>
+
+                <button 
+                  onClick={handleSendCustomPush} 
+                  disabled={isSendingPush || !pushMessage.trim()} 
+                  className={`w-full py-4 px-6 rounded-xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${pushMessage.trim() ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black hover:from-yellow-400 hover:to-amber-500' : 'bg-slate-700 text-slate-500'}`}
+                >
+                  {isSendingPush ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Bell className="w-5 h-5" />}
+                  {isSendingPush ? 'שולח התראה לכולם...' : 'שלח התראה לכולם! 📢'}
+                </button>
+              </div>
             </div>
 
             {/* 🟢 בלוק: מכונת זמן (תיקון מחזור) 🟢 */}
