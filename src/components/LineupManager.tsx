@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, History, Settings2, LayoutGrid, List, MessageCircle, RefreshCw, Eraser, Search, Share2, Send, ArrowRightLeft, Snowflake, Plus, Trash2, Undo2, AlertTriangle, CheckCircle2, Siren, Trophy, Lock, Unlock } from 'lucide-react';
 import { Team, Player, User } from '../types';
 import { db } from '../firebaseConfig';
@@ -138,6 +138,15 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const [lineup, setLineup] = useState<Player[]>([]);
   const [bench, setBench] = useState<Player[]>([]);
   const [transfersLog, setTransfersLog] = useState<any[]>([]);
+
+  const sortedFilteredTransfersLog = useMemo(() => {
+    return transfersLog
+      .filter(log => ['IN', 'OUT', 'FREEZE_IN'].includes(log.type))
+      .map(log => ({ log, time: new Date(log.timestamp).getTime() }))
+      .sort((a, b) => b.time - a.time)
+      .map(item => item.log);
+  }, [transfersLog]);
+
   const [subOutId, setSubOutId] = useState<string>('');
   const [subInId, setSubInId] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -1483,7 +1492,6 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       )}
 
       {activeTab === 'transfers' && (() => {
-        const filteredTransfersLog = transfersLog.filter(log => ['IN', 'OUT', 'FREEZE_IN'].includes(log.type));
         return (
           <div className="flex flex-col gap-6 md:gap-8 animate-in slide-in-from-right duration-300">
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
@@ -1530,18 +1538,18 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                    יומן העברות
                  </h3>
                  <span className="text-sm font-black bg-slate-800 px-4 py-1.5 rounded-xl text-slate-400">
-                   {filteredTransfersLog.length} פעולות רכש
+                   {sortedFilteredTransfersLog.length} פעולות רכש
                  </span>
                </div>
 
-               {filteredTransfersLog.length === 0 ? (
+               {sortedFilteredTransfersLog.length === 0 ? (
                  <div className="flex flex-col items-center justify-center py-20 opacity-40">
                    <span className="text-6xl mb-4">📭</span>
                    <span className="text-xl font-bold">היומן ריק. טרם בוצעו העברות העונה.</span>
                  </div>
                ) : (
                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                   {filteredTransfersLog.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map(log => {
+                   {sortedFilteredTransfersLog.map(log => {
                      
                      const iconObj = {
                        'IN': { icon: '⬇️', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20', label: 'נכנס' },
