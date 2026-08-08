@@ -436,14 +436,21 @@ export const sendCustomPushNotification = onCall(
 
         if (targetUserId && targetUserId !== 'ALL') {
             const userDoc = await db.collection('users').doc(targetUserId).get();
-            if (userDoc.exists && userDoc.data()?.fcmToken && typeof userDoc.data()?.fcmToken === 'string') {
-                tokens.push(userDoc.data()!.fcmToken);
+            if (userDoc.exists) {
+                const data = userDoc.data();
+                if (data?.fcmTokens && Array.isArray(data.fcmTokens)) {
+                    tokens.push(...data.fcmTokens.filter((t: any) => typeof t === 'string' && t.trim()));
+                } else if (data?.fcmToken && typeof data.fcmToken === 'string') {
+                    tokens.push(data.fcmToken);
+                }
             }
         } else {
             const usersSnap = await db.collection('users').get();
             usersSnap.forEach(doc => {
                 const data = doc.data();
-                if (data.fcmToken && typeof data.fcmToken === 'string') {
+                if (data.fcmTokens && Array.isArray(data.fcmTokens)) {
+                    tokens.push(...data.fcmTokens.filter((t: any) => typeof t === 'string' && t.trim()));
+                } else if (data.fcmToken && typeof data.fcmToken === 'string') {
                     tokens.push(data.fcmToken);
                 }
             });

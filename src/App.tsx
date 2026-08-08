@@ -12,7 +12,7 @@ import LoginScreen from './components/LoginScreen';
 import SocialFeed from './components/SocialFeed'; 
 import CupTab from './components/CupTab';
 import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell } from 'lucide-react'; // 🟢 הוספנו את Bell
-import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'; 
+import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'firebase/firestore'; 
 import { getToken } from 'firebase/messaging'; // 🟢 הוספנו את getToken
 
 const App: React.FC = () => {
@@ -38,7 +38,7 @@ const App: React.FC = () => {
   const isEran = loggedInUser?.email?.toLowerCase() === 'eranyy@gmail.com' || loggedInUser?.role === UserRole.ADMIN || loggedInUser?.role === UserRole.SUPER_ADMIN;
   const displayName = isEran ? 'ערן' : (loggedInUser?.name || '');
 
-  // 🟢 הלוגיקה החכמה של התראות הפוש 🟢
+  // 🟢 הלוגיקה החכמה של התראות הפוש (מרובת מכשירים) 🟢
   useEffect(() => {
     if ('Notification' in window) {
       setPushStatus(Notification.permission as any);
@@ -49,7 +49,10 @@ const App: React.FC = () => {
           try {
             const token = await getToken(messaging, { vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" });
             if (token) {
-              await setDoc(doc(db, "users", loggedInUser.id), { fcmToken: token }, { merge: true });
+              await setDoc(doc(db, "users", loggedInUser.id), { 
+                fcmToken: token,
+                fcmTokens: arrayUnion(token)
+              }, { merge: true });
             }
           } catch (e) {
             console.error("Silent token fetch failed", e);
@@ -60,7 +63,7 @@ const App: React.FC = () => {
     }
   }, [loggedInUser]);
 
-  // 🟢 פונקציה שמופעלת כשהמשתמש לוחץ על כפתור הפעמון החדש 🟢
+  // 🟢 פונקציה שמופעלת כשהמשתמש לוחץ על כפתור הפעמון 🟢
   const handleRequestPush = async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -69,7 +72,10 @@ const App: React.FC = () => {
       if (permission === 'granted') {
         const token = await getToken(messaging, { vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" });
         if (token && loggedInUser) {
-          await setDoc(doc(db, "users", loggedInUser.id), { fcmToken: token }, { merge: true });
+          await setDoc(doc(db, "users", loggedInUser.id), { 
+            fcmToken: token,
+            fcmTokens: arrayUnion(token)
+          }, { merge: true });
           alert('מעולה! ההתראות הופעלו בהצלחה 🔔');
         }
       } else {
