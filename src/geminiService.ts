@@ -11,7 +11,7 @@ const getApiKey = (providedKey?: string) => {
 };
 
 // 🟢 פונקציית עזר למניעת תקיעות - מוקצב ל-45 שניות (זמן סביר לסריקת מסמכים) 🟢
-const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 45000) => {
+export const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 45000) => {
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`Timeout: The request took longer than ${timeoutMs / 1000} seconds`)), timeoutMs);
