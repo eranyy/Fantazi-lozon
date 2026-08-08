@@ -13,7 +13,7 @@ import SocialFeed from './components/SocialFeed';
 import CupTab from './components/CupTab';
 import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell } from 'lucide-react'; // 🟢 הוספנו את Bell
 import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'firebase/firestore'; 
-import { getToken } from 'firebase/messaging'; // 🟢 הוספנו את getToken
+import { getToken, onMessage } from 'firebase/messaging'; 
 
 const App: React.FC = () => {
   const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
@@ -25,7 +25,10 @@ const App: React.FC = () => {
   const [currentRound, setCurrentRound] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // 🟢 סטייט חדש ששומר את מצב ההתראות של המשתמש
+  // 🟢 סטייט לטואסט התראות פוש בלייב 🟢
+  const [toast, setToast] = useState<{ msg: string; type: 'info' | 'success' | 'error' } | null>(null);
+
+  // 🟢 סטייט ששומר את מצב ההתראות של המשתמש 🟢
   const [pushStatus, setPushStatus] = useState<'default' | 'granted' | 'denied' | 'unsupported'>('unsupported');
 
   const forceHardRefresh = () => {
@@ -37,6 +40,36 @@ const App: React.FC = () => {
 
   const isEran = loggedInUser?.email?.toLowerCase() === 'eranyy@gmail.com' || loggedInUser?.role === UserRole.ADMIN || loggedInUser?.role === UserRole.SUPER_ADMIN;
   const displayName = isEran ? 'ערן' : (loggedInUser?.name || '');
+
+  // 🟢 האזנה להתראות פוש כשהאפליקציה פתוחה במסך (Foreground Push Notification) 🟢
+  useEffect(() => {
+    if (messaging) {
+      const unsubOnMessage = onMessage(messaging, (payload) => {
+        console.log("Foreground FCM Notification received:", payload);
+        const title = payload.notification?.title || payload.data?.title || 'פנטזי לוזון ⚽';
+        const body = payload.notification?.body || payload.data?.body || '';
+
+        // 1. הקפצת באנר התראה של הדפדפן גם כשהאתר פתוח במסך
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification(title, {
+              body,
+              icon: '/app-icon.png',
+              badge: '/app-icon.png'
+            });
+          } catch (e) {
+            console.error("Native notification popup error:", e);
+          }
+        }
+
+        // 2. הצגת טואסט פנימי באתר
+        setToast({ msg: `${title}: ${body}`, type: 'info' });
+        setTimeout(() => setToast(null), 7000);
+      });
+
+      return () => unsubOnMessage();
+    }
+  }, []);
 
   // 🟢 הלוגיקה החכמה של התראות הפוש (מרובת מכשירים) 🟢
   useEffect(() => {
@@ -298,6 +331,14 @@ const App: React.FC = () => {
           >
             הפעל! 🔔
           </button>
+        </div>
+      )}
+
+      {/* 🔔 טואסט התראה כשהאפליקציה פתוחה 🔔 */}
+      {toast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000] bg-slate-900 border-2 border-yellow-400 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in zoom-in-95 max-w-md w-11/12">
+          <Bell className="w-6 h-6 text-yellow-400 animate-bounce shrink-0" />
+          <span className="font-black text-sm">{toast.msg}</span>
         </div>
       )}
       
