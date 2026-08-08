@@ -1,0 +1,21 @@
+{
+  "name": "Fantasy Luzon",
+  "short_name": "Luzon 13",
+  "description": "Fantasy Luzon League Web Application",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1120",
+  "theme_color": "#0B1120",
+  "icons": [
+    {
+      "src": "/app-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
