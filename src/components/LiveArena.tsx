@@ -324,11 +324,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const currentMatches = fixtures.find(r => r.round === currentRound)?.matches || [];
     if (currentMatches.length === 0) return setAppAlert({title: 'שגיאה', msg: 'אין נתונים לייצוא למחזור הנוכחי', type: 'error'});
 
+    const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
+
     let csvContent = `סיכום זירה - מחזור ${currentRound}\n\n`;
     currentMatches.forEach((match: any) => {
       const hName = TEAM_NAMES[match.h] || match.h; const aName = TEAM_NAMES[match.a] || match.a;
       const hScore = calculateTeamScore(match.h); const aScore = calculateTeamScore(match.a);
-      const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
+      const hTeam = teamMap[match.h]; const aTeam = teamMap[match.a];
       const hLineup = applySubstitutionsToLineup(hTeam); const aLineup = applySubstitutionsToLineup(aTeam);
       const hFormation = getFormation(hLineup); const aFormation = getFormation(aLineup);
 
