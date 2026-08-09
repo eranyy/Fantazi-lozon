@@ -5,3 +5,5 @@ lib/
 .firebase/
 functions/lib/
 functions/node_modules/
+node_modules
+node_modules/
