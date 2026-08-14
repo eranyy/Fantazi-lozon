@@ -4,7 +4,7 @@ import { analyzeMatchImage, generateAISummary, generateRumors } from './geminiSe
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, query, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server } from 'lucide-react';
+import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server, Zap } from 'lucide-react';
 import { parseFantasyExcel } from './utils/FantasyExcelParser'; 
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
@@ -142,12 +142,13 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [editingMatchIndex, setEditingMatchIndex] = useState<number | null>(null);
   const [editingMatchData, setEditingMatchData] = useState<any>(null);
 
-  // === NEW STATE FOR TIME MACHINE & PUSH NOTIFICATIONS ===
+  // === NEW STATE FOR TIME MACHINE & PUSH NOTIFICATIONS & 5th FWD RULE ===
   const [manualRound, setManualRound] = useState('');
   const [pushTitle, setPushTitle] = useState('פנטזי לוזון 14 ⚽');
   const [pushMessage, setPushMessage] = useState('');
   const [pushTargetUserId, setPushTargetUserId] = useState('ALL');
   const [isSendingPush, setIsSendingPush] = useState(false);
+  const [allowMidfielderAs5thFwd, setAllowMidfielderAs5thFwd] = useState<boolean>(true);
 
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -168,6 +169,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             if (data.globalLock !== undefined) setGlobalLock(data.globalLock);
             if (data.globalUnlock !== undefined) setGlobalUnlock(data.globalUnlock);
             if (data.currentRound !== undefined) setSystemCurrentRound(data.currentRound);
+            if (data.allowMidfielderAs5thFwd !== undefined) setAllowMidfielderAs5thFwd(data.allowMidfielderAs5thFwd);
         }
     });
 
@@ -238,6 +240,17 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           showMessage(`✅ פתיחת מחזור (עוקף שעון) ${newUnlockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
       } catch (e) { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
       setLoading(false);
+  };
+
+  const toggle5thFwdRule = async () => {
+      setLoading(true);
+      try {
+          const nextVal = !allowMidfielderAs5thFwd;
+          await setDoc(doc(db, 'leagueData', 'settings'), { allowMidfielderAs5thFwd: nextVal }, { merge: true });
+          setAllowMidfielderAs5thFwd(nextVal);
+          showMessage(nextVal ? '⚡ חוק חלוץ 5 גמיש הופעל בהצלחה!' : '⚪ חוק חלוץ 5 גמיש כבוי כעת', 'success');
+      } catch (e) { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
+      finally { setLoading(false); }
   };
 
   // === NEW FUNCTION FOR TIME MACHINE ===
@@ -1111,6 +1124,26 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                   className={`flex-1 w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${globalUnlock ? 'bg-emerald-500 text-black shadow-emerald-500/30 border border-emerald-400' : 'bg-slate-950 text-slate-300 border border-slate-700 hover:bg-slate-900'}`}
                 >
                   {globalUnlock ? <><Unlock className="w-5 h-5" /> פתיחה כפויה פעילה!</> : <><Unlock className="w-5 h-5 opacity-50" /> עקוף שעון (פתח הכל)</>}
+                </button>
+              </div>
+            </div>
+
+            {/* 🟢 בלוק: חוק חלוץ 5 גמיש (קשר כחלוץ 5) 🟢 */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-purple-500/40 shadow-xl animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 blur-[50px] pointer-events-none rounded-full"></div>
+              <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
+                <Zap className="text-purple-400" /> חוק חלוץ 5 גמיש (קשר כחלוץ 5) ⚽
+              </h3>
+              <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
+                החל מעונת 26-27: לאחר שנבחרו 4 חלוצים בסגל, ניתן לבחור קשר פנוי בתור החלוץ ה-5. השחקן ייחשב כחלוץ בלבד ולא יוכל לרדת לקישור.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
+                <button 
+                  onClick={toggle5thFwdRule} 
+                  disabled={loading}
+                  className={`w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${allowMidfielderAs5thFwd ? 'bg-purple-600 text-white shadow-purple-500/30 border border-purple-400' : 'bg-slate-950 text-slate-400 border border-slate-700 hover:bg-slate-900'}`}
+                >
+                  {allowMidfielderAs5thFwd ? '⚡ החוק פעיל (קשר מורשה כחלוץ 5)' : '⚪ החוק כבוי (חלוצים בלבד)'}
                 </button>
               </div>
             </div>
