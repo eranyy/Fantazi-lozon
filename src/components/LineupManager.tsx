@@ -985,7 +985,13 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           </div>
           <div className="flex flex-col">
             <span className="font-black text-white text-sm md:text-base group-hover:text-green-400 transition-colors flex items-center gap-2">
-              {player.name} {isSub && <span className="bg-orange-500 text-black text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black">חילוף</span>}
+              {player.name}
+              {isSub && <span className="bg-orange-500 text-black text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black">חילוף</span>}
+              {((player as any).isDual || player.position?.includes('/') || player.name?.includes('מזל') || player.name?.includes('פלקוש')) && (
+                <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+                  ⚡ קשר / חלוץ
+                </span>
+              )}
             </span>
             <span className="text-[10px] text-slate-400 font-bold">{player.team}</span>
           </div>
@@ -1316,7 +1322,14 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                              <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={player.position === 'GK' ? '🧤' : player.position} />
                           </div>
                           <div>
-                            <div className="text-sm font-black text-slate-200 group-hover:text-white transition-colors">{player.name}</div>
+                            <div className="text-sm font-black text-slate-200 group-hover:text-white transition-colors flex items-center gap-1.5">
+                              {player.name}
+                              {((player as any).isDual || player.position?.includes('/') || player.name?.includes('מזל') || player.name?.includes('פלקוש')) && (
+                                <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">
+                                  ⚡ קשר/חלוץ
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[10px] text-slate-500 font-bold">{player.team}</div>
                           </div>
                         </div>
