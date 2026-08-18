@@ -4,6 +4,7 @@ import { UserRole } from '../types';
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { Heart, MessageCircle, Share2, Trash2, Image as ImageIcon, Send, Trophy, Shield, Goal, CalendarDays, BarChart2, Plus, X, ChevronRight, ChevronLeft, MapPin, Tv, Clock, RefreshCw, Edit2, Users } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { sortMatchesChronologically } from '../utils/dateUtils';
 
 interface SocialFeedProps { teams: any[]; currentRound: number; loggedInUser: any; onNavigate?: (tab: string) => void; }
 
@@ -377,7 +378,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
     return `${Math.floor(diff/1440)} ימים`;
   };
 
-  const viewedRealMatches = realFixtures.filter(f => {
+  const viewedRealMatches = sortMatchesChronologically(realFixtures.filter(f => {
     if (f.round !== undefined && f.round !== null) {
       if (Number(f.round) === realRound) return true;
     }
@@ -386,7 +387,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
       if (matchRoundNum === realRound) return true;
     }
     return false;
-  }).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  }));
   const viewedFantasyRoundObj = fixtures.find(r => r.round === fantasyRound);
   const viewedFantasyMatches = viewedFantasyRoundObj?.matches || [];
 

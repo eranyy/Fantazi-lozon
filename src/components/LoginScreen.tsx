@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { collection, getDocs, addDoc, doc, setDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../firebaseConfig';
 import { authService } from '../authService';
@@ -22,21 +22,15 @@ const requestPushPermission = async (userId: string) => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
-      console.log("המשתמש אישר קבלת התראות!");
-      
       const token = await getToken(messaging, {
         vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" 
       });
 
       if (token) {
-        console.log("Token: ", token);
-        // שמירת הטוקן במסד הנתונים תחת המשתמש
         await setDoc(doc(db, "users", userId), {
           fcmToken: token 
         }, { merge: true });
       }
-    } else {
-      console.log("המשתמש סירב לקבל התראות.");
     }
   } catch (error) {
     console.error("שגיאה בהפעלת התראות:", error);
@@ -102,26 +96,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     }
   };
 
-  // בדיקת תוצאת Redirect של גוגל בטעינה (עבור מכשירים ניידים)
-  useEffect(() => {
-    const checkRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result && result.user) {
-          setLoading(true);
-          const user = result.user;
-          const inputEmail = (user.email || '').toLowerCase().trim();
-          await processAuthenticatedUser(user, inputEmail, 'google_redirect');
-          setLoading(false);
-        }
-      } catch (err: any) {
-        console.error("[Redirect Auth Error]", err);
-        setError(`שגיאת התחברות ב-Redirect: ${err.message || err.code}`);
-      }
-    };
-    checkRedirectResult();
-  }, []);
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -138,24 +112,50 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     console.log(`[Login Attempt] Email: ${inputEmail}`);
 
     try {
-      // 1. Firebase Authentication
+      // 1. Try Firebase Authentication
       const userCredential = await signInWithEmailAndPassword(auth, inputEmail, inputPassword);
-      const user = userCredential.user;
-      console.log(`[Login Success] Firebase Auth UID: ${user.uid}`);
-
-      // 2. Process User with Firestore
-      await processAuthenticatedUser(user, inputEmail, 'email');
+      await processAuthenticatedUser(userCredential.user, inputEmail, 'email');
     } catch (err: any) {
-      console.error(`[Login Error] Code: ${err.code}, Message: ${err.message}`);
+      console.log(`[Login Error] Code: ${err.code}, Message: ${err.message}`);
       
+      // Auto-create user account if email exists in Firestore but has not created a Firebase Auth user yet
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        try {
+          const usersSnap = await getDocs(collection(db, 'users'));
+          let isTeamMember = false;
+          usersSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.email?.toLowerCase().trim() === inputEmail ||
+                data.assistantEmail?.toLowerCase().trim() === inputEmail ||
+                (data.assistants && data.assistants.some((a: any) => a.email?.toLowerCase().trim() === inputEmail))) {
+              isTeamMember = true;
+            }
+          });
+
+          if (isTeamMember) {
+            console.log(`[Auto-Register] Email ${inputEmail} is valid team member, creating Auth account...`);
+            const newCredential = await createUserWithEmailAndPassword(auth, inputEmail, inputPassword);
+            await processAuthenticatedUser(newCredential.user, inputEmail, 'email_created');
+            setLoading(false);
+            return;
+          }
+        } catch (createErr: any) {
+          console.error("Auto registration error:", createErr);
+          if (createErr.code === 'auth/weak-password') {
+            setError('הסיסמה קצרה מדי. נא לבחור סיסמה בת 6 תווים לפחות.');
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       let errorMessage = 'שגיאת התחברות. אנא נסה שוב.';
-      
       switch (err.code) {
         case 'auth/user-not-found':
-          errorMessage = 'משתמש לא קיים במערכת. ודא שהאימייל נכון.';
+          errorMessage = 'אימייל זה אינו רשום כמנג\'ר בליגה. ודא שהאימייל נכון.';
           break;
         case 'auth/wrong-password':
-          errorMessage = 'סיסמה שגויה. נסה שוב או פנה למנהל לאיפוס.';
+          errorMessage = 'סיסמה שגויה. נסה שוב או פנה למנהל הליגה לאיפוס.';
           break;
         case 'auth/invalid-email':
           errorMessage = 'כתובת אימייל לא תקינה.';
@@ -166,16 +166,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         case 'auth/too-many-requests':
           errorMessage = 'יותר מדי ניסיונות כושלים. החשבון נחסם זמנית, נסה שוב מאוחר יותר.';
           break;
-        case 'auth/network-request-failed':
-          errorMessage = 'שגיאת רשת. בדוק את החיבור לאינטרנט.';
-          break;
         default:
           errorMessage = `שגיאה: ${err.code || 'מערכת'}. אנא נסה שוב.`;
       }
 
       setError(errorMessage);
 
-      // תיעוד שגיאה ב-Firestore
       try {
         await addDoc(collection(db, 'login_errors'), {
           email: inputEmail,
@@ -183,9 +179,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           errorMessage: err.message,
           timestamp: new Date().toISOString()
         });
-      } catch (logErr) {
-        console.error("Failed to log error to Firestore:", logErr);
-      }
+      } catch (logErr) {}
     }
     setLoading(false);
   };
@@ -197,40 +191,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-
-      // בדיקה מוקדמת אם מדובר במכשיר נייד / דפדפן מובנה (כמו ווצאפ)
-      const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
       
-      if (isMobileDevice) {
-        // בטלפונים משתמשים ב-signInWithRedirect המניב אחוזי הצלחה גבוהים בהרבה מול פופאפים חסומים
-        await signInWithRedirect(auth, provider);
-        return;
-      }
-
-      try {
-        const userCredential = await signInWithPopup(auth, provider);
-        const user = userCredential.user;
-        const inputEmail = (user.email || '').toLowerCase().trim();
-        await processAuthenticatedUser(user, inputEmail, 'google_popup');
-      } catch (popupErr: any) {
-        console.warn("signInWithPopup failed, falling back to signInWithRedirect...", popupErr);
-        if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/operation-not-supported-in-this-environment') {
-          await signInWithRedirect(auth, provider);
-          return;
-        }
-        throw popupErr;
-      }
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+      const inputEmail = (user.email || '').toLowerCase().trim();
+      await processAuthenticatedUser(user, inputEmail, 'google');
     } catch (err: any) {
       console.error(`[Google Login Error] Code: ${err.code}, Message: ${err.message}`);
-      let msg = `שגיאה בהתחברות עם Google: ${err.message || err.code}`;
-      if (err.code === 'auth/unauthorized-domain') {
-        msg = 'הדומיין שבו אתה משתמש כעת אינו מורשה ב-Firebase. בבקשה ודא שהאתר נפתח דרך fantasy-luzon.web.app';
-      } else if (err.code === 'auth/popup-closed-by-user') {
-        msg = 'התחברות עם Google בוטלה ע"י המשתמש.';
-      } else if (err.code === 'auth/popup-blocked') {
-        msg = 'הדפדפן חסם את חלון ההתחברות. נסה להתחבר שוב או אפשר חלונות קופצים בדפדפן.';
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('התחברות עם Google בוטלה.');
+      } else if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
+        setError('הדפדפן חסם את חלון ההתחברות של גוגל. פתח את הקישור בדפדפן Chrome / Safari רגיל (ולא מתוך אפליקציית ווצאפ), או התחבר באימייל וסיסמה.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('הדומיין שבו אתה משתמש אינו מורשה ב-Firebase. נסה להיכנס מ-fantasy-luzon.web.app');
+      } else {
+        setError(`שגיאת התחברות גוגל: ${err.message || err.code}`);
       }
-      setError(msg);
     } finally {
       setLoading(false);
     }

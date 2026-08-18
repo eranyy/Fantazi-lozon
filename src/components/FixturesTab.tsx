@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { CalendarDays, Flame, CheckCircle2, Clock, ChevronRight, ChevronLeft, MapPin, Tv } from 'lucide-react';
+import { sortMatchesChronologically } from '../utils/dateUtils';
 
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
@@ -86,7 +87,7 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
   const currentViewedData = rounds.find(r => r.round === viewedRound);
   const isCurrentLive = viewedRound === currentRound;
   const filterRoundName = `מחזור ${viewedRound}`;
-  const currentRealMatches = realMatches.filter(m => m.roundStage === filterRoundName || m.roundStage === `מחזור ${viewedRound}`);
+  const currentRealMatches = sortMatchesChronologically(realMatches.filter(m => m.roundStage === filterRoundName || m.roundStage === `מחזור ${viewedRound}`));
 
   return (
     <div className="max-w-4xl mx-auto pb-32 font-sans animate-in fade-in slide-in-from-bottom-4 duration-500" dir="rtl">
