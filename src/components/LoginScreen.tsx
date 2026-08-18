@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, doc, setDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../firebaseConfig';
 import { authService } from '../authService';
@@ -50,6 +50,78 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const processAuthenticatedUser = async (user: any, inputEmail: string, loginMethod: string) => {
+    console.log(`[Processing Auth User] Email: ${inputEmail}, UID: ${user.uid}`);
+    const usersSnap = await getDocs(collection(db, 'users'));
+    let foundUser: any = null;
+
+    usersSnap.forEach(doc => {
+      const data = doc.data();
+      const mainEmail = data.email?.toLowerCase().trim();
+      const asstEmail = data.assistantEmail?.toLowerCase().trim();
+      
+      // בדיקה אם זה המנג'ר הראשי
+      if (mainEmail === inputEmail) {
+        foundUser = { id: doc.id, teamId: doc.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
+      } 
+      // בדיקה אם זה עוזר המאמן
+      else if (asstEmail === inputEmail) {
+        foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: 'USER' };
+      }
+      // בדיקה אם זה אחד מעוזרי המאמן (מערך)
+      else if (data.assistants && Array.isArray(data.assistants)) {
+        const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
+        if (assistant) {
+          foundUser = { id: doc.id, teamId: doc.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: 'USER' };
+        }
+      }
+    });
+
+    if (foundUser) {
+      try {
+        await addDoc(collection(db, 'login_logs'), {
+          uid: user.uid,
+          email: foundUser.email,
+          name: foundUser.name,
+          teamName: foundUser.teamName,
+          role: foundUser.role,
+          deviceType: getDeviceType(),
+          loginMethod,
+          timestamp: new Date().toISOString()
+        });
+      } catch (logError) {
+        console.error("Failed to save login tracking log", logError);
+      }
+
+      authService.login(foundUser, rememberMe);
+      onLogin(foundUser);
+      requestPushPermission(foundUser.id);
+    } else {
+      console.warn(`[Login Warning] Authenticated email ${inputEmail} not found in Firestore.`);
+      setError(`חשבון הגוגל שאיתו התחברת (${inputEmail}) אומת בהצלחה בגוגל, אך אימייל זה אינו רשום תחת אף קבוצה במערכת. אנא ודא שכתובת המייל המדויקת הזאת (${inputEmail}) מעודכנת עבור הקבוצה בפאנל הניהול.`);
+    }
+  };
+
+  // בדיקת תוצאת Redirect של גוגל בטעינה (עבור מכשירים ניידים)
+  useEffect(() => {
+    const checkRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result && result.user) {
+          setLoading(true);
+          const user = result.user;
+          const inputEmail = (user.email || '').toLowerCase().trim();
+          await processAuthenticatedUser(user, inputEmail, 'google_redirect');
+          setLoading(false);
+        }
+      } catch (err: any) {
+        console.error("[Redirect Auth Error]", err);
+        setError(`שגיאת התחברות ב-Redirect: ${err.message || err.code}`);
+      }
+    };
+    checkRedirectResult();
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -60,7 +132,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     setLoading(true);
     setError('');
 
-    // מורידים רווחים מההתחלה ומהסוף (גם באימייל וגם בסיסמה) והופכים לאותיות קטנות
     const inputEmail = email.toLowerCase().trim();
     const inputPassword = password.trim();
     
@@ -72,59 +143,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       const user = userCredential.user;
       console.log(`[Login Success] Firebase Auth UID: ${user.uid}`);
 
-      // 2. Sync with Firestore to get team data
-      const usersSnap = await getDocs(collection(db, 'users'));
-      let foundUser: any = null;
-
-      usersSnap.forEach(doc => {
-        const data = doc.data();
-        
-        // בדיקה אם זה המנג'ר הראשי
-        if (data.email?.toLowerCase().trim() === inputEmail) {
-          foundUser = { id: doc.id, teamId: doc.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
-        } 
-        // בדיקה אם זה עוזר המאמן
-        else if (data.assistantEmail?.toLowerCase().trim() === inputEmail) {
-          foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: 'USER' };
-        }
-        // בדיקה אם זה אחד מעוזרי המאמן (מערך)
-        else if (data.assistants && Array.isArray(data.assistants)) {
-          const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
-          if (assistant) {
-            foundUser = { id: doc.id, teamId: doc.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: 'USER' };
-          }
-        }
-      });
-
-      if (foundUser) {
-        
-        // --- מערכת מעקב התחברויות (Radar) ---
-        try {
-            await addDoc(collection(db, 'login_logs'), {
-                uid: user.uid,
-                email: foundUser.email,
-                name: foundUser.name,
-                teamName: foundUser.teamName,
-                role: foundUser.role,
-                deviceType: getDeviceType(),
-                loginMethod: 'email',
-                timestamp: new Date().toISOString()
-            });
-        } catch (logError) {
-            console.error("Failed to save login tracking log", logError);
-        }
-        // ------------------------------------
-
-        authService.login(foundUser, rememberMe);
-        onLogin(foundUser);
-        
-        // <<< הפעלת הבקשה לקבלת התראות פוש ושמירת הטוקן >>>
-        requestPushPermission(foundUser.id);
-        
-      } else {
-        console.warn(`[Login Warning] User ${inputEmail} authenticated but not found in Firestore 'users' collection.`);
-        setError(`המשתמש (${inputEmail}) אומת אך לא נמצאה קבוצה תואמת במערכת. פנה למנהל הליגה (ערן).`);
-      }
+      // 2. Process User with Firestore
+      await processAuthenticatedUser(user, inputEmail, 'email');
     } catch (err: any) {
       console.error(`[Login Error] Code: ${err.code}, Message: ${err.message}`);
       
@@ -177,69 +197,40 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
+
+      // בדיקה מוקדמת אם מדובר במכשיר נייד / דפדפן מובנה (כמו ווצאפ)
+      const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
       
-      const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
-      const inputEmail = (user.email || '').toLowerCase().trim();
+      if (isMobileDevice) {
+        // בטלפונים משתמשים ב-signInWithRedirect המניב אחוזי הצלחה גבוהים בהרבה מול פופאפים חסומים
+        await signInWithRedirect(auth, provider);
+        return;
+      }
 
-      console.log(`[Google Login Success] Email: ${inputEmail}, UID: ${user.uid}`);
-
-      // Sync with Firestore to get team data
-      const usersSnap = await getDocs(collection(db, 'users'));
-      let foundUser: any = null;
-
-      usersSnap.forEach(doc => {
-        const data = doc.data();
-        
-        // בדיקה אם זה המנג'ר הראשי
-        if (data.email?.toLowerCase().trim() === inputEmail) {
-          foundUser = { id: doc.id, teamId: doc.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
-        } 
-        // בדיקה אם זה עוזר המאמן
-        else if (data.assistantEmail?.toLowerCase().trim() === inputEmail) {
-          foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: 'USER' };
+      try {
+        const userCredential = await signInWithPopup(auth, provider);
+        const user = userCredential.user;
+        const inputEmail = (user.email || '').toLowerCase().trim();
+        await processAuthenticatedUser(user, inputEmail, 'google_popup');
+      } catch (popupErr: any) {
+        console.warn("signInWithPopup failed, falling back to signInWithRedirect...", popupErr);
+        if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/operation-not-supported-in-this-environment') {
+          await signInWithRedirect(auth, provider);
+          return;
         }
-        // בדיקה אם זה אחד מעוזרי המאמן (מערך)
-        else if (data.assistants && Array.isArray(data.assistants)) {
-          const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
-          if (assistant) {
-            foundUser = { id: doc.id, teamId: doc.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: 'USER' };
-          }
-        }
-      });
-
-      if (foundUser) {
-        try {
-          await addDoc(collection(db, 'login_logs'), {
-            uid: user.uid,
-            email: foundUser.email,
-            name: foundUser.name,
-            teamName: foundUser.teamName,
-            role: foundUser.role,
-            deviceType: getDeviceType(),
-            loginMethod: 'google',
-            timestamp: new Date().toISOString()
-          });
-        } catch (logError) {
-          console.error("Failed to save login tracking log", logError);
-        }
-
-        authService.login(foundUser, rememberMe);
-        onLogin(foundUser);
-        requestPushPermission(foundUser.id);
-      } else {
-        console.warn(`[Login Warning] User ${inputEmail} authenticated with Google but not found in Firestore.`);
-        setError(`חשבון הגוגל (${inputEmail}) אומת בהצלחה, אך לא נמצאה קבוצה תואמת במערכת. פנה למנהל הליגה (ערן).`);
+        throw popupErr;
       }
     } catch (err: any) {
       console.error(`[Google Login Error] Code: ${err.code}, Message: ${err.message}`);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('התחברות עם Google בוטלה.');
+      let msg = `שגיאה בהתחברות עם Google: ${err.message || err.code}`;
+      if (err.code === 'auth/unauthorized-domain') {
+        msg = 'הדומיין שבו אתה משתמש כעת אינו מורשה ב-Firebase. בבקשה ודא שהאתר נפתח דרך fantasy-luzon.web.app';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        msg = 'התחברות עם Google בוטלה ע"י המשתמש.';
       } else if (err.code === 'auth/popup-blocked') {
-        setError('הדפדפן חסם את חלון ההתחברות. נא לאשר חלונות קופצים בדפדפן ונסה שוב.');
-      } else {
-        setError(`שגיאה בהתחברות עם Google: ${err.message || err.code}`);
+        msg = 'הדפדפן חסם את חלון ההתחברות. נסה להתחבר שוב או אפשר חלונות קופצים בדפדפן.';
       }
+      setError(msg);
     } finally {
       setLoading(false);
     }
