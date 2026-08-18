@@ -111,6 +111,16 @@ const normalizePos = (pos: string) => {
   return 'DEF'; 
 };
 
+const getHebrewRole = (pos: string) => {
+  if (!pos) return 'מגן';
+  const p = pos.trim().toUpperCase();
+  if (p === 'GK' || p === 'שוער') return 'שוער';
+  if (p === 'DEF' || p === 'הגנה' || p === 'בלם' || p === 'מגן') return 'מגן';
+  if (p === 'MID' || p === 'קישור' || p === 'קשר') return 'קשר';
+  if (p === 'FWD' || p === 'ATT' || p === 'חלוץ' || p === 'התקפה') return 'חלוץ';
+  return pos;
+};
+
 const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\s]/g, '');
 
 const createCancelLog = (currentRound: number, playerInName: string, playerOutName: string) => ({
@@ -993,7 +1003,11 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                 </span>
               )}
             </span>
-            <span className="text-[10px] text-slate-400 font-bold">{player.team}</span>
+            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
+              <span>{player.team}</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-slate-400 font-semibold">{getHebrewRole(player.position)}</span>
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -1330,7 +1344,11 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-slate-500 font-bold">{player.team}</div>
+                            <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
+                              <span>{player.team}</span>
+                              <span className="text-slate-600">•</span>
+                              <span className="text-slate-400 font-semibold">{getHebrewRole(player.position)}</span>
+                            </div>
                           </div>
                         </div>
                         <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-500 group-hover:bg-green-500/20 group-hover:text-green-400 transition-colors">
