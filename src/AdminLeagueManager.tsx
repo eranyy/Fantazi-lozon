@@ -220,16 +220,16 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
       });
       canvas.toBlob(async (blob) => {
         if (!blob) return;
-        const file = new File([blob], 'Luzon13_Table.png', { type: 'image/png' });
+        const file = new File([blob], 'Luzon14_Table.png', { type: 'image/png' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'טבלת פנטזי לוזון 13', text: '🏆 טבלת פנטזי לוזון 13 - תמונת מצב רותחת! 🔥' });
+          await navigator.share({ files: [file], title: 'טבלת פנטזי לוזון 14', text: '🏆 טבלת פנטזי לוזון 14 - תמונת מצב רותחת! 🔥' });
           setToast(null);
         } else {
           try {
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             showMessage('התמונה הועתקה! פתח ווצאפ והדבק (Ctrl+V) 📋', 'success');
           } catch (err) {
-            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'Luzon13_Table.png'; link.click();
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'Luzon14_Table.png'; link.click();
             showMessage('התמונה ירדה למחשב! צרף אותה לווצאפ 📥', 'success');
           }
         }
@@ -574,7 +574,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
           <div className="flex flex-col items-center mb-8 border-b border-zinc-800 pb-6 relative z-10 text-center">
             <ScrollText className="w-12 h-12 text-blue-500 mb-3" />
             <h3 className="text-3xl md:text-4xl font-black text-white italic tracking-tight">תקנון וחוקים</h3>
-            <p className="text-zinc-400 font-bold uppercase tracking-widest mt-2 text-xs md:text-sm">החוקה הרשמית של פנטזי LUZON 13</p>
+            <p className="text-zinc-400 font-bold uppercase tracking-widest mt-2 text-xs md:text-sm">החוקה הרשמית של פנטזי LUZON 14</p>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 relative z-10">
             <div className="space-y-6">

@@ -198,14 +198,25 @@ const App: React.FC = () => {
 
            if (dbRecord) {
                // Rehydrate user from the database record using the session email check to verify
-               const isMainManager = dbRecord.email?.toLowerCase().trim() === userToRehydrate.email?.toLowerCase().trim();
+               const userEmail = userToRehydrate.email?.toLowerCase().trim();
+               const isMainManager = dbRecord.email?.toLowerCase().trim() === userEmail;
+               const isAssistant = dbRecord.assistantEmail?.toLowerCase().trim() === userEmail;
+               const assistantObj = Array.isArray(dbRecord.assistants) ? dbRecord.assistants.find((a: any) => a.email?.toLowerCase().trim() === userEmail) : null;
 
                let role = 'USER';
                if (isMainManager) {
                    role = dbRecord.role || 'USER';
                }
 
-               const newName = dbRecord.name || dbRecord.manager || userToRehydrate.name || 'User';
+               let newName = userToRehydrate.name;
+               if (isMainManager) {
+                   newName = dbRecord.manager || dbRecord.name || userToRehydrate.name || 'User';
+               } else if (isAssistant) {
+                   newName = dbRecord.assistantName || userToRehydrate.name || `עוזר מאמן - ${dbRecord.teamName}`;
+               } else if (assistantObj) {
+                   newName = assistantObj.name || userToRehydrate.name || `עוזר מאמן - ${dbRecord.teamName}`;
+               }
+
                const newTeamName = dbRecord.teamName || userToRehydrate.teamName || '';
                const newRole = role as UserRole;
                const newTeamId = dbRecord.id;

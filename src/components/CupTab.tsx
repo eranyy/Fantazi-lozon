@@ -12,7 +12,7 @@ const TEAM_NAMES: Record<string, string> = {
   holonia: 'חולוניה' 
 };
 
-// נתוני בסיס לעונה 13 כדי שהתצוגה תיראה מושלמת מיד גם אם לא הגרלת
+// נתוני בסיס לעונה 14 כדי שהתצוגה תיראה מושלמת מיד גם אם לא הגרלת
 const DEFAULT_LANNISTER = ['tumali', 'hamsili', 'tampa'];
 const DEFAULT_STARK = ['harale', 'holonia', 'pichichi'];
 

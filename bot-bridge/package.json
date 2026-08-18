@@ -1,0 +1,15 @@
+{
+  "name": "luzon-bot-bridge",
+  "version": "1.0.0",
+  "description": "WhatsApp Baileys Group Bridge for Fantazy Luzon 14",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.8",
+    "axios": "^1.6.8",
+    "firebase-admin": "^12.0.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

@@ -13,26 +13,40 @@ interface FixturesTabProps {
 
 const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
   const [rounds, setRounds] = useState<any[]>([]);
+  const [realMatches, setRealMatches] = useState<any[]>([]);
+  const [cupMatches, setCupMatches] = useState<any[]>([]);
+  const [subTab, setSubTab] = useState<'real' | 'fantasy'>('real');
   const [loading, setLoading] = useState(true);
   
   // סטייט עבור עריכת תוצאות עבר (מכונת הזמן)
   const [editModal, setEditModal] = useState<{ roundId: number, matchIdx: number, hId: string, aId: string, hs: number, as: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // המערכת תזכור באיזה מחזור אנחנו צופים עכשיו (ברירת מחדל: המחזור הנוכחי של הליגה)
-  const [viewedRound, setViewedRound] = useState<number>(currentRound || 24);
+  // המערכת תזכור באיזה מחזור אנחנו צופים עכשיו
+  const [viewedRound, setViewedRound] = useState<number>(currentRound || 1);
 
   useEffect(() => {
-    // מסנכרן את המחזור הנצפה אם המחזור הכללי של הליגה משתנה
     if (currentRound) setViewedRound(currentRound);
   }, [currentRound]);
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'leagueData', 'fixtures'), doc => {
-      if(doc.exists()) setRounds(doc.data().rounds || []);
+    const unsubFantasy = onSnapshot(doc(db, 'leagueData', 'fixtures'), docSnap => {
+      if(docSnap.exists()) setRounds(docSnap.data().rounds || []);
       setLoading(false);
     });
-    return () => unsub();
+
+    const unsubReal = onSnapshot(doc(db, 'leagueData', 'real_fixtures'), docSnap => {
+      if(docSnap.exists()) {
+        const data = docSnap.data();
+        setRealMatches(data.matches || []);
+        setCupMatches(data.cupMatches || []);
+      }
+    });
+
+    return () => {
+      unsubFantasy();
+      unsubReal();
+    };
   }, []);
 
   // הפונקציה ששומרת את השינוי ההיסטורי
@@ -69,17 +83,10 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
     </div>
   );
 
-  if (rounds.length === 0) return (
-    <div className="text-center p-12 bg-zinc-900/60 backdrop-blur-xl rounded-[40px] border border-white/5 max-w-lg mx-auto mt-10">
-      <span className="text-5xl mb-4 block opacity-50">📅</span>
-      <h2 className="text-2xl font-black text-white mb-2">לוח המשחקים ריק</h2>
-      <p className="text-zinc-500 font-bold text-sm">אין נתונים בארכיון. גש להגדרות ולחץ על "טען ארכיון".</p>
-    </div>
-  );
-
-  // שולף את הנתונים רק של המחזור הספציפי שאנחנו צופים בו כרגע
   const currentViewedData = rounds.find(r => r.round === viewedRound);
   const isCurrentLive = viewedRound === currentRound;
+  const filterRoundName = `מחזור ${viewedRound}`;
+  const currentRealMatches = realMatches.filter(m => m.roundStage === filterRoundName || m.roundStage === `מחזור ${viewedRound}`);
 
   return (
     <div className="max-w-4xl mx-auto pb-32 font-sans animate-in fade-in slide-in-from-bottom-4 duration-500" dir="rtl">
@@ -91,16 +98,31 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
         
         <div className="flex items-center gap-3 mb-2 relative z-10">
           <CalendarDays className="w-8 h-8 text-blue-500" />
-          <h2 className="text-4xl md:text-5xl font-black text-white italic tracking-tighter drop-shadow-md">
-            Match <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">Calendar</span>
+          <h2 className="text-3xl md:text-5xl font-black text-white italic tracking-tighter drop-shadow-md">
+            לוח משחקים <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500">ליגת העל</span>
           </h2>
         </div>
-        <p className="text-xs text-zinc-400 font-bold uppercase tracking-[0.2em] mb-8 relative z-10">ארכיון ולוח משחקים מלא</p>
+        <p className="text-xs text-zinc-400 font-bold uppercase tracking-[0.2em] mb-6 relative z-10">מועדים, אצטדיונים וערוצי שידור בלייב</p>
+
+        {/* 🟢 מתג בחירה בין משחקי ליגת העל המציאותיים לבין משחקי הפנטזי 🟢 */}
+        <div className="flex items-center gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800 mb-6 relative z-10">
+          <button 
+            onClick={() => setSubTab('real')} 
+            className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'real' ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-amber-500/20' : 'text-zinc-400 hover:text-white'}`}
+          >
+            ⚽ משחקי ליגת העל (לייב)
+          </button>
+          <button 
+            onClick={() => setSubTab('fantasy')} 
+            className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'fantasy' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-zinc-400 hover:text-white'}`}
+          >
+            🏆 משחקי הפנטזי בליגה
+          </button>
+        </div>
         
-        {/* Round Navigator - נווט המחזורים החדש */}
+        {/* Round Navigator - נווט המחזורים */}
         <div className="flex items-center justify-between w-full max-w-sm bg-zinc-950/80 p-2 rounded-[24px] border border-zinc-800 shadow-inner relative z-10">
           
-          {/* כפתור למחזור קודם (חץ ימינה בגלל שזה RTL) */}
           <button 
             onClick={() => setViewedRound(prev => Math.max(1, prev - 1))}
             disabled={viewedRound <= 1}
@@ -114,7 +136,6 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
              <div className="text-3xl font-black text-white tabular-nums leading-none">{viewedRound}</div>
           </div>
 
-          {/* כפתור למחזור הבא (חץ שמאלה בגלל שזה RTL) */}
           <button 
             onClick={() => setViewedRound(prev => Math.min(36, prev + 1))}
             disabled={viewedRound >= 36}
@@ -123,22 +144,69 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
             <ChevronLeft className="w-6 h-6" />
           </button>
         </div>
-
-        {/* חיווי סטטוס המחזור הנצפה */}
-        <div className="mt-6 flex justify-center relative z-10">
-           {isCurrentLive && <span className="bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-[0_0_15px_rgba(34,197,94,0.2)]"><Flame className="w-4 h-4 text-green-500 animate-pulse"/> משוחק כעת</span>}
-           {currentViewedData?.isPlayed && !isCurrentLive && <span className="bg-zinc-800/80 border border-zinc-700 text-zinc-400 px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> הושלם</span>}
-           {!currentViewedData?.isPlayed && !isCurrentLive && <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2"><Clock className="w-4 h-4"/> טרם שוחק</span>}
-        </div>
       </div>
 
-      {/* Fixtures List */}
-      {!currentViewedData || currentViewedData.matches.length === 0 ? (
-         <div className="text-center py-16 bg-zinc-900/30 rounded-[32px] border border-dashed border-zinc-800">
-           <span className="text-4xl block mb-4 opacity-40">🏟️</span>
-           <h3 className="text-xl font-black text-zinc-500">אין משחקים במחזור זה</h3>
-         </div>
-      ) : (
+      {/* ⚽ תצוגת משחקי ליגת העל המציאותיים ⚽ */}
+      {subTab === 'real' && (
+        <div className="space-y-4">
+          {currentRealMatches.length === 0 ? (
+            <div className="text-center py-16 bg-zinc-900/30 rounded-[32px] border border-dashed border-zinc-800">
+              <span className="text-4xl block mb-4 opacity-40">⚽</span>
+              <h3 className="text-xl font-black text-zinc-400">אין משחקי ליגת העל רשומים במחזור {viewedRound}</h3>
+            </div>
+          ) : (
+            currentRealMatches.map((m: any, idx: number) => (
+              <div key={idx} className="bg-gradient-to-r from-zinc-900 via-zinc-900/90 to-zinc-900 p-6 rounded-[28px] border border-zinc-800 shadow-xl flex flex-col gap-4 relative overflow-hidden group hover:border-yellow-500/40 transition-all">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-yellow-400 bg-yellow-500/10 px-3 py-1 rounded-xl border border-yellow-500/20">{m.competition || 'ליגת WINNER'}</span>
+                    <span className="text-xs font-bold text-zinc-400">{m.date} ({m.day})</span>
+                  </div>
+                  <span className={`text-xs font-black px-3 py-1 rounded-xl ${m.status?.includes('נדחה') ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-green-500/10 text-green-400 border border-green-500/20'}`}>
+                    {m.status || 'עתידי'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-2">
+                  <div className="flex-1 text-right">
+                    <div className="text-lg md:text-2xl font-black text-white">{m.homeTeam}</div>
+                  </div>
+                  
+                  <div className="px-4 shrink-0 flex flex-col items-center justify-center">
+                    <div className="bg-zinc-950 border border-zinc-700/80 px-4 py-2 rounded-2xl shadow-inner text-center">
+                      <div className="text-lg font-black text-yellow-400 font-mono tracking-tight">{m.time}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 text-left">
+                    <div className="text-lg md:text-2xl font-black text-white">{m.awayTeam}</div>
+                  </div>
+                </div>
+
+                <div className="bg-black/50 p-3 rounded-2xl border border-zinc-800/60 flex flex-wrap items-center justify-between text-xs font-bold text-zinc-400 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-amber-500" />
+                    <span>{m.stadium || 'אצטדיון'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Tv className="w-4 h-4 text-blue-400" />
+                    <span className="text-zinc-200">{m.tvChannel || 'שידור ישיר'}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* 🏆 תצוגת משחקי הפנטזי בליגה 🏆 */}
+      {subTab === 'fantasy' && (
+        !currentViewedData || currentViewedData.matches.length === 0 ? (
+           <div className="text-center py-16 bg-zinc-900/30 rounded-[32px] border border-dashed border-zinc-800">
+             <span className="text-4xl block mb-4 opacity-40">🏟️</span>
+             <h3 className="text-xl font-black text-zinc-500">אין משחקים במחזור זה</h3>
+           </div>
+        ) : (
         <div className="space-y-6">
           {currentViewedData.matches.map((m: any, idx: number) => {
             const hName = TEAM_NAMES[m.h] || m.h;
@@ -229,7 +297,7 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
             );
           })}
         </div>
-      )}
+      ))}
 
       {/* חלון מודאל "מכונת הזמן" */}
       {editModal && (

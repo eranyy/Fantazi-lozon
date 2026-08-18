@@ -336,7 +336,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
-            title: 'פנטזי לוזון 13',
+            title: 'פנטזי לוזון 14',
             text: fallbackText
           });
           setApiMessage(null);
@@ -377,7 +377,16 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
     return `${Math.floor(diff/1440)} ימים`;
   };
 
-  const viewedRealMatches = realFixtures.filter(f => f.round === realRound).sort((a, b) => a.timestamp - b.timestamp);
+  const viewedRealMatches = realFixtures.filter(f => {
+    if (f.round !== undefined && f.round !== null) {
+      if (Number(f.round) === realRound) return true;
+    }
+    if (f.roundStage) {
+      const matchRoundNum = parseInt(String(f.roundStage).replace(/[^\d]/g, ''), 10);
+      if (matchRoundNum === realRound) return true;
+    }
+    return false;
+  }).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   const viewedFantasyRoundObj = fixtures.find(r => r.round === fantasyRound);
   const viewedFantasyMatches = viewedFantasyRoundObj?.matches || [];
 

@@ -283,7 +283,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const el = document.getElementById('arena-capture-area');
     if (!el) return;
     showToast('מייצר תמונה ברמת ליגת האלופות... 📸', 'info');
-    let shareText = `🏆 תוצאות הלייב בזירת פנטזי לוזון 13 - מחזור ${currentRound}! 🔥`;
+    let shareText = `🏆 תוצאות הלייב בזירת פנטזי לוזון 14 - מחזור ${currentRound}! 🔥`;
 
     try {
       const canvas = await html2canvas(el, { 
@@ -348,7 +348,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url); link.setAttribute("download", `Luzon13_Matchday_${currentRound}_Detailed.csv`);
+    link.setAttribute("href", url); link.setAttribute("download", `Luzon14_Matchday_${currentRound}_Detailed.csv`);
     link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
