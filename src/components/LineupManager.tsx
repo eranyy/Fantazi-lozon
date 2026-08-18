@@ -274,7 +274,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       if (team) {
         setMyTeam(team);
         
-        const sourceSquad = team.squad || team.players || [];
+        const rawSquad = (team.squad && team.squad.length > 0) ? team.squad : (team.players && team.players.length > 0) ? team.players : [];
+        const sourceSquad = rawSquad;
         const safeSquad: Player[] = Array.from(new Map(
           sourceSquad.filter((p: any) => p && p.id).map((p: any) => [p.id, { ...p, position: normalizePos(p.position) }])
         ).values());
