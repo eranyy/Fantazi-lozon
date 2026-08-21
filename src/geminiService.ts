@@ -1,11 +1,11 @@
   const modelName = "gemini-1.5-flash-latest";import { GoogleGenAI } from "@google/genai";
 
 // 🟢 המפתח שלך מוטמע כאן ישירות 🟢
-const GEMINI_API_KEY = "AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 const getApiKey = (providedKey?: string) => {
   return providedKey || 
-         process.env.GEMINI_API_KEY || 
+         import.meta.env.VITE_GEMINI_API_KEY ||
          localStorage.getItem('gemini_api_key') || 
          GEMINI_API_KEY;
 };

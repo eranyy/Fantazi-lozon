@@ -73,7 +73,7 @@ describe('geminiService', () => {
     it('should fallback to env variable or localStorage if no key is provided', async () => {
         mockGenerateContent.mockResolvedValue({ text: '[]' });
 
-        process.env.GEMINI_API_KEY = 'env-key';
+        vi.stubEnv('VITE_GEMINI_API_KEY', 'env-key');
 
         let promise = analyzeMatchImage('base64string', 'image/png', '1');
         vi.runAllTimers();
@@ -81,7 +81,9 @@ describe('geminiService', () => {
 
         expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'env-key' });
 
-        delete process.env.GEMINI_API_KEY;
+        mockGoogleGenAIConstructor.mockClear();
+        vi.unstubAllEnvs();
+        vi.stubEnv('VITE_GEMINI_API_KEY', ''); // Clear the env variable explicitly since it may fall back to the real string in vite
         localStorage.setItem('gemini_api_key', 'local-key');
 
         promise = analyzeMatchImage('base64string', 'image/png', '1');

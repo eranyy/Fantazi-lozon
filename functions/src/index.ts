@@ -492,7 +492,7 @@ export const sendCustomPushNotification = onCall(
 const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = ''): Promise<string> => {
     let managerName = 'מנג\'ר';
     try {
-        const apiKey = process.env.GEMINI_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+        const apiKey = process.env.GEMINI_API_KEY || '';
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
         // Map manager phone to name & team
@@ -846,7 +846,7 @@ export const updateRealFixtures = onRequest(
 export const scheduledCalendarSync = onSchedule('every 6 hours', async () => {
     try {
         const calendarId = 'eranyy@gmail.com';
-        const apiKey = process.env.GOOGLE_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+        const apiKey = process.env.GOOGLE_API_KEY || '';
         const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?key=${apiKey}&singleEvents=true&orderBy=startTime`;
 
         const response = await axios.get(url);
