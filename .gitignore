@@ -5,3 +5,7 @@ lib/
 .firebase/
 functions/lib/
 functions/node_modules/
+
+# Local environment variables
+.env.local
+.env.*.local
