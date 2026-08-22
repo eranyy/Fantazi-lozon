@@ -90,21 +90,21 @@ async function startBot() {
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
-        for (const msg of messages) {
-            if (!msg.message || msg.key.fromMe) continue;
+        await Promise.all(messages.map(async (msg) => {
+            if (!msg.message || msg.key.fromMe) return;
 
             const fromJid = msg.key.remoteJid;
             const messageText = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
             const senderPhone = (msg.key.participant || fromJid).split('@')[0].split(':')[0];
 
-            if (!messageText) continue;
+            if (!messageText) return;
 
             const isGroup = fromJid.endsWith('@g.us');
             const trimmed = messageText.trim().toLowerCase();
             const startsWithLuzon = /^(לוזון|היי לוזון|שלום לוזון|אהלן לוזון|luzon|hi luzon|!לוזון|לוזון:)/i.test(trimmed);
 
             // Iron Rule: If group chat, only trigger if sentence starts with Luzon
-            if (isGroup && !startsWithLuzon) continue;
+            if (isGroup && !startsWithLuzon) return;
 
             console.log(`📩 Processing message from ${senderPhone} in ${fromJid}: "${messageText}"`);
 
@@ -113,7 +113,7 @@ async function startBot() {
             // Send message to WhatsApp chat or group
             await sock.sendMessage(fromJid, { text: replyText }, { quoted: msg });
             console.log(`✅ Replied to ${fromJid}`);
-        }
+        }));
     });
 }
 
