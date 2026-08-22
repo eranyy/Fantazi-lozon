@@ -846,7 +846,13 @@ export const updateRealFixtures = onRequest(
 export const scheduledCalendarSync = onSchedule('every 6 hours', async () => {
     try {
         const calendarId = 'eranyy@gmail.com';
-        const apiKey = process.env.GOOGLE_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+        const apiKey = process.env.GOOGLE_API_KEY;
+
+        if (!apiKey) {
+            console.error('GOOGLE_API_KEY is not configured');
+            return;
+        }
+
         const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?key=${apiKey}&singleEvents=true&orderBy=startTime`;
 
         const response = await axios.get(url);
