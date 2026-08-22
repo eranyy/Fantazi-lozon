@@ -179,7 +179,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           errorMessage: err.message,
           timestamp: new Date().toISOString()
         });
-      } catch (logErr) {}
+      } catch (logErr) {
+        // Ignore tracking errors
+      }
     }
     setLoading(false);
   };
