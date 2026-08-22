@@ -449,7 +449,7 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         const apiKey = process.env.GEMINI_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const p = userPrompt.toLowerCase();
-        const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\s]/g, '').replace(/יי/g, 'i').replace(/י/g, 'i');
+        const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\sאע]/g, '').replace(/יי/g, 'י');
         // Map manager phone to name & team
         const cleanPhone = String(senderPhone || '').replace(/\D/g, '');
         let managerInfo = '';
