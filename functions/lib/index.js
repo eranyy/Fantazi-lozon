@@ -1870,10 +1870,44 @@ exports.triggerSheetSync = (0, https_1.onRequest)({ region: 'us-west1', cors: tr
 });
 // 🤖 3. Live Match Scraper for Sport5 (Goals/Assists) & IFA (Yellow/Red Cards) 🤖
 const runLiveScraperLogic = async () => {
-    console.log('[LiveScraper] Checking live matches from Sport5 (Goals/Assists) & IFA (Cards)...');
+    console.log('[LiveScraper] Checking live matches calendar from real_fixtures...');
     try {
-        const usersSnap = await db.collection('users').get();
+        const db = admin.firestore();
         const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\sאע]/g, '').replace(/יי/g, 'י');
+        // 1. Check if there are any active/live matches today according to real_fixtures
+        const fixturesSnap = await db.doc('leagueData/real_fixtures').get();
+        let isGameLiveNow = false;
+        let activeMatchInfo = '';
+        if (fixturesSnap.exists) {
+            const matches = fixturesSnap.data()?.matches || [];
+            const now = new Date();
+            const todayStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
+            for (const m of matches) {
+                const mDateNorm = String(m.date || '').replace(/\./g, '/');
+                const todayNorm = String(todayStr || '').replace(/\./g, '/');
+                if (mDateNorm.includes(todayNorm) || todayNorm.includes(mDateNorm)) {
+                    const [hourStr, minStr] = String(m.time || '20:00').split(':');
+                    const matchHour = parseInt(hourStr || '20', 10);
+                    const matchMin = parseInt(minStr || '0', 10);
+                    const nowHour = parseInt(now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', hour12: false }), 10);
+                    const nowMin = parseInt(now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', minute: '2-digit' }), 10);
+                    const nowTotalMins = nowHour * 60 + nowMin;
+                    const matchTotalMins = matchHour * 60 + matchMin;
+                    // Active if within window: 15 mins before match until 180 mins after match
+                    if (nowTotalMins >= (matchTotalMins - 15) && nowTotalMins <= (matchTotalMins + 180)) {
+                        isGameLiveNow = true;
+                        activeMatchInfo = `${m.homeTeam} נגד ${m.awayTeam} (${m.time})`;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!isGameLiveNow) {
+            console.log('[LiveScraper] No active matches right now according to real_fixtures calendar. Standing by...');
+            return { success: true, count: 0, message: 'No active match right now according to calendar' };
+        }
+        console.log(`[LiveScraper] 🔥 Game is LIVE NOW! (${activeMatchInfo}) Scanning Sport5 & IFA...`);
+        const usersSnap = await db.collection('users').get();
         const allDraftedPlayers = [];
         usersSnap.docs.forEach(d => {
             const u = d.data();
