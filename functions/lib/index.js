@@ -447,6 +447,8 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
     try {
         const apiKey = process.env.GEMINI_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const p = userPrompt.toLowerCase();
+        const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\s]/g, '').replace(/יי/g, 'i').replace(/י/g, 'i');
         // Map manager phone to name & team
         const cleanPhone = String(senderPhone || '').replace(/\D/g, '');
         let managerInfo = '';
@@ -467,19 +469,89 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         else if (cleanPhone.includes('972524414371'))
             managerInfo = 'שלומי (מנג\'ר קבוצת פיצ\'יצי)';
         managerName = managerInfo ? managerInfo.split(' ')[0] : 'מנג\'ר';
+        // 🟢 1. TOP PRIORITY: Live Events & Goal/Assist/Card Reporting (e.g. ברוניניו כבש, בטאי צהוב, פדראו צהוב) 🟢
+        if (p.includes('כבש') || p.includes('שער') || p.includes('גול') || p.includes('בישל') || p.includes('אדום') || p.includes('צהוב') || p.includes('פנדל')) {
+            try {
+                const usersSnap = await db.collection('users').get();
+                const rawWords = p.split(/\s+/).filter(w => w.length >= 2 && !['לוזון', 'היי', 'שלום', 'אהלן', 'כבש', 'שער', 'גול', 'בישל', 'אדום', 'צהוב', 'פנדל'].includes(w));
+                for (const d of usersSnap.docs) {
+                    const u = d.data();
+                    const squad = u.squad || [];
+                    const lineup = u.published_lineup || u.lineup || [];
+                    let matchedPlayer = null;
+                    for (const pl of squad) {
+                        const plNameNorm = norm(pl.name);
+                        if (rawWords.some(w => {
+                            const wNorm = norm(w);
+                            return plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm) || (wNorm.includes('בטאי') && plNameNorm.includes('בטאי')) || (wNorm.includes('ברוניניו') && plNameNorm.includes('ברוניניו')) || (wNorm.includes('פדראו') && plNameNorm.includes('פדראו'));
+                        })) {
+                            matchedPlayer = pl;
+                            break;
+                        }
+                    }
+                    if (matchedPlayer) {
+                        const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
+                        const isAssist = p.includes('בישל');
+                        const isYellow = p.includes('צהוב');
+                        const isRed = p.includes('אדום');
+                        const matchedNorm = norm(matchedPlayer.name);
+                        const isInLineup = Array.isArray(lineup) && lineup.some((pl) => pl.id === matchedPlayer.id ||
+                            pl.name === matchedPlayer.name ||
+                            norm(pl.name).includes(matchedNorm) ||
+                            matchedNorm.includes(norm(pl.name)));
+                        // 🟢 Real-time Firestore update for Live Arena sync 🟢
+                        if (Array.isArray(lineup) && (isGoal || isAssist || isYellow || isRed)) {
+                            const ptsAdd = isGoal ? 5 : isAssist ? 3 : isYellow ? -1 : isRed ? -3 : 0;
+                            const updatedLineup = lineup.map((pl) => {
+                                const plNorm = norm(pl.name);
+                                if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name || plNorm.includes(matchedNorm) || matchedNorm.includes(plNorm)) {
+                                    const currentStats = pl.stats || {};
+                                    return {
+                                        ...pl,
+                                        points: (Number(pl.points) || 0) + ptsAdd,
+                                        stats: {
+                                            ...currentStats,
+                                            goals: isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
+                                            assists: isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
+                                            yellow: isYellow ? true : currentStats.yellow,
+                                            red: isRed ? true : currentStats.red
+                                        }
+                                    };
+                                }
+                                return pl;
+                            });
+                            if (isInLineup) {
+                                await db.collection('users').doc(d.id).set({
+                                    lineup: updatedLineup,
+                                    published_lineup: updatedLineup
+                                }, { merge: true });
+                                console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd} pts) in team ${d.id}`);
+                            }
+                        }
+                        const eventType = isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : '⚽ *אירוע לייב!*';
+                        const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
+                        const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח והזירה באפליקציה עודכנה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
+                        return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : 'רשם אירוע ברשת!'} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
+                    }
+                }
+            }
+            catch (eventErr) {
+                console.error('Error in live event processing:', eventErr);
+            }
+        }
         // 1. Fetch last 30 messages in WhatsApp group conversation history
         let chatHistoryContext = '';
         try {
-            const historySnap = await db.collection('whatsapp_group_history')
+            const chatSnap = await db.collection('whatsapp_group_history')
                 .where('chatId', '==', chatId || 'group')
                 .orderBy('timestamp', 'desc')
                 .limit(30)
                 .get();
-            if (!historySnap.empty) {
-                const msgs = historySnap.docs.map(d => d.data()).reverse();
+            if (!chatSnap.empty) {
+                const msgs = chatSnap.docs.map(doc => doc.data()).reverse();
                 const formattedLines = [];
                 let prevTime = 0;
-                msgs.forEach(m => {
+                msgs.forEach((m) => {
                     const dateObj = new Date(m.timestamp || Date.now());
                     const timeStr = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
                     if (prevTime > 0 && (m.timestamp - prevTime) > 7200000) {
@@ -534,7 +606,6 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             console.error('Error fetching Firestore context for AI:', err);
         }
         // 3. Fast check ONLY for explicit "תציג את עצמך" intro
-        const p = userPrompt.toLowerCase();
         if (p.includes('תציג את עצמך') || p.includes('מי אתה לעזאזל') || p.includes('הכרות מפורטת')) {
             return `⚽ **שלום לכל 6 המנג'רים של פנטזי לוזון 14!** 🏆\n\nאני **לוזון Bot** – ה-AI הרשמי, הטקטיקן והפרשן של הליגה!\n\n🔔 **איך מפעילים אותי? (חוק הברזל 🚨):**\nפשוט כותבים בתחילת המשפט **"לוזון"** או **"היי לוזון"** (למשל: *"לוזון מתי המשחק של חיפה?"*).\nאם לא תכתבו *"לוזון"* בתחילת המשפט – אשאר שקט ולא אציק בשיחה!\n\n💡 **מה אני יודע לעשות עבורכם?**\n👤 **מזהה את כולכם אישית**: ערן ואסף (*חמסילי*), יינון הטמפון (*טמפה*), אלי ותום (*תומאלי*), שלומי (*פיצ'יצי*), גיא (*חראלה*) וארז (*חולוניה*)!\n📊 **עדכוני ניקוד ואירועים בלייב**: כותבים בקבוצה *"לוזון חוגי כבש"* או *"לוזון ניקוד חמסילי 14"*.\n🧠 **ייעוץ טקטי וליגת העל**: שואלים אותי *"לוזון איפה בנסון משחק?"* או *"לוזון איזה הרכב לפתוח?"*.\n📜 **היכל התהילה**: מכיר את כל 13 העונות, האליפויות והגביעים של כל הזמנים!\n\n📢 **בסיום כל מחזור**: אשלח לכם פה בקבוצה **סיכום מחזור, טבלה מעודכנת ואת המשחקים של המחזור הבא!**\n\n**בהצלחה לכולם בליגה! 🔥⚽**`;
         }
