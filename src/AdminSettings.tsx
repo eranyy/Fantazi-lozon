@@ -414,9 +414,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         await batch.commit();
 
         if (backup.generatedPostIds && backup.generatedPostIds.length > 0) {
-            for (const postId of backup.generatedPostIds) {
-                try { await deleteDoc(doc(db, 'social_posts', postId)); } catch(e) { console.error('Failed to delete post', postId) }
-            }
+            await Promise.all(
+                backup.generatedPostIds.map(async (postId: string) => {
+                    try { await deleteDoc(doc(db, 'social_posts', postId)); } catch(e) { console.error('Failed to delete post', postId); }
+                })
+            );
         }
         showMessage(`✅ שוחזר בהצלחה! הליגה חזרה למחזור ${previousRound}.`, 'success');
     } catch (e: any) { showMessage('❌ שגיאה חמורה בשחזור: ' + e.message, 'error'); } 

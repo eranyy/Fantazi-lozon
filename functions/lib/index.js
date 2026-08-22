@@ -495,6 +495,7 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         const penMissedKeywords = ['החמיץ פנדל', 'החמצת פנדל'];
         const ownGoalKeywords = ['עצמי', 'שער עצמי'];
         const concededKeywords = ['ספג', 'ספגה', 'סופג', 'סופגת', 'קיבלה', 'חטפה', 'חטף'];
+        const cancelKeywords = ['ביטול', 'בוטל', 'נפסל', 'בטל', 'ביטל', 'נפסלה', 'בוטלה', 'VAR', 'var'];
         const eventKeywords = [
             ...goalKeywords,
             ...assistKeywords,
@@ -504,6 +505,7 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             ...penMissedKeywords,
             ...ownGoalKeywords,
             ...concededKeywords,
+            ...cancelKeywords,
             'פנדל', 'עצר', 'החמיץ'
         ];
         if (eventKeywords.some(kw => p.includes(kw))) {
@@ -565,7 +567,7 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                         return `🥅 קבוצת *${targetRealTeam}* ספגה שער במציאות, אך כרגע אין שוערי/מגיני ${targetRealTeam} בהרכבים הפותחים בזירה. ⚽`;
                     }
                 }
-                // 👤 Individual Player Event Lookup (Goals, Assists, Cards, Penalties) 👤
+                // 👤 Individual Player Event Lookup (Goals, Assists, Cards, Penalties, Cancellations) 👤
                 const levenshtein = (a, b) => {
                     const matrix = [];
                     for (let i = 0; i <= b.length; i++)
@@ -589,7 +591,8 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     'על', 'מה', 'עם', 'אם', 'גם', 'הוא', 'היא', 'שזה', 'שהוא', 'שהיא', 'שלו', 'שלה',
                     'ששמו', 'בשם', 'קוראים', 'מי', 'כל', 'כמו', 'לפי', 'רק', 'אבל', 'כי', 'כדי', 'לא'
                 ];
-                const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w));
+                const stripPrefix = (w) => w.replace(/^[לבשמכ]/, '');
+                const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w)).map(w => stripPrefix(w)).filter(w => w.length >= 3);
                 let matchedPlayer = null;
                 let matchedDocId = null;
                 let matchedUserData = null;
@@ -628,14 +631,18 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     const dId = matchedDocId;
                     const u = matchedUserData;
                     const lineup = u.published_lineup || u.lineup || [];
-                    const isGoal = goalKeywords.some(kw => p.includes(kw));
-                    const isAssist = assistKeywords.some(kw => p.includes(kw));
-                    const isYellow = yellowKeywords.some(kw => p.includes(kw));
-                    const isRed = redKeywords.some(kw => p.includes(kw));
-                    const isPenSaved = p.includes('עצר') && p.includes('פנדל');
-                    const isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
-                    const isOwnGoal = ownGoalKeywords.some(kw => p.includes(kw));
-                    const isConceded = concededKeywords.some(kw => p.includes(kw));
+                    const isCancel = cancelKeywords.some(kw => p.includes(kw));
+                    let isGoal = goalKeywords.some(kw => p.includes(kw));
+                    let isAssist = assistKeywords.some(kw => p.includes(kw));
+                    let isYellow = yellowKeywords.some(kw => p.includes(kw));
+                    let isRed = redKeywords.some(kw => p.includes(kw));
+                    let isPenSaved = p.includes('עצר') && p.includes('פנדל');
+                    let isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
+                    let isOwnGoal = ownGoalKeywords.some(kw => p.includes(kw));
+                    let isConceded = concededKeywords.some(kw => p.includes(kw));
+                    if (isCancel && !isGoal && !isAssist && !isYellow && !isRed && !isConceded) {
+                        isGoal = true; // Default cancellation target if unspecified
+                    }
                     const matchedNorm = norm(matchedPlayer.name);
                     const isInLineup = Array.isArray(lineup) && lineup.some((pl) => pl.id === matchedPlayer.id ||
                         pl.name === matchedPlayer.name ||
@@ -644,22 +651,42 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     // Calculate exact fantasy points according to position & event type
                     const pos = String(matchedPlayer.position || matchedPlayer.pos || '').toUpperCase();
                     let ptsAdd = 0;
-                    if (isGoal)
-                        ptsAdd = (pos === 'DEF' || pos === 'GK') ? 6 : 5;
-                    else if (isAssist)
-                        ptsAdd = 3;
-                    else if (isYellow)
-                        ptsAdd = -1;
-                    else if (isRed)
-                        ptsAdd = -3;
-                    else if (isPenSaved)
-                        ptsAdd = 5;
-                    else if (isPenMissed)
-                        ptsAdd = -2;
-                    else if (isOwnGoal)
-                        ptsAdd = -2;
-                    else if (isConceded)
-                        ptsAdd = -1;
+                    if (isCancel) {
+                        if (isGoal)
+                            ptsAdd = (pos === 'DEF' || pos === 'GK') ? -6 : -5;
+                        else if (isAssist)
+                            ptsAdd = -3;
+                        else if (isYellow)
+                            ptsAdd = 1;
+                        else if (isRed)
+                            ptsAdd = 3;
+                        else if (isPenSaved)
+                            ptsAdd = -5;
+                        else if (isPenMissed)
+                            ptsAdd = 2;
+                        else if (isOwnGoal)
+                            ptsAdd = 2;
+                        else if (isConceded)
+                            ptsAdd = 1;
+                    }
+                    else {
+                        if (isGoal)
+                            ptsAdd = (pos === 'DEF' || pos === 'GK') ? 6 : 5;
+                        else if (isAssist)
+                            ptsAdd = 3;
+                        else if (isYellow)
+                            ptsAdd = -1;
+                        else if (isRed)
+                            ptsAdd = -3;
+                        else if (isPenSaved)
+                            ptsAdd = 5;
+                        else if (isPenMissed)
+                            ptsAdd = -2;
+                        else if (isOwnGoal)
+                            ptsAdd = -2;
+                        else if (isConceded)
+                            ptsAdd = -1;
+                    }
                     // 🟢 Real-time Firestore update for Live Arena sync 🟢
                     if (Array.isArray(lineup)) {
                         const updatedLineup = lineup.map((pl) => {
@@ -671,14 +698,14 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                                     points: (Number(pl.points) || 0) + ptsAdd,
                                     stats: {
                                         ...currentStats,
-                                        goals: isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
-                                        assists: isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
-                                        yellow: isYellow ? true : (Boolean(currentStats.yellow)),
-                                        red: isRed ? true : (Boolean(currentStats.red)),
-                                        penaltySaved: isPenSaved ? (currentStats.penaltySaved || 0) + 1 : (currentStats.penaltySaved || 0),
-                                        penaltyMissed: isPenMissed ? (currentStats.penaltyMissed || 0) + 1 : (currentStats.penaltyMissed || 0),
-                                        ownGoals: isOwnGoal ? (currentStats.ownGoals || 0) + 1 : (currentStats.ownGoals || 0),
-                                        conceded: isConceded ? (currentStats.conceded || 0) + 1 : (currentStats.conceded || 0)
+                                        goals: isCancel && isGoal ? Math.max(0, (currentStats.goals || 0) - 1) : isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
+                                        assists: isCancel && isAssist ? Math.max(0, (currentStats.assists || 0) - 1) : isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
+                                        yellow: isCancel && isYellow ? false : isYellow ? true : (Boolean(currentStats.yellow)),
+                                        red: isCancel && isRed ? false : isRed ? true : (Boolean(currentStats.red)),
+                                        penaltySaved: isCancel && isPenSaved ? Math.max(0, (currentStats.penaltySaved || 0) - 1) : isPenSaved ? (currentStats.penaltySaved || 0) + 1 : (currentStats.penaltySaved || 0),
+                                        penaltyMissed: isCancel && isPenMissed ? Math.max(0, (currentStats.penaltyMissed || 0) - 1) : isPenMissed ? (currentStats.penaltyMissed || 0) + 1 : (currentStats.penaltyMissed || 0),
+                                        ownGoals: isCancel && isOwnGoal ? Math.max(0, (currentStats.ownGoals || 0) - 1) : isOwnGoal ? (currentStats.ownGoals || 0) + 1 : (currentStats.ownGoals || 0),
+                                        conceded: isCancel && isConceded ? Math.max(0, (currentStats.conceded || 0) - 1) : isConceded ? (currentStats.conceded || 0) + 1 : (currentStats.conceded || 0)
                                     }
                                 };
                             }
@@ -692,10 +719,10 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                             console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId}`);
                         }
                     }
-                    const eventType = isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
+                    const eventType = isCancel ? '🔄❌ *ביטול אירוע בזירה (VAR / שגיאה)*' : isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
                     const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
-                    const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח (${ptsAdd > 0 ? '+' : ''}${ptsAdd} נק') והזירה באפליקציה עודכנה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
-                    const actionDescription = isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : isPenSaved ? 'עצר פנדל במציאות!' : isPenMissed ? 'החמיץ פנדל במציאות!' : isOwnGoal ? 'כבש שער עצמי!' : isConceded ? 'ספג שער במציאות!' : 'רשם אירוע ברשת!';
+                    const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח (${ptsAdd > 0 ? '+' : ''}${ptsAdd} נק') והניקוד בזירה באפליקציה עודכן בחזרה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
+                    const actionDescription = isCancel ? (isGoal ? 'בוטל לו השער!' : isYellow ? 'בוטל לו הכרטיס הצהוב!' : isRed ? 'בוטל לו הכרטיס האדום!' : 'בוטל האירוע!') : isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : isPenSaved ? 'עצר פנדל במציאות!' : isPenMissed ? 'החמיץ פנדל במציאות!' : isOwnGoal ? 'כבש שער עצמי!' : isConceded ? 'ספג שער במציאות!' : 'רשם אירוע ברשת!';
                     return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${actionDescription} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                 }
                 // If player is not drafted by any team (Free Agent / שחקן חופשי)

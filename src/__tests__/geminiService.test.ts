@@ -160,6 +160,28 @@ describe('geminiService', () => {
         expect(promptUsed).not.toContain('Admin');
         expect(promptUsed).not.toContain('System');
     });
+
+    it('should use provided custom apiKey if supplied', async () => {
+      mockGenerateContent.mockResolvedValue({ text: 'Summary text' });
+      const teams = [{ id: '1', teamName: 'Team A', name: 'Manager A', points: 10 }];
+      const fixtures: any[] = [];
+
+      const promise = generateAISummary(fixtures, teams, 'custom-summary-key');
+      vi.runAllTimers();
+      await promise;
+
+      expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'custom-summary-key' });
+    });
+
+    it('should throw error when generateAISummary times out or fails', async () => {
+      mockGenerateContent.mockImplementation(() => new Promise(() => {}));
+
+      const teams = [{ id: '1', teamName: 'Team A', points: 10 }];
+      const promise = generateAISummary([], teams);
+      vi.runAllTimers();
+
+      await expect(promise).rejects.toThrow();
+    });
   });
 
   describe('generateRumors', () => {
