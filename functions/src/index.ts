@@ -1279,12 +1279,17 @@ export const runOneHourPreMatchReminder = async (forceManual: boolean = false) =
                     phonesList.push('972535330428', '972526330513');
                 }
 
+                const fcmTokensList: string[] = [];
+                if (Array.isArray(u.fcmTokens)) fcmTokensList.push(...u.fcmTokens);
+                if (u.fcmToken && !fcmTokensList.includes(u.fcmToken)) fcmTokensList.push(u.fcmToken);
+
                 missingTeams.push({
                     id: docSnap.id,
                     teamName: u.teamName,
                     manager: u.manager || '',
                     assistantName: u.assistantName || '',
                     phones: Array.from(new Set(phonesList)),
+                    fcmTokens: Array.from(new Set(fcmTokensList)),
                     lineupCount: Array.isArray(lineup) ? lineup.length : 0
                 });
             }
@@ -1294,6 +1299,28 @@ export const runOneHourPreMatchReminder = async (forceManual: boolean = false) =
     if (missingTeams.length === 0) {
         console.log(`[1h Reminder] All teams have published full lineups for round ${round}!`);
         return { success: true, message: 'All teams have full lineups!' };
+    }
+
+    // 🟢 Send Personal FCM Push Notifications directly to the devices of missing team managers 🟢
+    for (const team of missingTeams) {
+        if (team.fcmTokens && team.fcmTokens.length > 0) {
+            try {
+                await admin.messaging().sendEachForMulticast({
+                    tokens: team.fcmTokens,
+                    notification: {
+                        title: `⏰ תזכורת הרכב דחופה - ${team.teamName} ⚽`,
+                        body: `נותרה שעה 1 בלבד לשריקת הפתיחה של מחזור ${round}! היכנס עכשיו לאפליקציה ועדכן הרכב פותח.`
+                    },
+                    data: {
+                        url: 'https://fantasy-luzon.web.app',
+                        type: 'LINEUP_REMINDER_1H'
+                    }
+                });
+                console.log(`[1h Reminder Push] Sent FCM push notification to ${team.teamName} (${team.fcmTokens.length} devices).`);
+            } catch (pushErr: any) {
+                console.error(`[1h Reminder Push] Error sending push to ${team.teamName}:`, pushErr?.message || pushErr);
+            }
+        }
     }
 
     const missingLines = missingTeams.map(t => {
