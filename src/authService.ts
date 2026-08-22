@@ -3,12 +3,16 @@ export const authService = {
     try {
       const local = localStorage.getItem('fantasy_user_session');
       if (local) return JSON.parse(local);
-    } catch (e) {}
+    } catch (e) {
+      // Ignore JSON parse errors and proceed
+    }
 
     try {
       const session = sessionStorage.getItem('fantasy_user_session');
       if (session) return JSON.parse(session);
-    } catch (e) {}
+    } catch (e) {
+      // Ignore JSON parse errors and proceed
+    }
 
     return null;
   },
