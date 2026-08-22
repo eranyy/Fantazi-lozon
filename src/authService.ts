@@ -3,12 +3,12 @@ export const authService = {
     try {
       const local = localStorage.getItem('fantasy_user_session');
       if (local) return JSON.parse(local);
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     try {
       const session = sessionStorage.getItem('fantasy_user_session');
       if (session) return JSON.parse(session);
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     return null;
   },
@@ -24,17 +24,38 @@ export const authService = {
     };
 
     // Always store permanently in localStorage for PWA and Mobile browsers
-    localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
-    sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+    try {
+      localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+    } catch (e) { /* ignore */ }
+
+    try {
+      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+    } catch (e) { /* ignore */ }
 
     // Clean up old legacy keys
-    localStorage.removeItem('fantasy_user');
-    sessionStorage.removeItem('fantasy_user');
+    try {
+      localStorage.removeItem('fantasy_user');
+    } catch (e) { /* ignore */ }
+
+    try {
+      sessionStorage.removeItem('fantasy_user');
+    } catch (e) { /* ignore */ }
   },
   logout: () => {
-    localStorage.removeItem('fantasy_user_session');
-    sessionStorage.removeItem('fantasy_user_session');
-    localStorage.removeItem('fantasy_user');
-    sessionStorage.removeItem('fantasy_user');
+    try {
+      localStorage.removeItem('fantasy_user_session');
+    } catch (e) { /* ignore */ }
+
+    try {
+      sessionStorage.removeItem('fantasy_user_session');
+    } catch (e) { /* ignore */ }
+
+    try {
+      localStorage.removeItem('fantasy_user');
+    } catch (e) { /* ignore */ }
+
+    try {
+      sessionStorage.removeItem('fantasy_user');
+    } catch (e) { /* ignore */ }
   }
 };
