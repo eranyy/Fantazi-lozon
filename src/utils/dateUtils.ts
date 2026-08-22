@@ -10,6 +10,7 @@ export const parseMatchDateTime = (m: any): number => {
     return Infinity;
   }
 
+  // eslint-disable-next-line no-useless-escape
   const dateMatch = dateStr.match(/(\d{1,2})[\/\.](\d{1,2})(?:[\/\.](\d{2,4}))?/);
   if (!dateMatch) return Infinity;
 
