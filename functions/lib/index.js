@@ -566,93 +566,137 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     }
                 }
                 // 👤 Individual Player Event Lookup (Goals, Assists, Cards, Penalties) 👤
-                const rawWords = p.split(/\s+/).filter(w => w.length >= 2 && !['לוזון', 'היי', 'שלום', 'אהלן', ...eventKeywords].includes(w));
+                const levenshtein = (a, b) => {
+                    const matrix = [];
+                    for (let i = 0; i <= b.length; i++)
+                        matrix[i] = [i];
+                    for (let j = 0; j <= a.length; j++)
+                        matrix[0][j] = j;
+                    for (let i = 1; i <= b.length; i++) {
+                        for (let j = 1; j <= a.length; j++) {
+                            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                                matrix[i][j] = matrix[i - 1][j - 1];
+                            }
+                            else {
+                                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                            }
+                        }
+                    }
+                    return matrix[b.length][a.length];
+                };
+                const fillerWords = [
+                    'לוזון', 'היי', 'שלום', 'אהלן', 'או', 'איך', 'שקוראים', 'לו', 'זה', 'של', 'את',
+                    'על', 'מה', 'עם', 'אם', 'גם', 'הוא', 'היא', 'שזה', 'שהוא', 'שהיא', 'שלו', 'שלה',
+                    'ששמו', 'בשם', 'קוראים', 'מי', 'כל', 'כמו', 'לפי', 'רק', 'אבל', 'כי', 'כדי', 'לא'
+                ];
+                const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w));
+                let matchedPlayer = null;
+                let matchedDocId = null;
+                let matchedUserData = null;
+                let bestDist = 999;
                 for (const d of usersSnap.docs) {
                     const u = d.data();
                     const squad = u.squad || [];
-                    const lineup = u.published_lineup || u.lineup || [];
-                    let matchedPlayer = null;
                     for (const pl of squad) {
                         const plNameNorm = norm(pl.name);
-                        if (rawWords.some(w => {
+                        for (const w of rawWords) {
                             const wNorm = norm(w);
-                            return plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm);
-                        })) {
-                            matchedPlayer = pl;
-                            break;
-                        }
-                    }
-                    if (matchedPlayer) {
-                        const isGoal = goalKeywords.some(kw => p.includes(kw));
-                        const isAssist = assistKeywords.some(kw => p.includes(kw));
-                        const isYellow = yellowKeywords.some(kw => p.includes(kw));
-                        const isRed = redKeywords.some(kw => p.includes(kw));
-                        const isPenSaved = p.includes('עצר') && p.includes('פנדל');
-                        const isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
-                        const isOwnGoal = ownGoalKeywords.some(kw => p.includes(kw));
-                        const isConceded = concededKeywords.some(kw => p.includes(kw));
-                        const matchedNorm = norm(matchedPlayer.name);
-                        const isInLineup = Array.isArray(lineup) && lineup.some((pl) => pl.id === matchedPlayer.id ||
-                            pl.name === matchedPlayer.name ||
-                            norm(pl.name).includes(matchedNorm) ||
-                            matchedNorm.includes(norm(pl.name)));
-                        // Calculate exact fantasy points according to position & event type
-                        const pos = String(matchedPlayer.position || matchedPlayer.pos || '').toUpperCase();
-                        let ptsAdd = 0;
-                        if (isGoal)
-                            ptsAdd = (pos === 'DEF' || pos === 'GK') ? 6 : 5;
-                        else if (isAssist)
-                            ptsAdd = 3;
-                        else if (isYellow)
-                            ptsAdd = -1;
-                        else if (isRed)
-                            ptsAdd = -3;
-                        else if (isPenSaved)
-                            ptsAdd = 5;
-                        else if (isPenMissed)
-                            ptsAdd = -2;
-                        else if (isOwnGoal)
-                            ptsAdd = -2;
-                        else if (isConceded)
-                            ptsAdd = -1;
-                        // 🟢 Real-time Firestore update for Live Arena sync 🟢
-                        if (Array.isArray(lineup)) {
-                            const updatedLineup = lineup.map((pl) => {
-                                const plNorm = norm(pl.name);
-                                if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name || plNorm.includes(matchedNorm) || matchedNorm.includes(plNorm)) {
-                                    const currentStats = pl.stats || {};
-                                    return {
-                                        ...pl,
-                                        points: (Number(pl.points) || 0) + ptsAdd,
-                                        stats: {
-                                            ...currentStats,
-                                            goals: isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
-                                            assists: isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
-                                            yellow: isYellow ? true : (Boolean(currentStats.yellow)),
-                                            red: isRed ? true : (Boolean(currentStats.red)),
-                                            penaltySaved: isPenSaved ? (currentStats.penaltySaved || 0) + 1 : (currentStats.penaltySaved || 0),
-                                            penaltyMissed: isPenMissed ? (currentStats.penaltyMissed || 0) + 1 : (currentStats.penaltyMissed || 0),
-                                            ownGoals: isOwnGoal ? (currentStats.ownGoals || 0) + 1 : (currentStats.ownGoals || 0),
-                                            conceded: isConceded ? (currentStats.conceded || 0) + 1 : (currentStats.conceded || 0)
-                                        }
-                                    };
+                            if (wNorm.length >= 3 && plNameNorm.length >= 3) {
+                                if (plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm)) {
+                                    if (bestDist > 0) {
+                                        bestDist = 0;
+                                        matchedPlayer = pl;
+                                        matchedDocId = d.id;
+                                        matchedUserData = u;
+                                    }
                                 }
-                                return pl;
-                            });
-                            if (isInLineup) {
-                                await db.collection('users').doc(d.id).set({
-                                    lineup: updatedLineup,
-                                    published_lineup: updatedLineup
-                                }, { merge: true });
-                                console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${d.id}`);
+                                else {
+                                    const dist = levenshtein(plNameNorm, wNorm);
+                                    const maxAllowedDist = wNorm.length >= 5 ? 3 : 1;
+                                    if (dist <= maxAllowedDist && dist < bestDist) {
+                                        bestDist = dist;
+                                        matchedPlayer = pl;
+                                        matchedDocId = d.id;
+                                        matchedUserData = u;
+                                    }
+                                }
                             }
                         }
-                        const eventType = isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
-                        const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
-                        const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח (${ptsAdd > 0 ? '+' : ''}${ptsAdd} נק') והזירה באפליקציה עודכנה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
-                        const actionDescription = isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : isPenSaved ? 'עצר פנדל במציאות!' : isPenMissed ? 'החמיץ פנדל במציאות!' : isOwnGoal ? 'כבש שער עצמי!' : isConceded ? 'ספג שער במציאות!' : 'רשם אירוע ברשת!';
-                        return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${actionDescription} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                     }
+                }
+                if (matchedPlayer && matchedDocId && matchedUserData) {
+                    const dId = matchedDocId;
+                    const u = matchedUserData;
+                    const lineup = u.published_lineup || u.lineup || [];
+                    const isGoal = goalKeywords.some(kw => p.includes(kw));
+                    const isAssist = assistKeywords.some(kw => p.includes(kw));
+                    const isYellow = yellowKeywords.some(kw => p.includes(kw));
+                    const isRed = redKeywords.some(kw => p.includes(kw));
+                    const isPenSaved = p.includes('עצר') && p.includes('פנדל');
+                    const isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
+                    const isOwnGoal = ownGoalKeywords.some(kw => p.includes(kw));
+                    const isConceded = concededKeywords.some(kw => p.includes(kw));
+                    const matchedNorm = norm(matchedPlayer.name);
+                    const isInLineup = Array.isArray(lineup) && lineup.some((pl) => pl.id === matchedPlayer.id ||
+                        pl.name === matchedPlayer.name ||
+                        norm(pl.name).includes(matchedNorm) ||
+                        matchedNorm.includes(norm(pl.name)));
+                    // Calculate exact fantasy points according to position & event type
+                    const pos = String(matchedPlayer.position || matchedPlayer.pos || '').toUpperCase();
+                    let ptsAdd = 0;
+                    if (isGoal)
+                        ptsAdd = (pos === 'DEF' || pos === 'GK') ? 6 : 5;
+                    else if (isAssist)
+                        ptsAdd = 3;
+                    else if (isYellow)
+                        ptsAdd = -1;
+                    else if (isRed)
+                        ptsAdd = -3;
+                    else if (isPenSaved)
+                        ptsAdd = 5;
+                    else if (isPenMissed)
+                        ptsAdd = -2;
+                    else if (isOwnGoal)
+                        ptsAdd = -2;
+                    else if (isConceded)
+                        ptsAdd = -1;
+                    // 🟢 Real-time Firestore update for Live Arena sync 🟢
+                    if (Array.isArray(lineup)) {
+                        const updatedLineup = lineup.map((pl) => {
+                            const plNorm = norm(pl.name);
+                            if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name || plNorm.includes(matchedNorm) || matchedNorm.includes(plNorm)) {
+                                const currentStats = pl.stats || {};
+                                return {
+                                    ...pl,
+                                    points: (Number(pl.points) || 0) + ptsAdd,
+                                    stats: {
+                                        ...currentStats,
+                                        goals: isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
+                                        assists: isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
+                                        yellow: isYellow ? true : (Boolean(currentStats.yellow)),
+                                        red: isRed ? true : (Boolean(currentStats.red)),
+                                        penaltySaved: isPenSaved ? (currentStats.penaltySaved || 0) + 1 : (currentStats.penaltySaved || 0),
+                                        penaltyMissed: isPenMissed ? (currentStats.penaltyMissed || 0) + 1 : (currentStats.penaltyMissed || 0),
+                                        ownGoals: isOwnGoal ? (currentStats.ownGoals || 0) + 1 : (currentStats.ownGoals || 0),
+                                        conceded: isConceded ? (currentStats.conceded || 0) + 1 : (currentStats.conceded || 0)
+                                    }
+                                };
+                            }
+                            return pl;
+                        });
+                        if (isInLineup) {
+                            await db.collection('users').doc(dId).set({
+                                lineup: updatedLineup,
+                                published_lineup: updatedLineup
+                            }, { merge: true });
+                            console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId}`);
+                        }
+                    }
+                    const eventType = isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
+                    const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
+                    const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח (${ptsAdd > 0 ? '+' : ''}${ptsAdd} נק') והזירה באפליקציה עודכנה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
+                    const actionDescription = isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : isPenSaved ? 'עצר פנדל במציאות!' : isPenMissed ? 'החמיץ פנדל במציאות!' : isOwnGoal ? 'כבש שער עצמי!' : isConceded ? 'ספג שער במציאות!' : 'רשם אירוע ברשת!';
+                    return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${actionDescription} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                 }
                 // If player is not drafted by any team (Free Agent / שחקן חופשי)
                 if (rawWords.length > 0) {

@@ -632,26 +632,70 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                 }
 
                 // 👤 Individual Player Event Lookup (Goals, Assists, Cards, Penalties) 👤
-                const rawWords = p.split(/\s+/).filter(w => w.length >= 2 && !['לוזון', 'היי', 'שלום', 'אהלן', ...eventKeywords].includes(w));
+                const levenshtein = (a: string, b: string): number => {
+                    const matrix: number[][] = [];
+                    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+                    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+                    for (let i = 1; i <= b.length; i++) {
+                        for (let j = 1; j <= a.length; j++) {
+                            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                                matrix[i][j] = matrix[i - 1][j - 1];
+                            } else {
+                                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                            }
+                        }
+                    }
+                    return matrix[b.length][a.length];
+                };
+
+                const fillerWords = [
+                    'לוזון', 'היי', 'שלום', 'אהלן', 'או', 'איך', 'שקוראים', 'לו', 'זה', 'של', 'את', 
+                    'על', 'מה', 'עם', 'אם', 'גם', 'הוא', 'היא', 'שזה', 'שהוא', 'שהיא', 'שלו', 'שלה', 
+                    'ששמו', 'בשם', 'קוראים', 'מי', 'כל', 'כמו', 'לפי', 'רק', 'אבל', 'כי', 'כדי', 'לא'
+                ];
+
+                const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w));
                 
+                let matchedPlayer: any = null;
+                let matchedDocId: string | null = null;
+                let matchedUserData: any = null;
+                let bestDist = 999;
+
                 for (const d of usersSnap.docs) {
                     const u = d.data();
                     const squad = u.squad || [];
-                    const lineup = u.published_lineup || u.lineup || [];
 
-                    let matchedPlayer: any = null;
                     for (const pl of squad) {
                         const plNameNorm = norm(pl.name);
-                        if (rawWords.some(w => {
+                        for (const w of rawWords) {
                             const wNorm = norm(w);
-                            return plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm);
-                        })) {
-                            matchedPlayer = pl;
-                            break;
+                            if (wNorm.length >= 3 && plNameNorm.length >= 3) {
+                                if (plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm)) {
+                                    if (bestDist > 0) {
+                                        bestDist = 0;
+                                        matchedPlayer = pl;
+                                        matchedDocId = d.id;
+                                        matchedUserData = u;
+                                    }
+                                } else {
+                                    const dist = levenshtein(plNameNorm, wNorm);
+                                    const maxAllowedDist = wNorm.length >= 5 ? 3 : 1;
+                                    if (dist <= maxAllowedDist && dist < bestDist) {
+                                        bestDist = dist;
+                                        matchedPlayer = pl;
+                                        matchedDocId = d.id;
+                                        matchedUserData = u;
+                                    }
+                                }
+                            }
                         }
                     }
+                }
 
-                    if (matchedPlayer) {
+                if (matchedPlayer && matchedDocId && matchedUserData) {
+                    const dId = matchedDocId;
+                    const u = matchedUserData;
+                    const lineup = u.published_lineup || u.lineup || [];
                         const isGoal = goalKeywords.some(kw => p.includes(kw));
                         const isAssist = assistKeywords.some(kw => p.includes(kw));
                         const isYellow = yellowKeywords.some(kw => p.includes(kw));
@@ -707,11 +751,11 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                             });
 
                             if (isInLineup) {
-                                await db.collection('users').doc(d.id).set({
+                                await db.collection('users').doc(dId).set({
                                     lineup: updatedLineup,
                                     published_lineup: updatedLineup
                                 }, { merge: true });
-                                console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${d.id}`);
+                                console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId}`);
                             }
                         }
 
@@ -722,7 +766,6 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
 
                         return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${actionDescription} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                     }
-                }
 
                 // If player is not drafted by any team (Free Agent / שחקן חופשי)
                 if (rawWords.length > 0) {
