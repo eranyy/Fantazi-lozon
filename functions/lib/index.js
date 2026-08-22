@@ -663,13 +663,51 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
                 for (const d of usersSnap.docs) {
                     const u = d.data();
                     const squad = u.squad || [];
+                    const lineup = u.published_lineup || u.lineup || [];
+                    let matchedPlayer = null;
                     for (const pl of squad) {
                         const plName = String(pl.name || '').toLowerCase();
                         if (words.some(w => plName.includes(w) || (w.includes('ברוניניו') && plName.includes('ברוניניו')))) {
-                            const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
-                            const eventType = isGoal ? '⚽🔥 *שעררר!*' : '⚽ *אירוע לייב!*';
-                            return `${eventType}\n*${pl.name}* (${pl.realTeam || pl.team || ''}) ${isGoal ? 'כבש גול במציאות!' : 'רשם אירוע ברשת!'} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🎉🏆`;
+                            matchedPlayer = pl;
+                            break;
                         }
+                    }
+                    if (matchedPlayer) {
+                        const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
+                        const isAssist = p.includes('בישל');
+                        let isInLineup = false;
+                        // 🟢 Real-time Firestore update for Live Arena sync 🟢
+                        if ((isGoal || isAssist) && Array.isArray(lineup)) {
+                            const updatedLineup = lineup.map((pl) => {
+                                if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name) {
+                                    isInLineup = true;
+                                    const currentStats = pl.stats || {};
+                                    const currentGoals = currentStats.goals || 0;
+                                    const currentAssists = currentStats.assists || 0;
+                                    const ptsAdd = isGoal ? 5 : 3;
+                                    return {
+                                        ...pl,
+                                        points: (Number(pl.points) || 0) + ptsAdd,
+                                        stats: {
+                                            ...currentStats,
+                                            goals: isGoal ? currentGoals + 1 : currentGoals,
+                                            assists: isAssist ? currentAssists + 1 : currentAssists
+                                        }
+                                    };
+                                }
+                                return pl;
+                            });
+                            if (isInLineup) {
+                                await db.collection('users').doc(d.id).set({
+                                    lineup: updatedLineup,
+                                    published_lineup: updatedLineup
+                                }, { merge: true });
+                                console.log(`[WhatsApp Event] Auto-updated ${matchedPlayer.name} stats (+${isGoal ? 5 : 3} pts) in team ${d.id}`);
+                            }
+                        }
+                        const eventType = isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : '⚽ *אירוע לייב!*';
+                        const arenaStatusStr = isInLineup ? '⚡ *השחקן בהרכב הפותח והזירה באפליקציה עודכנה בלייב!*' : '🪑 (השחקן נמצא בספסל המחליפים)';
+                        return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : 'רשם אירוע ברשת!'} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🎉🏆\n${arenaStatusStr}`;
                     }
                 }
             }
