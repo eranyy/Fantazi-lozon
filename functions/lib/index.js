@@ -702,8 +702,8 @@ exports.updateRealFixtures = (0, https_1.onRequest)({ region: 'us-west1', cors: 
     }
     try {
         const { apiKey, matches } = req.body || {};
-        const SECRET_KEY = 'luzon_spark_agent_2026';
-        if (apiKey !== SECRET_KEY) {
+        const SECRET_KEY = process.env.WEBHOOK_SECRET_KEY;
+        if (!SECRET_KEY || apiKey !== SECRET_KEY) {
             res.status(403).json({ error: 'Unauthorized: Invalid API Key' });
             return;
         }
