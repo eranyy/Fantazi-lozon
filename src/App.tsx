@@ -12,7 +12,7 @@ import LoginScreen from './components/LoginScreen';
 import SocialFeed from './components/SocialFeed'; 
 import CupTab from './components/CupTab';
 import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell } from 'lucide-react'; // 🟢 הוספנו את Bell
-import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'firebase/firestore'; 
+import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion, writeBatch } from 'firebase/firestore';
 import { getToken, onMessage } from 'firebase/messaging'; 
 
 const App: React.FC = () => {
@@ -216,8 +216,22 @@ const App: React.FC = () => {
 
       const init = async () => {
         try {
+          console.time('init_overall');
+          console.time('init_fetch');
           const usersSnap = await getDocs(collection(db, "users"));
-          if (usersSnap.empty) { for (const team of MOCK_TEAMS) await setDoc(doc(db, "users", team.id), team); }
+          console.timeEnd('init_fetch');
+
+          if (usersSnap.empty) {
+            console.time('init_write_batch');
+            const batch = writeBatch(db);
+            for (const team of MOCK_TEAMS) {
+              const teamRef = doc(db, "users", team.id);
+              batch.set(teamRef, team);
+            }
+            await batch.commit();
+            console.timeEnd('init_write_batch');
+          }
+          console.timeEnd('init_overall');
         } catch (err) {
           console.error("Error initializing teams:", err);
         }
