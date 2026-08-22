@@ -543,6 +543,23 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
             'הפועל ירושלים': ['הפועל ירושלים', 'הפועל י-ם']
         };
 
+        // 🛑 Remote Scraper Control Commands via WhatsApp (e.g. לוזון עצור סורק / לוזון הפעל סורק) 🛑
+        if (p.includes('עצור סורק') || p.includes('סורק כבוי') || p.includes('כבה סורק') || p.includes('עצור את הסורק')) {
+            await db.doc('settings/scraper').set({ enabled: false, updatedBy: managerName, updatedAt: new Date().toISOString() }, { merge: true });
+            return `🛑 *הסורק האוטומטי הופסק בהצלחה!* \nמצב נוכחי: *כבוי* 🔴 (נקבע על ידי ${managerName})\nכדי להפעילו מחדש בכל עת, רשום: *לוזון הפעל סורק*. 👍`;
+        }
+
+        if (p.includes('הפעל סורק') || p.includes('סורק פעיל') || p.includes('הפעל את הסורק')) {
+            await db.doc('settings/scraper').set({ enabled: true, updatedBy: managerName, updatedAt: new Date().toISOString() }, { merge: true });
+            return `🟢 *הסורק האוטומטי הופעל מחדש בהצלחה!* \nמצב נוכחי: *פעיל* 🟢 (נקבע על ידי ${managerName})\nהסורק יעקוב אוטומטית אחר לוח המשחקים בזמן אמת. 🚀`;
+        }
+
+        if (p.includes('סטטוס סורק') || p.includes('מצב סורק')) {
+            const settingsSnap = await db.doc('settings/scraper').get();
+            const isEnabled = !settingsSnap.exists || settingsSnap.data()?.enabled !== false;
+            return `🤖 *סטטוס סורק פנטזי לוזון:* \nמצב: ${isEnabled ? '🟢 *פעיל*' : '🔴 *מופסק (כבוי)*'}\nסריקות פעילות: *ספורט 5 (שערים/בישולים) + ההתאחדות (כרטיסים)*\nניהול מרחוק: רשום *לוזון עצור סורק* או *לוזון הפעל סורק*. 📱`;
+        }
+
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
         const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1'];
         const rejectKeywords = ['דחה', 'דחייה', 'תתעלם', 'התעלם', 'אל תעדכן', 'לא מאשר'];
@@ -2063,6 +2080,13 @@ const runLiveScraperLogic = async () => {
     try {
         const db = admin.firestore();
         const norm = (str: string) => String(str || '').toLowerCase().replace(/['"״׳\sאע]/g, '').replace(/יי/g, 'י');
+
+        // 0. Check if scraper is globally enabled/disabled in settings/scraper
+        const settingsSnap = await db.doc('settings/scraper').get();
+        if (settingsSnap.exists && settingsSnap.data()?.enabled === false) {
+            console.log('[LiveScraper] Scraper is currently PAUSED via settings/scraper. Standing by...');
+            return { success: true, count: 0, message: 'Scraper is currently paused via remote command' };
+        }
 
         // 1. Check if there are any active/live matches today according to real_fixtures
         const fixturesSnap = await db.doc('leagueData/real_fixtures').get();
