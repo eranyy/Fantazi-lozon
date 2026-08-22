@@ -54,6 +54,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
 
   const [realRound, setRealRound] = useState<number>(currentRound || 1);
   const [fantasyRound, setFantasyRound] = useState<number>(currentRound || 1);
+  const [fixtureWidgetSubTab, setFixtureWidgetSubTab] = useState<'real' | 'fantasy'>('real');
 
   const [editFieldModal, setEditFieldModal] = useState<{matchId: string, field: 'tvChannel' | 'stadium', value: string} | null>(null);
   const [editScoreModalReal, setEditScoreModalReal] = useState<{matchId: string, hs: string, as: string, hName: string, aName: string} | null>(null);
@@ -694,7 +695,28 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
       {/* --- צד שמאל: ווידג'טים --- */}
       <div className={`lg:w-1/3 w-full space-y-6 animate-in slide-in-from-right-4 duration-300 ${mobileTab === 'widgets' ? 'block' : 'hidden lg:block'}`}>
         
+        {/* 🟢 מתג מעבר מהיר בלחיצה אחת בין משחקי ליגת העל למשחקי הפנטזי 🟢 */}
+        <div className="flex items-center gap-1.5 bg-zinc-950/90 p-1.5 rounded-2xl border border-zinc-800 shadow-inner mb-4" data-html2canvas-ignore="true">
+          <button 
+            type="button"
+            onClick={() => setFixtureWidgetSubTab('real')} 
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${fixtureWidgetSubTab === 'real' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20 border border-blue-400/30' : 'text-zinc-400 hover:text-white'}`}
+          >
+            <span className="text-base">⚽</span>
+            <span>משחקי ליגת העל</span>
+          </button>
+          <button 
+            type="button"
+            onClick={() => setFixtureWidgetSubTab('fantasy')} 
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${fixtureWidgetSubTab === 'fantasy' ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-black shadow-lg shadow-amber-500/20 font-black' : 'text-zinc-400 hover:text-white'}`}
+          >
+            <span className="text-base">🏆</span>
+            <span>ליגת פנטזי (בינינו)</span>
+          </button>
+        </div>
+
         {/* 1. WIDGET: משחקי ליגת העל */}
+        {fixtureWidgetSubTab === 'real' && (
         <div id="real-fixtures-capture" className="bg-gradient-to-br from-zinc-900/80 to-zinc-900/40 backdrop-blur-xl rounded-[32px] border border-blue-500/20 p-5 shadow-[0_0_30px_rgba(59,130,246,0.05)] relative overflow-hidden pb-4">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] pointer-events-none rounded-full"></div>
           
@@ -827,8 +849,10 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
             })}
           </div>
         </div>
+        )}
 
         {/* 2. Fixtures Widget (פנטזי) */}
+        {fixtureWidgetSubTab === 'fantasy' && (
         <div id="fantasy-fixtures-capture" className="bg-zinc-900/40 backdrop-blur-md rounded-3xl border border-zinc-800/80 p-5 shadow-xl relative pb-4">
           <div className="flex justify-between items-start mb-4">
             <div>
@@ -897,6 +921,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
             })}
           </div>
         </div>
+        )}
 
         {/* 3. League Table Widget */}
         <div 

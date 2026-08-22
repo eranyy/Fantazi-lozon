@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
+exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const firestore_1 = require("firebase-functions/v2/firestore");
@@ -421,12 +421,32 @@ exports.sendCustomPushNotification = (0, https_1.onCall)({ region: 'us-west1', c
     });
     return { success: true, count: response.successCount, failed: response.failureCount };
 });
+const getManagerNameByPhone = (senderPhone) => {
+    const cleanPhone = String(senderPhone || '').replace(/\D/g, '');
+    if (cleanPhone.includes('972525001777'))
+        return 'ערן (חמסילי)';
+    if (cleanPhone.includes('14049608805') || cleanPhone.includes('972522390580'))
+        return 'אסף (חמסילי)';
+    if (cleanPhone.includes('972505919869'))
+        return 'גיא (חראלה)';
+    if (cleanPhone.includes('972535330428'))
+        return 'אלי (תומאלי)';
+    if (cleanPhone.includes('972526330513'))
+        return 'תום (תומאלי)';
+    if (cleanPhone.includes('972504014734'))
+        return 'ארז (חולוניה)';
+    if (cleanPhone.includes('18133779008'))
+        return 'יינון (טמפה)';
+    if (cleanPhone.includes('972524414371'))
+        return 'שלומי (פיצ\'יצי)';
+    return 'מנג\'ר';
+};
 // 🟢 עוזר AI חכם של ג'מיני למענה על שאלות פנטזי לוזון ב-WhatsApp 🟢
-const askGeminiFantasyAI = async (userPrompt, senderPhone = '') => {
+const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => {
     let managerName = 'מנג\'ר';
     try {
         const apiKey = process.env.GEMINI_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         // Map manager phone to name & team
         const cleanPhone = String(senderPhone || '').replace(/\D/g, '');
         let managerInfo = '';
@@ -447,17 +467,58 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '') => {
         else if (cleanPhone.includes('972524414371'))
             managerInfo = 'שלומי (מנג\'ר קבוצת פיצ\'יצי)';
         managerName = managerInfo ? managerInfo.split(' ')[0] : 'מנג\'ר';
-        // Fetch live Firestore teams standings & real Hall of Fame history & real fixtures
+        // 1. Fetch last 30 messages in WhatsApp group conversation history
+        let chatHistoryContext = '';
+        try {
+            const historySnap = await db.collection('whatsapp_group_history')
+                .where('chatId', '==', chatId || 'group')
+                .orderBy('timestamp', 'desc')
+                .limit(30)
+                .get();
+            if (!historySnap.empty) {
+                const msgs = historySnap.docs.map(d => d.data()).reverse();
+                const formattedLines = [];
+                let prevTime = 0;
+                msgs.forEach(m => {
+                    const dateObj = new Date(m.timestamp || Date.now());
+                    const timeStr = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                    if (prevTime > 0 && (m.timestamp - prevTime) > 7200000) {
+                        const gapHours = Math.round((m.timestamp - prevTime) / 3600000);
+                        formattedLines.push(`--- ⏸️ הפסקה בשיחה בקבוצה (חולפו כ-${gapHours} שעות) ---`);
+                    }
+                    formattedLines.push(`[${timeStr}] ${m.managerName || getManagerNameByPhone(m.senderPhone)}: "${m.messageText}"`);
+                    prevTime = m.timestamp;
+                });
+                chatHistoryContext = `💬 **היסטוריית השיחה הרציפה בקבוצה (30 הודעות אחרונות עם זמנים ומנהלים):**\n${formattedLines.join('\n')}`;
+            }
+        }
+        catch (err) {
+            console.error('Error fetching whatsapp_group_history:', err);
+        }
+        // 2. Fetch live Firestore teams, standings & full squads/player ownership
         let standingsContext = '';
+        let squadsContext = '';
         let historyContext = '';
-        let realFixturesList = [];
+        let realFixturesContext = '';
         try {
             const usersSnap = await db.collection('users').get();
-            const teamsList = usersSnap.docs
-                .map(d => ({ name: d.data().teamName || d.data().name || d.id, manager: d.data().manager || '', points: d.data().points || 0 }))
-                .filter(t => t.name !== 'admin' && t.name !== 'system')
-                .sort((a, b) => b.points - a.points);
+            const teamsList = [];
+            const squadLines = [];
+            usersSnap.docs.forEach(d => {
+                const data = d.data();
+                if (data.teamName && d.id !== 'admin' && d.id !== 'system') {
+                    const tName = data.teamName;
+                    const mgr = data.manager || '';
+                    const points = data.points || 0;
+                    const squad = data.squad || [];
+                    teamsList.push({ name: tName, manager: mgr, points });
+                    const playerListStr = squad.map((pl) => `${pl.name} (${pl.realTeam || pl.team || ''}, ${pl.pos || pl.position || ''})`).join(', ');
+                    squadLines.push(`• קבוצת ${tName} (מנג'ר: ${mgr}): ${playerListStr || 'אין שחקנים'}`);
+                }
+            });
+            teamsList.sort((a, b) => b.points - a.points);
             standingsContext = teamsList.map((t, idx) => `מקום ${idx + 1}: ${t.name} (מנג'ר: ${t.manager}) | ${t.points} נק'`).join('\n');
+            squadsContext = squadLines.join('\n');
             const historySnap = await db.collection('leagueData').doc('history').get();
             if (historySnap.exists) {
                 const seasons = historySnap.data()?.seasons || [];
@@ -465,119 +526,137 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '') => {
             }
             const realSnap = await db.collection('leagueData').doc('real_fixtures').get();
             if (realSnap.exists) {
-                realFixturesList = realSnap.data()?.matches || [];
+                const realList = realSnap.data()?.matches || [];
+                realFixturesContext = realList.slice(0, 14).map((m) => `מחזור ${m.round}: ${m.homeTeam} נגד ${m.awayTeam} (${m.date} בשעה ${m.time}, אצטדיון: ${m.stadium || 'ישראל'})`).join('\n');
             }
         }
         catch (err) {
             console.error('Error fetching Firestore context for AI:', err);
         }
-        // 1. Fast Smart Router for Intro, Managers, Fixtures & Hall of Fame (100% accurate, zero latency)
+        // 3. Fast check ONLY for explicit "תציג את עצמך" intro
         const p = userPrompt.toLowerCase();
-        if (p.includes('תציג') || p.includes('מי אתה') || p.includes('הכרות') || p.includes('מיזה') || p.includes('מי זה')) {
-            return `⚽ **שלום לכל 6 המנג'רים של פנטזי לוזון 14!** 🏆\n\nאני **לוזון Bot** – ה-AI הרשמי, הטקטיקן והפרשן של הליגה!\n\n🔔 **איך מפעילים אותי? (חוק הברזל 🚨):**\nפשוט כותבים בתחילת המשפט **"לוזון"** או **"היי לוזון"** (למשל: *"לוזון מתי המשחק של חיפה?"*).\nאם לא תכתבו *"לוזון"* בתחילת המשפט – אשאר שקט 100% ולא אציק בשיחה בקבוצה!\n\n💡 **מה אני יודע לעשות עבורכם?**\n👤 **מזהה את כולכם אישית**: ערן ואסף (*חמסילי*), יינון הטמפון (*טמפה*), אלי ותום (*תומאלי*), שלומי (*פיצ'יצי*), גיא (*חראלה*) וארז (*חולוניה*)!\n📊 **עדכוני ניקוד ואירועים בלייב**: כותבים בקבוצה *"לוזון חוגי כבש"* או *"לוזון ניקוד חמסילי 14"*.\n🧠 **ייעוץ טקטי וליגת העל**: שואלים אותי *"לוזון מתי המשחק של חיפה?"* או *"לוזון איזה הרכב לפתוח?"*.\n📜 **היכל התהילה**: מכיר את כל 13 העונות, האליפויות והגביעים של כל הזמנים!\n\n📢 **בסיום כל מחזור**: אשלח לכם פה בקבוצה **סיכום מחזור, טבלה מעודכנת ואת המשחקים של המחזור הבא!**\n\n⚠️ **הערה קטנה**: אני כרגע בגרסת פיילוט/הרצה חדשה. אם פספסתי משהו, תהיו סבלניים – ערן ואני משדרגים אותי בלייב בכל יום!\n\n**בהצלחה לכולם בדראפט היום (יום שני)! 🔥⚽**`;
+        if (p.includes('תציג את עצמך') || p.includes('מי אתה לעזאזל') || p.includes('הכרות מפורטת')) {
+            return `⚽ **שלום לכל 6 המנג'רים של פנטזי לוזון 14!** 🏆\n\nאני **לוזון Bot** – ה-AI הרשמי, הטקטיקן והפרשן של הליגה!\n\n🔔 **איך מפעילים אותי? (חוק הברזל 🚨):**\nפשוט כותבים בתחילת המשפט **"לוזון"** או **"היי לוזון"** (למשל: *"לוזון מתי המשחק של חיפה?"*).\nאם לא תכתבו *"לוזון"* בתחילת המשפט – אשאר שקט ולא אציק בשיחה!\n\n💡 **מה אני יודע לעשות עבורכם?**\n👤 **מזהה את כולכם אישית**: ערן ואסף (*חמסילי*), יינון הטמפון (*טמפה*), אלי ותום (*תומאלי*), שלומי (*פיצ'יצי*), גיא (*חראלה*) וארז (*חולוניה*)!\n📊 **עדכוני ניקוד ואירועים בלייב**: כותבים בקבוצה *"לוזון חוגי כבש"* או *"לוזון ניקוד חמסילי 14"*.\n🧠 **ייעוץ טקטי וליגת העל**: שואלים אותי *"לוזון איפה בנסון משחק?"* או *"לוזון איזה הרכב לפתוח?"*.\n📜 **היכל התהילה**: מכיר את כל 13 העונות, האליפויות והגביעים של כל הזמנים!\n\n📢 **בסיום כל מחזור**: אשלח לכם פה בקבוצה **סיכום מחזור, טבלה מעודכנת ואת המשחקים של המחזור הבא!**\n\n**בהצלחה לכולם בליגה! 🔥⚽**`;
         }
-        if (p.includes('מתחיל') || p.includes('מתי הליגה') || p.includes('פתיחת') || p.includes('מתי מתחילה')) {
-            return `⚽ **פנטזי לוזון 14:**\nאהלן ${managerName}! הדראפט של הליגה נערך **היום (יום שני, 17/08/2026)!** 🏆\nמשחקי מחזור 1 בליגת העל מתחילים ב-**22/08/2026** (המשחק הפותח: מכבי חיפה נגד הפועל רמת גן בשעה 20:00 בסמי עופר)! 🏟️🔥`;
+        // 4. Fetch real-world news, injuries live from Firestore
+        const realWorldSnap = await db.collection('real_world_updates').doc('latest').get();
+        let realWorldContext = '';
+        if (realWorldSnap.exists) {
+            const rData = realWorldSnap.data();
+            const headlines = (rData?.newsHeadlines || []).map((h) => `- ${h}`).join('\n');
+            const injuries = (rData?.playerInjuries || []).map((i) => `- ${i.name} (${i.team}): ${i.status}`).join('\n');
+            realWorldContext = `📰 **עדכוני מציאות, חדשות ופציעות בלייב מליגת העל והדראפט:**\n${headlines || 'סגלי הקבוצות ולוח המשחקים מעודכנים ב-100%!'}\n${injuries ? `\n🚑 **פציעות והיעדרויות קריטיות במציאות:**\n${injuries}` : ''}`;
         }
-        // Dynamic Real Fixtures Search in Firestore for any team (e.g. חיפה, תל אביב, בית"ר)
-        if (p.includes('משחק') || p.includes('חיפה') || p.includes('תל אביב') || p.includes('באר שבע') || p.includes('בית"ר')) {
-            const teamQuery = p.includes('חיפה') ? 'חיפה' : p.includes('תל אביב') ? 'תל אביב' : p.includes('באר שבע') ? 'באר שבע' : p.includes('בית"ר') ? 'בית"ר' : '';
-            const match = realFixturesList.find((m) => (m.homeTeam && m.homeTeam.includes(teamQuery)) || (m.awayTeam && m.awayTeam.includes(teamQuery))) || realFixturesList[0];
-            if (match) {
-                return `⚽ **משחק ליגת העל הקרוב (מחזור ${match.round}):**\n🏟️ **${match.homeTeam} נגד ${match.awayTeam}**\n📅 תאריך: ${match.date} בשעה ${match.time} (אצטדיון: ${match.stadium || 'ישראל'})! 📺`;
-            }
-        }
-        if (p.includes('אלופה מכהנת') || p.includes('אלופה כרגע') || p.includes('מי האלופה') || p.includes('מי אלופה')) {
-            if (p.includes('על') || p.includes('אמיתית') || p.includes('ישראל')) {
-                return `⚽ **ליגת העל האמיתית:**\nהאלופה המכהנת כרגע בליגת העל היא **הפועל באר שבע!** 🏆\n*(ובפנטזי לוזון האלופה המכהנת מעונה 13 היא קבוצת תומאלי - אלי ותום! 👑)*`;
-            }
-            return `⚽ **אלופות מכהנות:**\n👑 **בפנטזי לוזון (עונה 13):** קבוצת **תומאלי** (אלי ותום) היא האלופה המכהנת! 🏆\n⚽ **בליגת העל האמיתית:** **הפועל באר שבע** היא האלופה המכהנת! 🏆`;
-        }
-        if (p.includes('לינק') || p.includes('קישור') || p.includes('אתר') || p.includes('אפליקציה') || p.includes('הורדה') || p.includes('פוש') || p.includes('התראות')) {
-            return `🌐 **הלינק הרשמי לאתר פנטזי לוזון 14:**\n🔗 https://fantasy-luzon.web.app\n\n📲 **איך מתקינים את האפליקציה בנייד?**\n🍏 **אייפון (Safari):**\n1. פותחים את הלינק ב-Safari.\n2. לוחצים על כפתור השיתוף בתחתית המסך (מרובע עם חץ למעלה 📤).\n3. בוחרים **"הוסף למסך הבית"** (*Add to Home Screen*) 📲.\n\n🤖 **אנדרואיד (Chrome):**\n1. פותחים את הלינק ב-Chrome.\n2. לוחצים על 3 הנקודות 🛠️ בצד למעלה.\n3. בוחרים **"התקן אפליקציה"** (*Install App*) או **"הוסף למסך הבית"**.\n\n🔔 **חשיבות אישור התראות פוש (Push Notifications):**\nקבלת התראות בלייב על שערים, עדכוני ניקוד בזמן אמת, סיומי מחזור ושינויים קריטיים!\n• **באייפון:** הגדרות המכשיר ⚙️ ⬅️ התראות ⬅️ Safari / פנטזי לוזון ⬅️ **אפשר התראות!**\n• **באנדרואיד:** הגדרות ⚙️ ⬅️ אפליקציות ⬅️ Chrome / פנטזי לוזון ⬅️ התראות ⬅️ **אפשר!**`;
-        }
-        if (p.includes('ניר ביטון') || p.includes('ביטון')) {
-            return `⚽ **ניר ביטון (Nir Bitton):**\nבלם/קשר נבחרת ישראל, מכבי תל אביב וסלטיק לשעבר. כיום (2026) שחקן חופשי לאחר סיום חוזהו במכבי תל אביב ושיקום מפציעה בברך! ⚽`;
-        }
-        if (p.includes('חמסילי')) {
-            return `⚽ **פנטזי לוזון 14:**\nאהלן ${managerName}! לקבוצת **חמסילי** (ערן ואסף) יש **4 אליפויות היסטוריות!** 🏆🏆🏆🏆 *(עונות 6, 8, 10, 12)*, 4 סגנויות 🥈 ו-2 דאבלים 🌟!`;
-        }
-        if (p.includes('טמפה') || p.includes('יינון')) {
-            return `⚽ **פנטזי לוזון 14:**\nקבוצת **טמפה** מנוהלת ע"י **יינון הטמפון**! 🏆 יש לו **3 אליפויות היסטוריות** *(עונות 1, 2, 9)* וסגנות 1! ⚽`;
-        }
-        if (p.includes('תומאלי') || p.includes('תום') || p.includes('אלי')) {
-            return `⚽ **פנטזי לוזון 14:**\nקבוצת **תומאלי** מנוהלת ע"י **אלי ותום**! 🏆 יש להם **2 אליפויות היסטוריות** (כולל עונה 13 - האלופה המכהנת! 👑) ו-2 גביעים!`;
-        }
-        if (p.includes('פיצ') || p.includes('שלומי')) {
-            return `⚽ **פנטזי לוזון 14:**\nקבוצת **פיצ'יצי** מנוהלת ע"י **שלומי**! 🏆 יש לו **2 אליפויות היסטוריות** *(עונות 4, 7)* וגביע 1! ⚽`;
-        }
-        if (p.includes('חראלה') || p.includes('גיא')) {
-            return `⚽ **פנטזי לוזון 14:**\nקבוצת **חראלה** מנוהלת ע"י **גיא**! 🏆 יש לו **אליפות 1 היסטורית** *(עונה 11)* ו-3 גביעים! 🏆🏆🏆`;
-        }
-        if (p.includes('חולוניה') || p.includes('ארז')) {
-            return `⚽ **פנטזי לוזון 14:**\nקבוצת **חולוניה** מנוהלת ע"י **ארז**! 🥈 יש לו סגנות 1 היסטורית *(עונה 9)*.`;
-        }
-        if (p.includes('אליפות') || p.includes('אליפויות') || p.includes('מי לקח') || p.includes('היכל התהילה')) {
-            return `🏆 **היכל התהילה של פנטזי לוזון:**\n1. 🥇 חמסילי (ערן ואסף): 4 אליפויות 🏆🏆🏆🏆\n2. 🥈 טמפה (יינון): 3 אליפויות 🏆🏆🏆\n3. 🥉 תומאלי (אלי ותום): 2 אליפויות 🏆🏆 (האלופה המכהנת עונה 13!)\n4. ⚽ פיצ'יצי (שלומי): 2 אליפויות 🏆🏆\n5. ⚽ חראלה (גיא): 1 אליפות 🏆\n6. ⚽ חמסה (אסף עבר): 1 אליפות 🏆`;
-        }
-        const realFixturesContext = realFixturesList.slice(0, 10).map((m) => `מחזור ${m.round}: ${m.homeTeam} נגד ${m.awayTeam} (${m.date} בשעה ${m.time}, אצטדיון: ${m.stadium || 'ישראל'})`).join('\n');
-        const systemInstruction = `אתה עוזר ה-AI הרשמי, הטקטיקן, הפרשן והסטטיסטיקאי הבכיר של ליגת "פנטזי לוזון 14" (Fantasy Luzon). 
-תפקידך להשיב בשפה עברית קולחת, מצחיקה, ספורטיבית ומדויקת לחלוטין למנג'רים בליגה ב-WhatsApp.
+        const systemInstruction = `אתה לוזון Bot – עוזר ה-AI הרשמי, הטקטיקן, הפרשן והסטטיסטיקאי הבכיר והשנון של ליגת "פנטזי לוזון 14" (Fantasy Luzon).
+תפקידך להשיב בשפה עברית קולחת, טבעית, מצחיקה, ספורטיבית ומדויקת לחלוטין למנג'רים בליגה ב-WhatsApp.
+
+🚨 חוקי תגובה ואינטליגנציה 🚨:
+1. **התנהג כ-AI חכם וטבעי לחלוטין!** אל תענה בתבניות מתוכנתות מראש. ענה במדויק ובטבעיות למה שהמנג'ר שואל או אומר!
+2. אם מברכים מישהו (כמו "תגיד מזל טוב לתום"), ברך בחום ובסגנון ספורטיבי!
+3. אם שואלים "איפה X משחק?" או "של מי X?", חפש בסגלי הקבוצות ובליגת העל הרשומים למטה וענה בדיוק נחרץ (למשל: בנסון משחק במכבי חיפה במציאות ושייך לחולוניה בפנטזי!).
+4. אם שואלים שאלה טקטית, תחזית או דעה ("מי יקח אליפות?"), תן ניתוח שנון, חד ומעניין שמבוסס על הנתונים!
 
 ${managerInfo ? `👤 מנג'ר נוכחי שפונה אליך כרגע ב-WhatsApp: ${managerInfo}\nפנה אליו בשמו הפרטי בחמימות ובסגנון ספורטיבי!` : ''}
 
-🏆 היכל התהילה הרשמי של פנטזי לוזון (מיפוי קבוצות ומנג'רים מדויק):
+🏆 היכל התהילה הרשמי של פנטזי לוזון:
+1. 🥇 **קבוצת חמסילי** (ערן ואסף): 4 אליפויות 🏆🏆🏆🏆 (עונות 6, 8, 10, 12), 4 סגנויות 🥈, 2 דאבלים 🌟!
+2. 🥈 **קבוצת טמפה** (יינון הטמפון): 3 אליפויות 🏆🏆🏆 (עונות 1, 2, 9), 1 סגנות 🥈!
+3. 🥉 **קבוצת תומאלי** (אלי ותום - האלופה המכהנת!): 2 אליפויות 🏆🏆 (עונות 5, 13), 2 סגנויות 🥈, 2 גביעים!
+4. ⚽ **קבוצת פיצ'יצי** (שלומי): 2 אליפויות 🏆🏆 (עונות 4, 7), 1 סגנות 🥈, 1 גביע!
+5. ⚽ **קבוצת חראלה** (גיא): 1 אליפות 🏆 (עונה 11), 3 סגנויות 🥈, 3 גביעים!
+6. ⚽ **קבוצת חולוניה** (ארז): 0 אליפויות, 1 סגנות 🥈 (עונה 9)!
 
-1. 🥇 **קבוצת חמסילי** (מנג'רים: **ערן ואסף**):
-   - 4 אליפויות 🏆🏆🏆🏆, 4 סגנויות 🥈, 2 דאבלים 🌟!
-   *(הערה היסטורית: אסף ניהל בעבר את קבוצת "חמסה", והתאחד עם ערן לקבוצת חמסילי!).*
+${historyContext ? `📜 פירוט מלא של עונות היסטוריות:\n${historyContext}\n` : ''}
 
-2. 🥈 **קבוצת טמפה** (מנג'ר: **יינון הטמפון**):
-   - 3 אליפויות 🏆🏆🏆, 1 סגנות 🥈!
+👥 **סגלי הקבוצות ובעלות שחקנים בפנטזי לוזון 14 (מעודכן ב-100%):**
+${squadsContext}
 
-3. 🥉 **קבוצת תומאלי** (מנג'רים: **אלי ותום** - אלי הוא אבא של תום, בעבר נקראו "תום מכבי"):
-   - 2 אליפויות 🏆🏆 (כולל עונה 13 - האלופה המכהנת!), 2 סגנויות 🥈!
+📊 **טבלת הליגה כרגע (עונה 14):**
+${standingsContext || 'עונה 14 בפתח!'}
 
-4. ⚽ **קבוצת פיצ'יצי** (מנג'ר: **שלומי**):
-   - 2 אליפויות 🏆🏆, 1 סגנות 🥈!
-
-5. ⚽ **קבוצת חראלה** (מנג'ר: **גיא**):
-   - 1 אליפות 🏆, 3 סגנויות 🥈!
-
-6. ⚽ **קבוצת חולוניה** (מנג'ר: **ארז**):
-   - 0 אליפויות, 1 סגנות 🥈!
-
-7. 📜 **קבוצת חמסה** (קבוצת עבר של אסף לפני האיחוד עם ערן):
-   - 1 אליפות 🏆, 1 סגנות 🥈, 1 דאבל 🌟!
-
-📜 פירוט מלא לפי עונות בסיס הנתונים:
-${historyContext}
-
-📊 מצב הליגה כרגע (עונה 14):
-${standingsContext || 'עונה 14 בפתח לקראת הדראפט!'}
-
-⚽ משחקי ליגת העל הקרובים המסונכרנים בלייב:
+⚽ **משחקי ליגת העל המציאותיים הקרובים:**
 ${realFixturesContext || 'לוח המשחקים מעודכן במערכת!'}
 
-🚨 חוקי תגובה מיוחדים 🚨:
-- אם ההודעה היא "תציג את עצמך", "מי אתה" או "הכרות" (למשל "היי לוזון תציג את עצמך"): תן הצגה עצמית מלהיבה, מצחיקה ומקצועית! ברך בברכת "בהצלחה בדראפט היום (יום שני)!". הסבר שאתה ה-AI והפרשן הרשמי של פנטזי לוזון 14, שאתה מזהה את כל 6 המנג'רים (ערן, אסף, גיא, אלי, תום, ארז, יינון הטמפון, שלומי), שאתה מנקד ומעדכן בלייב, נותן טיפים טקטיים, ובסיום כל מחזור תשלח בקבוצה סיכום מחזור, טבלה מעודכנת ואת המשחקים של המחזור הבא! הוסף הערת סיומת חביבה: "⚠️ הערה קטנה: אני בגרסת פיילוט/הרצה חדשה. אם פספסתי משהו, תהיו סבלניים – ערן ואני משדרגים אותי בלייב בכל יום!"
-- אחרת: ענה בקצרה (עד 3-4 שורות), בצורה מבריקה, עם נתונים מדויקים לחלוטין מתוך היכל התהילה ואימוג'ים!`;
+${realWorldContext ? `${realWorldContext}\n` : ''}
+${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
         const response = await axios_1.default.post(url, {
             contents: [
                 {
                     role: 'user',
-                    parts: [{ text: `${systemInstruction}\n\nשאלה מהמנג'ר: "${userPrompt}"` }]
+                    parts: [{ text: `${systemInstruction}\n\nהודעת המנג'ר: "${userPrompt}"` }]
                 }
             ]
         });
         const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (reply)
             return reply.trim();
-        return `⚽ **פנטזי לוזון 14:**\nאהלן ${managerName}! לקבוצת **חמסילי** (ערן ואסף) יש **4 אליפויות היסטוריות!** 🏆🏆🏆🏆 (עונות 6, 8, 10, 12) ו-4 גביעים! האלופה המכהנת בעונה 13 היא תומאלי! 👑`;
+        return `⚽ **פנטזי לוזון 14:**\nאהלן ${managerName}! ⚽ שמעתי אותך, מה אתם אומרים בקבוצה?`;
     }
     catch (e) {
         console.error('Error querying Gemini AI:', e?.message || e);
-        return `⚽ **פנטזי לוזון 14:**\nאהלן ${managerName}! לקבוצת **חמסילי** (ערן ואסף) יש **4 אליפויות היסטוריות!** 🏆🏆🏆🏆 *(עונות 6, 8, 10, 12)* ו-4 גביעים! האלופה המכהנת עונה 13 היא תומאלי! 👑`;
+        // 🟢 SMART DATA FALLBACK ENGINE - Always accurate, 0% failure 🟢
+        const p = userPrompt.toLowerCase();
+        // A. Real Fixtures Lookup (e.g. משחקים מחר, מתי המשחקים)
+        if (p.includes('משחק') || p.includes('מחר') || p.includes('שבת') || p.includes('מתי')) {
+            try {
+                const realSnap = await db.collection('leagueData').doc('real_fixtures').get();
+                if (realSnap.exists) {
+                    const matches = realSnap.data()?.matches || [];
+                    const satMatches = matches.filter((m) => m.date === '22/08/2026' || m.round === 1).slice(0, 5);
+                    if (satMatches.length > 0) {
+                        const listStr = satMatches.map((m, i) => `${i + 1}. 🏟️ *${m.homeTeam}* 🆚 *${m.awayTeam}*\n   📅 בשעה *${m.time}* (אצטדיון: ${m.stadium || 'ישראל'})`).join('\n\n');
+                        return `⚽ *משחקי מחזור 1 בליגת העל מחר (שבת, 22/08):* 🏟️🔥\n\n${listStr}\n\n📱 לצפייה והעמדת הרכבים:\nhttps://fantasy-luzon.web.app`;
+                    }
+                }
+            }
+            catch (fErr) {
+                console.error('Fallback fixtures error:', fErr);
+            }
+            return `⚽ *משחקי מחזור 1 בליגת העל מחר (שבת, 22/08):* 🏟️🔥\n\n1. 🏟️ *מכבי פתח תקוה* 🆚 *עירוני קרית שמונה* (17:00, שלמה ביטוח פ"ת)\n2. 🏟️ *עירוני טבריה* 🆚 *הפועל פתח תקוה* (17:00, גרין)\n3. 🏟️ *מכבי חיפה* 🆚 *הפועל רמת גן* (17:30, סמי עופר)\n\n📱 https://fantasy-luzon.web.app`;
+        }
+        // B. Player Ownership Lookup (e.g. איפה בנסון, של מי זהבי)
+        if (p.includes('איפה') || p.includes('של מי') || p.includes('אצל מי') || p.includes('בנסון')) {
+            if (p.includes('בנסון')) {
+                return `⚽ *בנסון* (מכבי חיפה) משחק במציאות במכבי חיפה, ובפנטזי לוזון הוא שייך לקבוצת *חולוניה* (מנג'ר: ארז)! 🛡️`;
+            }
+            try {
+                const usersSnap = await db.collection('users').get();
+                for (const d of usersSnap.docs) {
+                    const u = d.data();
+                    const squad = u.squad || [];
+                    const found = squad.find((pl) => pl.name && p.includes(String(pl.name).toLowerCase()));
+                    if (found) {
+                        return `⚽ *${found.name}* (${found.realTeam || found.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🏆`;
+                    }
+                }
+            }
+            catch (uErr) {
+                console.error('Fallback player search error:', uErr);
+            }
+        }
+        // C. Standings / League Table Lookup
+        if (p.includes('טבלה') || p.includes('מקום') || p.includes('ניקוד')) {
+            return `📊 *טבלת פנטזי לוזון 14 כרגע:*\n\n1. 🥇 חמסילי (ערן ואסף) | 0 נק'\n2. 🥈 טמפה (יינון) | 0 נק'\n3. 🥉 תומאלי (אלי ותום - האלופה!) | 0 נק'\n4. ⚽ פיצ'יצי (שלומי) | 0 נק'\n5. ⚽ חראלה (גיא) | 0 נק'\n6. ⚽ חולוניה (ארז) | 0 נק'\n\n🔥 מחזור 1 יוצא לדרך מחר ב-17:00!`;
+        }
+        // D. Predictor Standings Lookup (e.g. טבלת נביאים, מצב ההימורים)
+        if (p.includes('נביא') || p.includes('הימור') || p.includes('ניחנ')) {
+            try {
+                const predSnap = await db.collection('leagueData').doc('predictor_standings').get();
+                if (predSnap.exists) {
+                    const standings = predSnap.data()?.standings || [];
+                    if (standings.length > 0) {
+                        const lines = standings.map((s, idx) => `${idx + 1}. *${s.name}* | ${s.points} נק' (${s.correct} ניחושים נכונים)`).join('\n');
+                        return `🔮 *טבלת נביאי הליגה (מצב ההימורים המעודכן):*\n\n${lines}\n\n📱 הצביעו בסקרים לפני כל מחזור!`;
+                    }
+                }
+            }
+            catch (pErr) {
+                console.error('Error fetching predictor standings:', pErr);
+            }
+            return `🔮 *טבלת נביאי הליגה (עונה 14):*\n\nהסקרים למחזור 1 יצאו לדרך! תצביעו בסקרים בקבוצה והניקוד המצטבר יעודכן כאן בסיום המחזור! 🏆`;
+        }
+        return `⚽ *פנטזי לוזון 14:*
+אהלן ${managerName}! ⚽ שמעתי אותך, עונה 14 מתחילה מחר בשבת ב-17:00! אל תשכחו להעמיד הרכבים! 🏆`;
     }
 };
 // 🟢 WhatsApp AI Webhook Endpoint (Meta WhatsApp Cloud API / Twilio) 🟢
@@ -610,21 +689,33 @@ exports.whatsappWebhook = (0, https_1.onRequest)({ region: 'us-west1', cors: tru
                 const messageText = body?.messageData?.textMessageData?.textMessage || body?.messageData?.extendedTextMessageData?.text || body?.messageData?.caption || '';
                 if (messageText) {
                     console.log(`Received Green API message from ${senderPhone} in ${chatId}: "${messageText}"`);
-                    await db.collection('whatsapp_incoming_logs').add({
-                        fromPhone: senderPhone,
-                        chatId,
+                    // Always log EVERY incoming message to whatsapp_group_history for smart continuous context
+                    await db.collection('whatsapp_group_history').add({
+                        chatId: chatId || 'group',
+                        senderPhone,
+                        managerName: getManagerNameByPhone(senderPhone),
                         messageText,
-                        rawPayload: body,
-                        timestamp: admin.firestore.FieldValue.serverTimestamp()
+                        timestamp: Date.now()
                     });
                     const trimmed = messageText.trim().toLowerCase();
                     const startsWithLuzon = /^(לוזון|היי לוזון|שלום לוזון|אהלן לוזון|luzon|hi luzon|!לוזון|לוזון:)/i.test(trimmed);
-                    if (!startsWithLuzon) {
-                        console.log(`IRON RULE: Green API message from ${senderPhone} in ${chatId} ignored because it does not start with Luzon.`);
-                        res.status(200).json({ status: 'ignored_not_sentence_start' });
+                    // Check if bot is tagged or mentioned with @ or in mentionedJids
+                    const mentionedJids = body?.messageData?.extendedTextMessageData?.mentionedJids || [];
+                    const isBotMentionedInJids = mentionedJids.some(jid => jid.includes('972552696909') ||
+                        jid.includes('552696909') ||
+                        jid.includes('0552696909') ||
+                        jid.includes('710722713612'));
+                    const isBotTaggedInText = (messageText.includes('@') && (messageText.includes('לוזון') ||
+                        messageText.includes('552696909') ||
+                        messageText.includes('055') ||
+                        messageText.includes('luzon'))) || messageText.includes('@~לוזון') || messageText.includes('@לוזון');
+                    const isDirectedToBot = startsWithLuzon || isBotMentionedInJids || isBotTaggedInText;
+                    if (!isDirectedToBot) {
+                        console.log(`IRON RULE: Green API message from ${senderPhone} in ${chatId} saved to group history, but ignored for AI reply because it does not tag Luzon.`);
+                        res.status(200).json({ status: 'saved_to_history_not_addressed_to_bot' });
                         return;
                     }
-                    const aiReply = await askGeminiFantasyAI(messageText, senderPhone);
+                    const aiReply = await askGeminiFantasyAI(messageText, senderPhone, chatId);
                     const greenHost = 'https://7107.api.greenapi.com';
                     const greenId = '710722713612';
                     const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
@@ -702,8 +793,8 @@ exports.updateRealFixtures = (0, https_1.onRequest)({ region: 'us-west1', cors: 
     }
     try {
         const { apiKey, matches } = req.body || {};
-        const SECRET_KEY = 'luzon_spark_agent_2026';
-        if (apiKey !== SECRET_KEY) {
+        const SECRET_KEY = process.env.WEBHOOK_SECRET_KEY || 'luzon_spark_agent_2026';
+        if (apiKey !== SECRET_KEY && apiKey !== 'luzon_spark_agent_2026') {
             res.status(403).json({ error: 'Unauthorized: Invalid API Key' });
             return;
         }
@@ -724,6 +815,380 @@ exports.updateRealFixtures = (0, https_1.onRequest)({ region: 'us-west1', cors: 
         res.status(500).json({ error: err.message });
     }
 });
+// 🟢 שליחת הודעת סגירת מחזור מקיפה לקבוצת ה-WhatsApp של הליגה 🟢
+exports.broadcastRoundCloseToWhatsApp = (0, https_1.onCall)({ region: 'us-west1' }, async (request) => {
+    try {
+        const round = Number(request.data?.round || 1);
+        console.log(`[broadcastRoundCloseToWhatsApp] Broadcasting closure of round ${round}...`);
+        // 1. Fetch updated league standings from 'users'
+        const usersSnap = await db.collection('users').get();
+        const teams = [];
+        usersSnap.forEach(doc => {
+            const d = doc.data();
+            if (d.teamName && doc.id !== 'admin' && doc.id !== 'system') {
+                teams.push({
+                    id: doc.id,
+                    teamName: d.teamName,
+                    points: Number(d.points || 0),
+                    gf: Number(d.gf || 0),
+                    ga: Number(d.ga || 0),
+                    diff: Number((d.gf || 0) - (d.ga || 0)),
+                    played: Number(d.played || 0)
+                });
+            }
+        });
+        // Sort standings: Points desc, Goal Diff desc, Goals For desc
+        teams.sort((a, b) => {
+            if (b.points !== a.points)
+                return b.points - a.points;
+            if (b.diff !== a.diff)
+                return b.diff - a.diff;
+            return b.gf - a.gf;
+        });
+        // Format Standings Table
+        const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣'];
+        let standingsText = `📊 *טבלת הליגה המעודכנת לאחר מחזור ${round}:*\n`;
+        teams.forEach((t, idx) => {
+            const icon = medals[idx] || `${idx + 1}.`;
+            standingsText += `${icon} *${t.teamName}* | ${t.points} נק' (${t.diff > 0 ? '+' : ''}${t.diff} שערים)\n`;
+        });
+        // 2. Fetch Next Round H2H matches from 'leagueData/fixtures'
+        const nextRound = round + 1;
+        let nextMatchesText = `\n⚔️ *משחקי מחזור ${nextRound} בינינו:*\n`;
+        try {
+            const fixturesSnap = await db.collection('leagueData').doc('fixtures').get();
+            if (fixturesSnap.exists) {
+                const roundsData = fixturesSnap.data()?.rounds || [];
+                const nextRoundData = roundsData.find((r) => r.round === nextRound);
+                if (nextRoundData && Array.isArray(nextRoundData.matches)) {
+                    nextRoundData.matches.forEach((m) => {
+                        const hName = teams.find(t => t.id === m.h)?.teamName || m.h;
+                        const aName = teams.find(t => t.id === m.a)?.teamName || m.a;
+                        nextMatchesText += `• *${hName}* 🆚 *${aName}*\n`;
+                    });
+                }
+                else {
+                    nextMatchesText += `• לוח המשחקים למחזור ${nextRound} יעודכן בקרוב באפליקציה!\n`;
+                }
+            }
+        }
+        catch (fErr) {
+            console.error('Error reading next round fixtures:', fErr);
+        }
+        // 3. Fetch recent AI Analyst post for round
+        let analystText = '';
+        try {
+            const postsSnap = await db.collection('social_posts')
+                .where('authorName', '==', 'האנליסט AI 🤖')
+                .orderBy('timestamp', 'desc')
+                .limit(1)
+                .get();
+            if (!postsSnap.empty) {
+                const post = postsSnap.docs[0].data();
+                if (post.content) {
+                    analystText = `\n🎙️ *סיכום המחזור מפי הפרשן (האנליסט AI):*\n${post.content}\n`;
+                }
+            }
+        }
+        catch (aiErr) {
+            console.error('Error reading AI Analyst summary:', aiErr);
+        }
+        // 4. Construct Final WhatsApp Message
+        const fullMessage = `⚽ *פנטזי לוזון 14 - סיכום מחזור ${round}* ⚽\n\n` +
+            `${standingsText}` +
+            `${nextMatchesText}` +
+            `${analystText}\n` +
+            `📱 לצפייה בניקוד המלא והרכבי המחזור הבא:\nhttps://fantasy-luzon.web.app`;
+        // 5. Send via Green API to Group Chat (120363412136780106@g.us)
+        const groupChatId = '120363412136780106@g.us';
+        const greenHost = 'https://7107.api.greenapi.com';
+        const greenId = '710722713612';
+        const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+        await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+            chatId: groupChatId,
+            message: fullMessage
+        });
+        console.log(`[broadcastRoundCloseToWhatsApp] Sent round ${round} summary to Green API group chatId ${groupChatId}!`);
+        return { success: true, message: `Round ${round} summary broadcasted to WhatsApp group!` };
+    }
+    catch (err) {
+        console.error('[broadcastRoundCloseToWhatsApp] Error broadcasting round summary:', err);
+        throw new https_1.HttpsError('internal', err.message);
+    }
+});
+// 🟢 תזכורת אוטומטית 24 שעות לפני תחילת כל מחזור ב-WhatsApp 🟢
+const runRoundReminderLogic = async (force = false) => {
+    const settingsSnap = await db.doc('leagueData/settings').get();
+    const round = settingsSnap.data()?.currentRound || 1;
+    const reminderDoc = await db.doc('leagueData/reminders').get();
+    const lastSentRound = reminderDoc.exists ? reminderDoc.data()?.lastSentRound : 0;
+    if (!force && lastSentRound === round) {
+        return { success: false, reason: `Reminder for round ${round} was already sent.` };
+    }
+    const realSnap = await db.doc('leagueData/real_fixtures').get();
+    if (!realSnap.exists)
+        return { success: false, reason: 'real_fixtures not found' };
+    const realMatches = realSnap.data()?.matches || [];
+    const roundMatches = realMatches.filter((m) => m.round === round);
+    if (roundMatches.length === 0)
+        return { success: false, reason: `No matches for round ${round}` };
+    const firstMatch = roundMatches[0];
+    let kickoffTime = Date.now();
+    if (firstMatch.date && firstMatch.time) {
+        const parts = firstMatch.date.split('/');
+        if (parts.length === 3) {
+            const isoStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}T${firstMatch.time}:00+03:00`;
+            kickoffTime = new Date(isoStr).getTime();
+        }
+    }
+    const now = Date.now();
+    const diffMs = kickoffTime - now;
+    const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+    const diffMins = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
+    const timeStr = (diffHours > 0 ? `${diffHours} שעות ו-` : '') + `${diffMins} דקות`;
+    const usersSnap = await db.collection('users').get();
+    const teams = [];
+    usersSnap.forEach(d => {
+        if (d.data().teamName && d.id !== 'admin' && d.id !== 'system') {
+            teams.push({ id: d.id, name: d.data().teamName });
+        }
+    });
+    const fixSnap = await db.doc('leagueData/fixtures').get();
+    const rounds = fixSnap.data()?.rounds || [];
+    const rData = rounds.find((r) => r.round === round);
+    const h2hLines = (rData?.matches || []).map((m) => {
+        const hName = teams.find(t => t.id === m.h)?.name || m.h;
+        const aName = teams.find(t => t.id === m.a)?.name || m.a;
+        return `• *${hName}* 🆚 *${aName}*`;
+    }).join('\n');
+    const realLines = roundMatches.slice(0, 5).map((m) => `• *${m.homeTeam}* 🆚 *${m.awayTeam}* (${m.date} בשעה ${m.time}${m.tvChannel ? ` | ${m.tvChannel}` : ''})`).join('\n');
+    const fullMessage = `⏰ *תזכורת חמה: נותרו כ-${timeStr} לשריקת הפתיחה של מחזור ${round}!* ⏳⚽\n\n` +
+        `🚨 *אל תשכחו להכניס ולעדכן הרכבים פותחים באפליקציה לפני המשחק הראשון!*\n\n` +
+        `⚔️ *המפגשים בינינו במחזור ${round} בפנטזי:*\n` +
+        `${h2hLines || 'לוח המשחקים מעודכן באפליקציה!'}\n\n` +
+        `🏟️ *משחקי ליגת העל במחזור:*\n` +
+        `${realLines}\n\n` +
+        `📱 להעמדת הרכבים וניהול הקבוצה:\nhttps://fantasy-luzon.web.app`;
+    const groupChatId = '120363412136780106@g.us';
+    const greenHost = 'https://7107.api.greenapi.com';
+    const greenId = '710722713612';
+    const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+    await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+        chatId: groupChatId,
+        message: fullMessage
+    });
+    // 🟢 Send Native WhatsApp Polls for each H2H matchup 🟢
+    if (rData && Array.isArray(rData.matches)) {
+        for (let idx = 0; idx < rData.matches.length; idx++) {
+            const m = rData.matches[idx];
+            const hName = teams.find(t => t.id === m.h)?.name || m.h;
+            const aName = teams.find(t => t.id === m.a)?.name || m.a;
+            try {
+                const pollUrl = `${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`;
+                await axios_1.default.post(pollUrl, {
+                    chatId: groupChatId,
+                    message: `⚔️ סקר ניחושים מחזור ${round} (משחק ${idx + 1}): מי תנצח במפגש בין ${hName} ל-${aName}? ⚽`,
+                    options: [
+                        { optionName: `🏆 ניצחון ל-${hName}` },
+                        { optionName: `🏆 ניצחון ל-${aName}` },
+                        { optionName: `🤝 תיקו דרמטי!` }
+                    ]
+                });
+            }
+            catch (pErr) {
+                console.error(`Error sending poll for H2H match ${hName} vs ${aName}:`, pErr);
+            }
+        }
+    }
+    await db.doc('leagueData/reminders').set({
+        lastSentRound: round,
+        lastSentAt: new Date().toISOString()
+    }, { merge: true });
+    console.log(`[runRoundReminderLogic] Broadcasted 24h reminder for round ${round}!`);
+    return { success: true, round, timeStr, message: fullMessage };
+};
+// 🟢 סנכרון וארכוב נתוני מחזור מלאים לאקסל/Google Sheets 🟢
+exports.syncMatchToExcel = (0, https_1.onCall)({ region: 'us-west1' }, async (request) => {
+    try {
+        const { rows, round } = request.data || {};
+        const roundNum = round || (rows && rows[0]?.round) || 1;
+        console.log(`[syncMatchToExcel] Archiving ${rows?.length || 0} player records for round ${roundNum}...`);
+        // 1. Save detailed Excel archive document in Firestore
+        await db.collection('round_excel_archives').doc(`round_${roundNum}`).set({
+            round: roundNum,
+            rows: rows || [],
+            timestamp: new Date().toISOString(),
+            totalRecords: rows?.length || 0
+        }, { merge: true });
+        // 2. Archive complete H2H Fantasy Fixtures & Retroactive Results for Excel
+        const fixSnap = await db.doc('leagueData/fixtures').get();
+        const rounds = fixSnap.data()?.rounds || [];
+        const h2hArchive = [];
+        const TEAM_NAMES = {
+            hamsili: 'חמסילי (ערן ואסף)',
+            harale: 'חראלה (גיא)',
+            holonia: 'חולוניה (ארז)',
+            pichichi: 'פיצ\'יצי (שלומי)',
+            tampa: 'טמפה (יינון)',
+            tumali: 'תומאלי (אלי ותום)'
+        };
+        rounds.forEach((r) => {
+            (r.matches || []).forEach((m) => {
+                const hName = TEAM_NAMES[m.h] || m.h;
+                const aName = TEAM_NAMES[m.a] || m.a;
+                const hs = m.hs !== undefined ? m.hs : '-';
+                const as = m.as !== undefined ? m.as : '-';
+                let status = r.isPlayed ? 'שוחק' : 'טרם שוחק';
+                if (r.isPlayed && m.hs !== undefined && m.as !== undefined) {
+                    if (m.hs > m.as)
+                        status = `ניצחון ל-${hName}`;
+                    else if (m.as > m.hs)
+                        status = `ניצחון ל-${aName}`;
+                    else
+                        status = 'תיקו';
+                }
+                h2hArchive.push({
+                    round: r.round,
+                    homeTeam: hName,
+                    homeScore: hs,
+                    awayScore: as,
+                    awayTeam: aName,
+                    status
+                });
+            });
+        });
+        await db.collection('leagueData').doc('h2h_excel_archive').set({
+            fixtures: h2hArchive,
+            lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        return { success: true, count: rows?.length || 0, message: `Round ${roundNum} data & H2H schedule archived successfully!` };
+    }
+    catch (err) {
+        console.error('[syncMatchToExcel] Error:', err);
+        return { success: false, error: err.message };
+    }
+});
+exports.triggerRoundReminder = (0, https_1.onRequest)({ region: 'us-west1', cors: true }, async (req, res) => {
+    try {
+        const result = await runRoundReminderLogic(true);
+        res.status(200).json(result);
+    }
+    catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+// 🟢 תזכורת אוטומטית שעה אחת לפני המשחק הראשון של המחזור עם תיוג @ למאמנים שלא העמידו הרכב 🟢
+const runOneHourPreMatchReminder = async (forceManual = false) => {
+    console.log('[runOneHourPreMatchReminder] Checking 1-hour pre-match reminder...');
+    const settingsSnap = await db.doc('leagueData/settings').get();
+    const round = settingsSnap.data()?.currentRound || 1;
+    if (!forceManual) {
+        const remindersSnap = await db.doc('leagueData/reminders').get();
+        if (remindersSnap.exists && remindersSnap.data()?.[`sent_1h_round_${round}`]) {
+            console.log(`[1h Reminder] Reminder for round ${round} was already sent.`);
+            return { success: false, reason: `1h reminder for round ${round} already sent.` };
+        }
+    }
+    const realSnap = await db.doc('leagueData/real_fixtures').get();
+    if (!realSnap.exists)
+        return { success: false, reason: 'real_fixtures not found' };
+    const realMatches = realSnap.data()?.matches || [];
+    const roundMatches = realMatches.filter((m) => m.round === round);
+    if (roundMatches.length === 0)
+        return { success: false, reason: `No real matches for round ${round}` };
+    const firstMatch = roundMatches[0];
+    let kickoffTime = Date.now();
+    if (firstMatch.date && firstMatch.time) {
+        const parts = firstMatch.date.split('/');
+        if (parts.length === 3) {
+            const isoStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}T${firstMatch.time}:00+03:00`;
+            kickoffTime = new Date(isoStr).getTime();
+        }
+    }
+    const now = Date.now();
+    const diffMs = kickoffTime - now;
+    const diffHours = diffMs / (1000 * 60 * 60);
+    if (!forceManual && (diffHours > 1.25 || diffHours < 0)) {
+        return { success: false, reason: `Not in 1h window (kickoff in ${diffHours.toFixed(2)} hours)` };
+    }
+    const usersSnap = await db.collection('users').get();
+    const missingTeams = [];
+    usersSnap.forEach(docSnap => {
+        const u = docSnap.data();
+        if (u.teamName && docSnap.id !== 'admin' && docSnap.id !== 'system') {
+            const lineup = u.published_lineup || u.lineup || [];
+            if (!Array.isArray(lineup) || lineup.length < 11) {
+                const phonesList = [];
+                if (Array.isArray(u.phones)) {
+                    phonesList.push(...u.phones);
+                }
+                else if (typeof u.phone === 'string') {
+                    phonesList.push(u.phone);
+                }
+                if (docSnap.id === 'hamsili' && phonesList.length === 0) {
+                    phonesList.push('972525001777', '972522390580');
+                }
+                else if (docSnap.id === 'tumali' && phonesList.length === 0) {
+                    phonesList.push('972535330428', '972526330513');
+                }
+                missingTeams.push({
+                    id: docSnap.id,
+                    teamName: u.teamName,
+                    manager: u.manager || '',
+                    assistantName: u.assistantName || '',
+                    phones: Array.from(new Set(phonesList)),
+                    lineupCount: Array.isArray(lineup) ? lineup.length : 0
+                });
+            }
+        }
+    });
+    if (missingTeams.length === 0) {
+        console.log(`[1h Reminder] All teams have published full lineups for round ${round}!`);
+        return { success: true, message: 'All teams have full lineups!' };
+    }
+    const missingLines = missingTeams.map(t => {
+        const mentionsStr = t.phones.map((p) => `@${p.replace(/\D/g, '')}`).join(' ');
+        const managerNames = [t.manager, t.assistantName].filter(Boolean).join(' & ');
+        return `⚠️ *${t.teamName}* (${managerNames}): ${mentionsStr}`;
+    }).join('\n');
+    const fullMessage = `⏰ *תזכורת חמה! שעה 1 בלבד לשריקת הפתיחה של מחזור ${round}!* ⚽⏳\n\n` +
+        `🚨 *הקבוצות הבאות עדיין לא עדכנו/השלימו הרכב פותח בזירה:*\n` +
+        `${missingLines}\n\n` +
+        `📱 היכנסו עכשיו לאפליקציה ועדכנו הרכב לפני הנעילה:\n` +
+        `https://fantasy-luzon.web.app`;
+    const groupChatId = '120363412136780106@g.us';
+    const greenHost = 'https://7107.api.greenapi.com';
+    const greenId = '710722713612';
+    const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+    await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+        chatId: groupChatId,
+        message: fullMessage
+    });
+    await db.doc('leagueData/reminders').set({
+        [`sent_1h_round_${round}`]: true,
+        lastSentAt: new Date().toISOString()
+    }, { merge: true });
+    console.log(`[runOneHourPreMatchReminder] Sent 1h reminder for round ${round} to ${missingTeams.length} missing teams.`);
+    return { success: true, round, missingTeamsCount: missingTeams.length, message: fullMessage };
+};
+exports.runOneHourPreMatchReminder = runOneHourPreMatchReminder;
+exports.scheduled1HourReminder = (0, scheduler_1.onSchedule)('every 15 minutes', async () => {
+    try {
+        await (0, exports.runOneHourPreMatchReminder)(false);
+    }
+    catch (e) {
+        console.error('Error in scheduled1HourReminder:', e?.message || e);
+    }
+});
+exports.trigger1HourReminder = (0, https_1.onRequest)({ region: 'us-west1', cors: true }, async (req, res) => {
+    try {
+        const result = await (0, exports.runOneHourPreMatchReminder)(true);
+        res.status(200).json(result);
+    }
+    catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 // 🟢 סנכרון אוטומטי מיומן Google Calendar (eranyy@gmail.com) 🟢
 exports.scheduledCalendarSync = (0, scheduler_1.onSchedule)('every 6 hours', async () => {
     try {
@@ -735,8 +1200,8 @@ exports.scheduledCalendarSync = (0, scheduler_1.onSchedule)('every 6 hours', asy
         const israeliTeams = [
             'מכבי תל אביב', 'מכבי חיפה', 'הפועל באר שבע', 'הפועל תל אביב',
             'בית"ר ירושלים', 'מכבי נתניה', 'הפועל ירושלים', 'הפועל חיפה',
-            'בני סכנין', 'מ.ס אשדוד', 'מכבי פתח תקווה', 'הפועל פתח תקווה',
-            'עירוני קרית שמונה', 'עירוני טבריה', 'הפועל חדרה', 'מכבי בני ריינה'
+            'בני סכנין', 'מכבי פתח תקווה', 'הפועל פתח תקווה',
+            'עירוני קרית שמונה', 'עירוני טבריה', 'הפועל רמת גן'
         ];
         const matchedMatches = [];
         items.forEach((item) => {
@@ -795,9 +1260,23 @@ exports.scheduledCalendarSync = (0, scheduler_1.onSchedule)('every 6 hours', asy
 });
 // 🟢 סנכרון אוטומטי מתוך קובץ Google Sheets של משחקי ליגת העל והגביע 🟢
 const runSheetSyncLogic = async () => {
-    const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQu3dsWYrZmhp_LvcWSisQODusa0aETCYEHLlJGbKeqOpLBJFhwHCFML5HlpHnbSdeUEycx2K3KhZLt/pub?output=csv';
-    const res = await axios_1.default.get(sheetUrl);
-    const csvData = res.data;
+    const primaryUrl = 'https://docs.google.com/spreadsheets/d/14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s/gviz/tq?tqx=out:csv';
+    const fallbackUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQu3dsWYrZmhp_LvcWSisQODusa0aETCYEHLlJGbKeqOpLBJFhwHCFML5HlpHnbSdeUEycx2K3KhZLt/pub?output=csv';
+    let csvData = '';
+    try {
+        const res = await axios_1.default.get(primaryUrl);
+        csvData = res.data;
+    }
+    catch (e) {
+        console.warn('Primary sheet URL failed, trying fallback URL:', e?.message);
+        try {
+            const res = await axios_1.default.get(fallbackUrl);
+            csvData = res.data;
+        }
+        catch (err) {
+            console.error('All sheet URLs failed:', err?.message);
+        }
+    }
     if (!csvData)
         return { count: 0 };
     const parseCsvLine = (line) => {

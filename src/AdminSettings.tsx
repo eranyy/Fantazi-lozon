@@ -104,6 +104,8 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [isSavingCup, setIsSavingCup] = useState(false); 
   
   const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [resetLoadingEmail, setResetLoadingEmail] = useState<string | null>(null);
+  const [resetModalMsg, setResetModalMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
   const [teamToDelete, setTeamToDelete] = useState<any | null>(null); 
   const [newUser, setNewUser] = useState({ teamName: '', manager: '', assistantName: '', email: '', assistantEmail: '', role: 'USER', isApproved: true, assistants: [] as any[] });
@@ -134,8 +136,12 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [scanRoundInput, setScanRoundInput] = useState<string>('');
 
   const [topPlayersDriveUrl, setTopPlayersDriveUrl] = useState('');
-  const sheetsApiKey = 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
-  const [geminiApiKey, setGeminiApiKey] = useState(localStorage.getItem('gemini_api_key') || 'AIzaSyBM6ArDeYA0oRuOLQPXt4qVIGDSrQALaYQ');
+  const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+  const [geminiApiKey, setGeminiApiKey] = useState(
+    localStorage.getItem('gemini_api_key') || 
+    (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
+    'AIzaSyBM6ArDeYA0oRuOLQPXt4qVIGDSrQALaYQ'
+  );
 
   const [realFixturesMatches, setRealFixturesMatches] = useState<any[]>([]);
   const [showFixtureModal, setShowFixtureModal] = useState(false);
@@ -251,6 +257,22 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           showMessage(nextVal ? '⚡ חוק חלוץ 5 גמיש הופעל בהצלחה!' : '⚪ חוק חלוץ 5 גמיש כבוי כעת', 'success');
       } catch (e) { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
       finally { setLoading(false); }
+  };
+
+  const handleForceGlobalRefresh = async () => {
+    if (!window.confirm("האם אתה בטוח שברצונך לכפות רענון בלייב לכל המשתמשים הפעילים באתר?")) return;
+    setLoading(true);
+    try {
+      await setDoc(doc(db, 'system_settings', 'global_refresh'), {
+        timestamp: Date.now(),
+        triggeredBy: 'ערן'
+      }, { merge: true });
+      showMessage('⚡ רענון בלייב נשלח לכל המשתמשים בהצלחה!', 'success');
+    } catch (e) {
+      showMessage('❌ שגיאה בשליחת רענון בלייב', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // === NEW FUNCTION FOR TIME MACHINE ===
@@ -684,7 +706,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
     if(!window.confirm('זהירות: פעולה זו שולחת את כל נתוני ההיסטוריה לאקסל. האם האקסל נקי מכפילויות?')) return;
     setIsSyncingHistory(true); showMessage('מתחיל סנכרון היסטורי... ⏳', 'info');
     try {
-        const excelSyncRows: any[] = []; const TARGET_SPREADSHEET_ID = '1_tq9_QMdifGLHzw-cZVJGYRsUZ-5R5RkCyXHzkoMHS8';
+        const excelSyncRows: any[] = []; const TARGET_SPREADSHEET_ID = '14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s';
         const backupsSnap = await getDocs(collection(db, 'round_backups'));
         if (backupsSnap.empty) throw new Error('לא נמצאו גיבויים.');
 
@@ -767,9 +789,32 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   };
 
   const handleSendResetEmail = async (email: string) => {
-      if (!email) return showMessage('אין כתובת אימייל לשליחה', 'error');
-      try { await sendPasswordResetEmail(auth, email); showMessage(`✅ אימייל לאיפוס סיסמה נשלח ל-${email}`, 'success'); } 
-      catch (e: any) { showMessage('❌ שגיאה בשליחת אימייל: ' + e.message, 'error'); }
+      if (!email || !email.trim()) {
+        const msg = 'אין כתובת אימייל לשליחה';
+        setResetModalMsg({ text: msg, type: 'error' });
+        return showMessage(msg, 'error');
+      }
+      const target = email.trim().toLowerCase();
+      setResetLoadingEmail(target);
+      setResetModalMsg(null);
+      showMessage(`שולח אימייל איפוס סיסמה ל-${target}... ⏳`, 'info');
+      try { 
+        await sendPasswordResetEmail(auth, target); 
+        const msg = `✅ אימייל לאיפוס סיסמה נשלח בהצלחה ל-${target}! יש לבדוק דואר נכנס/ספאם.`;
+        setResetModalMsg({ text: msg, type: 'success' });
+        showMessage(msg, 'success'); 
+      } 
+      catch (e: any) { 
+        console.error(e);
+        let errStr = e.message || 'שגיאה במערכת';
+        if (e.code === 'auth/user-not-found') errStr = 'משתמש עם אימייל זה לא נמצא במערכת';
+        if (e.code === 'auth/invalid-email') errStr = 'כתובת אימייל לא תקינה';
+        const msg = '❌ שגיאה בשליחת אימייל: ' + errStr;
+        setResetModalMsg({ text: msg, type: 'error' });
+        showMessage(msg, 'error'); 
+      } finally {
+        setResetLoadingEmail(null);
+      }
   };
 
   const executePermanentDelete = async () => {
@@ -825,6 +870,25 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           await setDoc(doc(db, 'leagueData', 'real_fixtures'), { matches: newMatches, lastUpdated: new Date().toISOString() }, { merge: true });
           showMessage('✅ שורת משחק חדשה נוספה!', 'success'); setEditingMatchIndex(newMatches.length - 1); setEditingMatchData(newMatches[newMatches.length - 1]);
       } catch (e) { showMessage('❌ שגיאה ביצירת המשחק', 'error'); }
+  };
+
+  const handleClearDeletedLogs = async () => {
+    if (!window.confirm('האם אתה בטוח שברצונך לאפס ולנקות לחלוטין את ארכיון השחקנים שנמחקו?')) return;
+    try {
+      setLoading(true);
+      const snap = await getDocs(collection(db, 'logs_deleted_players'));
+      const batch = writeBatch(db);
+      snap.docs.forEach(docSnap => {
+        batch.delete(docSnap.ref);
+      });
+      await batch.commit();
+      showMessage('✅ ארכיון המחיקות אופס ונוקה בהצלחה! 🗑️', 'success');
+    } catch (err) {
+      console.error('Error clearing deleted logs:', err);
+      showMessage('❌ שגיאה בניקוי ארכיון המחיקות.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const matchesByRound = (realFixturesMatches || []).reduce((acc, match, idx) => {
@@ -975,29 +1039,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         {activeTab === 'users' && (
           <div className="space-y-6">
 
-            <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 md:p-8 rounded-[32px] border border-purple-400/50 shadow-[0_0_30px_rgba(168,85,247,0.15)] animate-in fade-in zoom-in-95 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/10 blur-[60px] pointer-events-none rounded-full"></div>
-              <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10"><Calculator className="text-purple-400 w-7 h-7" /> חישוב טבלה ומומנטום (אוטומטי)</h3>
-              <p className="text-slate-300 text-sm font-bold mb-6 relative z-10">
-                סורק את כל המשחקים מהאפליקציה, מחשב שערים, מומנטום, וניקוד: <br/>
-                <span className="text-green-400">ניצחון ב-20 הפרש ומעלה = 3 נק'</span> | <span className="text-green-400">ניצחון רגיל = 2 נק'</span> | <span className="text-yellow-400">תיקו = 1 נק'</span> | <span className="text-red-400">הפסד = 0 נק'</span>.<br/>
-                בנוסף יעדכן: 🔥 רצף ניצחונות, 🤡 רצף הפסדים, 🛡️ הגנת ברזל.
-              </p>
-              <button 
-                onClick={recalculateTableFromApp} 
-                disabled={loading || isSyncingTable} 
-                className="w-full md:w-auto px-10 py-4 bg-purple-600 hover:bg-purple-500 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 relative z-10"
-              >
-                {(loading || isSyncingTable) ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Flame className="w-5 h-5" />}
-                {(loading || isSyncingTable) ? 'מחשב נתונים...' : 'חשב טבלה, מומנטום ופיצ\'רים עכשיו 🧮'}
-              </button>
-            </div>
-
-            {/* 📢 מערכת שליחת התראות פוש (לכל המשתמשים) 📢 */}
-            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-yellow-500/40 shadow-xl relative overflow-hidden mt-6 animate-in fade-in zoom-in-95">
+            {/* 📢 1. מערכת שליחת התראות פוש (לכל המשתמשים) - ראשון בקטגוריה! 📢 */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-yellow-500/40 shadow-xl relative overflow-hidden animate-in fade-in zoom-in-95">
               <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 blur-[50px] pointer-events-none rounded-full"></div>
               <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
-                <Bell className="text-yellow-400" /> מערכת שליחת התראות פוש (לכל המשתמשים)
+                <Bell className="text-yellow-400" /> מערכת שליחת התראות פוש (לכל המשתמשים) 📢
               </h3>
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
                 כאן תוכל לשלוח הודעת פוש מתפרצת ישירות למכשירים של כל המנג'רס בליגה שאישרו קבלת התראות באפליקציה.
@@ -1072,80 +1118,43 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               </div>
             </div>
 
-            {/* 🟢 בלוק: מכונת זמן (תיקון מחזור) 🟢 */}
-            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-blue-500/30 shadow-xl relative overflow-hidden mt-6">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] pointer-events-none rounded-full"></div>
+            {/* 🔄 2. כפיית רענון בלייב לכל המשתמשים - שני בקטגוריה! 🔄 */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-green-500/40 shadow-xl animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 blur-[50px] pointer-events-none rounded-full"></div>
               <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
-                ⏳ מכונת זמן (תיקון מחזור ידני)
+                <RefreshCw className="text-green-400" /> כפיית רענון בלייב לכל המשתמשים 🔄
               </h3>
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
-                השתמש בזה רק אם המערכת חזרה בטעות אחורה בזמן ומציגה מחזור ישן. הקלדת מספר כאן תשנה את המחזור הפעיל במסד הנתונים באופן מיידי.
+                לחיצה על כפתור זה תשלח אות רענון מיידי דרך Firestore לכל המשתמשים שפתוחים כרגע באתר או בנייד ותנקה אצלם את זיכרון המטמון!
               </p>
               <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
-                <input 
-                  type="number" 
-                  placeholder="הכנס מספר מחזור..." 
-                  value={manualRound} 
-                  onChange={(e) => setManualRound(e.target.value)}
-                  className="w-full sm:w-auto bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-blue-500 font-mono text-sm"
-                />
                 <button 
-                  onClick={handleForceRoundUpdate}
-                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white py-4 px-8 rounded-xl font-black transition-all shadow-lg active:scale-95"
+                  onClick={handleForceGlobalRefresh} 
+                  disabled={loading}
+                  className="w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white shadow-green-500/30 border border-green-400"
                 >
-                  שנה מחזור עכשיו
+                  ⚡ כפה רענון בלייב לכל המשתמשים
                 </button>
               </div>
             </div>
 
-            {/* 🟢 בלוק: שליטה בזמני המחזור 🟢 */}
-            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-orange-500/30 shadow-xl animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 blur-[50px] pointer-events-none rounded-full"></div>
-              <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
-                <Clock className="text-orange-500" /> שליטה בזמני המחזור (עקיפת שעון)
-              </h3>
-              <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
-                שליטת על בשעון האפליקציה. ניתן לנעול הרכבים לכולם באופן גורף, או לפתוח אותם בכוח (כדי לעקוף שעון קיץ/חורף ודחיות משחקים).
+            {/* 🧮 3. חישוב טבלה ומומנטום 🧮 */}
+            <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 md:p-8 rounded-[32px] border border-purple-400/50 shadow-[0_0_30px_rgba(168,85,247,0.15)] animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/10 blur-[60px] pointer-events-none rounded-full"></div>
+              <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10"><Calculator className="text-purple-400 w-7 h-7" /> חישוב טבלה ומומנטום (אוטומטי)</h3>
+              <p className="text-slate-300 text-sm font-bold mb-6 relative z-10">
+                סורק את כל המשחקים מהאפליקציה, מחשב שערים, מומנטום, וניקוד: <br/>
+                <span className="text-green-400">ניצחון ב-20 הפרש ומעלה = 3 נק'</span> | <span className="text-green-400">ניצחון רגיל = 2 נק'</span> | <span className="text-yellow-400">תיקו = 1 נק'</span> | <span className="text-red-400">הפסד = 0 נק'</span>.<br/>
+                בנוסף יעדכן: 🔥 רצף ניצחונות, 🤡 רצף הפסדים, 🛡️ הגנת ברזל.
               </p>
-              <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
-                {/* כפתור נעילה */}
-                <button 
-                  onClick={toggleGlobalLock} 
-                  disabled={loading}
-                  className={`flex-1 w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${globalLock ? 'bg-orange-500 text-black shadow-orange-500/30 border border-orange-400' : 'bg-slate-950 text-slate-300 border border-slate-700 hover:bg-slate-900'}`}
-                >
-                  {globalLock ? <><Lock className="w-5 h-5" /> המחזור נעול (כולם)</> : <><Lock className="w-5 h-5 opacity-50" /> הפעל נעילה גלובלית</>}
-                </button>
-                
-                {/* כפתור פתיחה כפויה (Bypass) */}
-                <button 
-                  onClick={toggleGlobalUnlock} 
-                  disabled={loading}
-                  className={`flex-1 w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${globalUnlock ? 'bg-emerald-500 text-black shadow-emerald-500/30 border border-emerald-400' : 'bg-slate-950 text-slate-300 border border-slate-700 hover:bg-slate-900'}`}
-                >
-                  {globalUnlock ? <><Unlock className="w-5 h-5" /> פתיחה כפויה פעילה!</> : <><Unlock className="w-5 h-5 opacity-50" /> עקוף שעון (פתח הכל)</>}
-                </button>
-              </div>
-            </div>
-
-            {/* 🟢 בלוק: חוק חלוץ 5 גמיש (קשר כחלוץ 5) 🟢 */}
-            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-purple-500/40 shadow-xl animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 blur-[50px] pointer-events-none rounded-full"></div>
-              <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
-                <Zap className="text-purple-400" /> חוק חלוץ 5 גמיש (קשר כחלוץ 5) ⚽
-              </h3>
-              <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
-                החל מעונת 26-27: לאחר שנבחרו 4 חלוצים בסגל, ניתן לבחור קשר פנוי בתור החלוץ ה-5. השחקן ייחשב כחלוץ בלבד ולא יוכל לרדת לקישור.
-              </p>
-              <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
-                <button 
-                  onClick={toggle5thFwdRule} 
-                  disabled={loading}
-                  className={`w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${allowMidfielderAs5thFwd ? 'bg-purple-600 text-white shadow-purple-500/30 border border-purple-400' : 'bg-slate-950 text-slate-400 border border-slate-700 hover:bg-slate-900'}`}
-                >
-                  {allowMidfielderAs5thFwd ? '⚡ החוק פעיל (קשר מורשה כחלוץ 5)' : '⚪ החוק כבוי (חלוצים בלבד)'}
-                </button>
-              </div>
+              <button 
+                onClick={recalculateTableFromApp} 
+                disabled={loading || isSyncingTable} 
+                className="w-full md:w-auto px-10 py-4 bg-purple-600 hover:bg-purple-500 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 relative z-10"
+              >
+                {(loading || isSyncingTable) ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Flame className="w-5 h-5" />}
+                {(loading || isSyncingTable) ? 'מחשב נתונים...' : 'חשב טבלה, מומנטום ופיצ\'רים עכשיו 🧮'}
+              </button>
             </div>
 
             <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-blue-500/30 shadow-xl animate-in fade-in zoom-in-95 mt-6">
@@ -1207,7 +1216,18 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
            <div className="space-y-6 animate-in fade-in zoom-in-95">
              <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-red-500/30 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-32 h-32 bg-red-500/10 blur-[50px] pointer-events-none rounded-full"></div>
-                <h3 className="text-2xl font-black text-red-400 mb-6 flex items-center gap-2 relative z-10"><Trash2 className="w-6 h-6" /> שחקנים שנמחקו (מעקב)</h3>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 relative z-10 gap-4">
+                  <h3 className="text-2xl font-black text-red-400 flex items-center gap-2">
+                    <Trash2 className="w-6 h-6" /> שחקנים שנמחקו (מעקב)
+                  </h3>
+                  <button 
+                    onClick={handleClearDeletedLogs} 
+                    disabled={loading || deletedLogs.length === 0} 
+                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2.5 rounded-xl border border-red-500/30 flex items-center gap-2 transition-all active:scale-95 shadow-inner text-sm font-black disabled:opacity-30"
+                  >
+                    <Eraser className="w-4 h-4" /> איפוס ארכיון מחיקות 🗑️
+                  </button>
+                </div>
                 
                 {deletedLogs.length === 0 ? (
                   <div className="text-center py-10 bg-slate-900/50 rounded-2xl border border-slate-700">
@@ -1640,15 +1660,25 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">שם עוזר המאמן (אופציונלי)</label><input type="text" value={editingUser.assistantName || ''} onChange={e => setEditingUser({...editingUser, assistantName: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" /></div>
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">אימייל עוזר מאמן</label><input type="email" value={editingUser.assistantEmail || ''} onChange={e => setEditingUser({...editingUser, assistantEmail: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" dir="ltr" /></div>
               
-              {/* --- שדה ההרשאות --- */}
+              {/* --- שדה ההרשאות המפוצל --- */}
               <div>
-                <label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">הרשאה</label>
+                <label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">הרשאת המנג'ר הראשי ({editingUser.manager || editingUser.name || 'מנג\'ר'})</label>
                 <select value={editingUser.role || 'USER'} onChange={e => setEditingUser({...editingUser, role: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none appearance-none focus:border-blue-500">
                   <option value="USER">משתמש רגיל</option>
-                  <option value="ARENA_MANAGER">מנהל זירה</option>
-                  <option value="ADMIN">אדמין (ערן)</option>
+                  <option value="ARENA_MANAGER">מנהל זירה 🛡️</option>
+                  <option value="ADMIN">אדמין (ערן) 👑</option>
                 </select>
               </div>
+
+              {editingUser.assistantEmail && (
+                <div>
+                  <label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">הרשאת עוזר המאמן ({editingUser.assistantName || 'עוזר מאמן'})</label>
+                  <select value={editingUser.assistantRole || 'USER'} onChange={e => setEditingUser({...editingUser, assistantRole: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none appearance-none focus:border-blue-500">
+                    <option value="USER">משתמש רגיל</option>
+                    <option value="ARENA_MANAGER">מנהל זירה 🛡️</option>
+                  </select>
+                </div>
+              )}
               
               <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-800">
                   <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">נקודות בטבלה</label><input type="number" value={editingUser.points || 0} onChange={e => setEditingUser({...editingUser, points: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500 text-center" /></div>
@@ -1657,15 +1687,45 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                   <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">שערי חובה</label><input type="number" value={editingUser.ga || 0} onChange={e => setEditingUser({...editingUser, ga: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500 text-center" /></div>
               </div>
 
+              {/* 🟢 באנר הודעת פידבק פנימית לאיפוס סיסמה 🟢 */}
+              {resetModalMsg && (
+                <div className={`p-3 rounded-xl font-bold text-xs border animate-in fade-in duration-200 ${resetModalMsg.type === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                  {resetModalMsg.text}
+                </div>
+              )}
+
               {/* 📧 כפתורי איפוס סיסמה מפוצלים 📧 */}
               <div className="pt-4 border-t border-slate-800 flex flex-col gap-3">
-                <button onClick={() => handleSendResetEmail(editingUser.email)} className="w-full bg-slate-800 hover:bg-slate-700 text-blue-400 font-bold py-3 rounded-xl border border-slate-600 transition-colors text-sm">איפוס סיסמה למנג'ר 📧</button>
+                <button 
+                  type="button"
+                  onClick={() => handleSendResetEmail(editingUser.email)} 
+                  disabled={resetLoadingEmail === editingUser.email?.trim()?.toLowerCase()}
+                  className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-blue-400 font-bold py-3 rounded-xl border border-slate-600 transition-colors text-sm flex items-center justify-center gap-2 active:scale-95"
+                >
+                  {resetLoadingEmail === editingUser.email?.trim()?.toLowerCase() ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-blue-400/20 border-t-blue-400 rounded-full animate-spin"></div>
+                      <span>שולח אימייל... ⏳</span>
+                    </>
+                  ) : (
+                    <span>איפוס סיסמה למנג'ר ({editingUser.manager || editingUser.name || 'מנג\'ר'}) 📧</span>
+                  )}
+                </button>
                 
                 <button 
+                  type="button"
                   onClick={() => editingUser.assistantEmail ? handleSendResetEmail(editingUser.assistantEmail) : showMessage('קודם שמור את כתובת המייל של העוזר כדי שיהיה אפשר לשלוח לו!', 'error')} 
-                  className={`w-full font-bold py-3 rounded-xl border transition-colors text-sm ${editingUser.assistantEmail ? 'bg-slate-800/50 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                  disabled={!editingUser.assistantEmail || resetLoadingEmail === editingUser.assistantEmail?.trim()?.toLowerCase()}
+                  className={`w-full font-bold py-3 rounded-xl border transition-colors text-sm flex items-center justify-center gap-2 active:scale-95 ${editingUser.assistantEmail ? 'bg-slate-800/50 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'}`}
                 >
-                  איפוס סיסמה לעוזר מאמן 📧
+                  {resetLoadingEmail === editingUser.assistantEmail?.trim()?.toLowerCase() ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-slate-300/20 border-t-slate-300 rounded-full animate-spin"></div>
+                      <span>שולח אימייל... ⏳</span>
+                    </>
+                  ) : (
+                    <span>איפוס סיסמה לעוזר מאמן ({editingUser.assistantName || 'עוזר'}) 📧</span>
+                  )}
                 </button>
               </div>
             </div>

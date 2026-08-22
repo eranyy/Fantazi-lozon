@@ -16,7 +16,7 @@ import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, 
 import { getToken, onMessage } from 'firebase/messaging'; 
 
 const App: React.FC = () => {
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(() => authService.getSession());
   const [activeTab, setActiveTab] = useState<'home' | 'live' | 'lineup' | 'table' | 'fixtures' | 'settings' | 'cup'>('home');
   const [teams, setTeams] = useState<Team[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -33,13 +33,54 @@ const App: React.FC = () => {
 
   const forceHardRefresh = () => {
     setIsRefreshing(true);
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      });
+    }
     localStorage.clear();
     sessionStorage.clear();
-    window.location.href = window.location.pathname + '?refresh=' + new Date().getTime();
+    window.location.href = window.location.pathname + '?v=' + Date.now();
   };
 
   const isEran = loggedInUser?.email?.toLowerCase() === 'eranyy@gmail.com' || loggedInUser?.role === UserRole.ADMIN || loggedInUser?.role === UserRole.SUPER_ADMIN;
   const displayName = isEran ? 'ערן' : (loggedInUser?.name || '');
+
+  // 🟢 1. מנגנון בדיקת גרסה אוטומטי - מרענן אוטומטית למשתמשים כשיוצא Build חדש 🟢
+  const LUZON_BUILD_VERSION = '14.0.20260819_v9';
+  useEffect(() => {
+    const lastSeenVersion = localStorage.getItem('luzon_app_version');
+    if (lastSeenVersion !== LUZON_BUILD_VERSION) {
+      localStorage.setItem('luzon_app_version', LUZON_BUILD_VERSION);
+      if (lastSeenVersion) {
+        if ('caches' in window) {
+          caches.keys().then(names => names.forEach(name => caches.delete(name)));
+        }
+        window.location.reload();
+      }
+    }
+  }, []);
+
+  // 🟢 2. האזנה לרענון כפוי בלייב מהמנהל (ערן) מתוך Firestore 🟢
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'system_settings', 'global_refresh'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const lastRefreshTime = data?.timestamp || 0;
+        const localHandledTime = Number(localStorage.getItem('luzon_last_global_refresh') || 0);
+        if (lastRefreshTime > localHandledTime && localHandledTime > 0) {
+          localStorage.setItem('luzon_last_global_refresh', String(lastRefreshTime));
+          if ('caches' in window) {
+            caches.keys().then(names => names.forEach(name => caches.delete(name)));
+          }
+          window.location.reload();
+        } else if (localHandledTime === 0) {
+          localStorage.setItem('luzon_last_global_refresh', String(lastRefreshTime));
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // 🟢 האזנה להתראות פוש כשהאפליקציה פתוחה במסך (Foreground Push Notification) 🟢
   useEffect(() => {
@@ -80,7 +121,8 @@ const App: React.FC = () => {
       if (Notification.permission === 'granted' && loggedInUser) {
         const fetchSilentToken = async () => {
           try {
-            const token = await getToken(messaging, { vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" });
+            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
+            const token = await getToken(messaging, { vapidKey });
             if (token) {
               await setDoc(doc(db, "users", loggedInUser.id), { 
                 fcmToken: token,
@@ -103,7 +145,8 @@ const App: React.FC = () => {
       setPushStatus(permission as any);
 
       if (permission === 'granted') {
-        const token = await getToken(messaging, { vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" });
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
+        const token = await getToken(messaging, { vapidKey });
         if (token && loggedInUser) {
           await setDoc(doc(db, "users", loggedInUser.id), { 
             fcmToken: token,
@@ -206,6 +249,10 @@ const App: React.FC = () => {
                let role = 'USER';
                if (isMainManager) {
                    role = dbRecord.role || 'USER';
+               } else if (isAssistant) {
+                   role = dbRecord.assistantRole || 'USER';
+               } else if (assistantObj) {
+                   role = assistantObj.role || dbRecord.assistantRole || 'USER';
                }
 
                let newName = userToRehydrate.name;

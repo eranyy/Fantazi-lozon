@@ -590,7 +590,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       }
 
       try {
-          const TARGET_SPREADSHEET_ID = '1_tq9_QMdifGLHzw-cZVJGYRsUZ-5R5RkCyXHzkoMHS8'; 
+          const TARGET_SPREADSHEET_ID = '14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s'; 
           const syncMatchToExcelFunc = httpsCallable(functions, 'syncMatchToExcel');
           await syncMatchToExcelFunc({ rows: excelSyncRows, spreadsheetId: TARGET_SPREADSHEET_ID });
           console.log('✅ Data synced to Google Sheets successfully!');
@@ -615,6 +615,12 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                   message: `סיום דרמטי למחזור ${currentRound}! פוסט הסיכום של האנליסט והטבלה המעודכנת עלו עכשיו לאפליקציה.`
               });
           } catch (pushErr) { console.error("Round close push notification error:", pushErr); }
+
+          try {
+              const broadcastWaFunc = httpsCallable(functions, 'broadcastRoundCloseToWhatsApp');
+              await broadcastWaFunc({ round: currentRound });
+              console.log('✅ WhatsApp group round summary broadcasted successfully!');
+          } catch (waErr) { console.error("WhatsApp group broadcast error:", waErr); }
         } catch (aiErr) { console.error("AI Summary failed:", aiErr); }
       }
 

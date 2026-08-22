@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, doc, setDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../firebaseConfig';
 import { authService } from '../authService';
@@ -22,9 +22,8 @@ const requestPushPermission = async (userId: string) => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
-      const token = await getToken(messaging, {
-        vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" 
-      });
+      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
+      const token = await getToken(messaging, { vapidKey });
 
       if (token) {
         await setDoc(doc(db, "users", userId), {
@@ -43,6 +42,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resetSuccessMsg, setResetSuccessMsg] = useState('');
 
   const processAuthenticatedUser = async (user: any, inputEmail: string, loginMethod: string) => {
     console.log(`[Processing Auth User] Email: ${inputEmail}, UID: ${user.uid}`);
@@ -60,13 +60,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       } 
       // בדיקה אם זה עוזר המאמן
       else if (asstEmail === inputEmail) {
-        foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: 'USER' };
+        foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
       }
       // בדיקה אם זה אחד מעוזרי המאמן (מערך)
       else if (data.assistants && Array.isArray(data.assistants)) {
         const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
         if (assistant) {
-          foundUser = { id: doc.id, teamId: doc.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: 'USER' };
+          foundUser = { id: doc.id, teamId: doc.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: assistant.role || data.assistantRole || 'USER' };
         }
       }
     });
@@ -108,8 +108,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
     const inputEmail = email.toLowerCase().trim();
     const inputPassword = password.trim();
-    
-    console.log(`[Login Attempt] Email: ${inputEmail}`);
 
     try {
       // 1. Try Firebase Authentication
@@ -179,10 +177,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           errorMessage: err.message,
           timestamp: new Date().toISOString()
         });
-      } catch (logErr) {}
+      } catch (logErr) {
+        // Ignore log errors so login error display is never interrupted
+      }
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    getRedirectResult(auth).then(async (result) => {
+      if (result && result.user) {
+        setLoading(true);
+        const inputEmail = (result.user.email || '').toLowerCase().trim();
+        await processAuthenticatedUser(result.user, inputEmail, 'google_redirect');
+        setLoading(false);
+      }
+    }).catch((err) => {
+      console.error("Redirect login error:", err);
+    });
+  }, []);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -192,17 +205,30 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       
-      const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
-      const inputEmail = (user.email || '').toLowerCase().trim();
-      await processAuthenticatedUser(user, inputEmail, 'google');
+      const isMobile = /Mobile|iP(hone|od)|Android|BlackBerry|IEMobile|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(navigator.userAgent);
+      
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
+      try {
+        const userCredential = await signInWithPopup(auth, provider);
+        const user = userCredential.user;
+        const inputEmail = (user.email || '').toLowerCase().trim();
+        await processAuthenticatedUser(user, inputEmail, 'google');
+      } catch (popupErr: any) {
+        console.warn("Popup Google login failed, trying redirect fallback...", popupErr);
+        if (popupErr.code === 'auth/popup-closed-by-user') {
+          setError('התחברות עם Google בוטלה.');
+          setLoading(false);
+          return;
+        }
+        await signInWithRedirect(auth, provider);
+      }
     } catch (err: any) {
       console.error(`[Google Login Error] Code: ${err.code}, Message: ${err.message}`);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('התחברות עם Google בוטלה.');
-      } else if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
-        setError('הדפדפן חסם את חלון ההתחברות של גוגל. פתח את הקישור בדפדפן Chrome / Safari רגיל (ולא מתוך אפליקציית ווצאפ), או התחבר באימייל וסיסמה.');
-      } else if (err.code === 'auth/unauthorized-domain') {
+      if (err.code === 'auth/unauthorized-domain') {
         setError('הדומיין שבו אתה משתמש אינו מורשה ב-Firebase. נסה להיכנס מ-fantasy-luzon.web.app');
       } else {
         setError(`שגיאת התחברות גוגל: ${err.message || err.code}`);
@@ -212,9 +238,37 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setError('');
+    setResetSuccessMsg('');
+    const targetEmail = email.trim().toLowerCase();
+
+    if (!targetEmail) {
+      setError('אנא הקלד את כתובת האימייל שלך בשדה האימייל למעלה, ולאחר מכן לחץ "שכחתי סיסמה".');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+      setResetSuccessMsg(`✅ קישור לאיפוס סיסמה נשלח בהצלחה ל-${targetEmail}! בדוק את דואר הנכנס והספאם.`);
+    } catch (err: any) {
+      console.error("Password reset error:", err);
+      if (err.code === 'auth/user-not-found') {
+        setError('כתובת אימייל זו אינה רשומה כמנג\'ר בליגה. ודא שהאימייל נכון.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('כתובת אימייל לא תקינה.');
+      } else {
+        setError('שגיאה בשליחת אימייל לאיפוס סיסמה: ' + (err.message || 'נסה שנית'));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleHelp = (type: string) => {
     if (type === 'new') alert('ברוך הבא לפנטזי לוזון! ⚽\nהמערכת סגורה להרשמה חופשית.\nנא לפנות למנהל הליגה (ערן) כדי לפתוח קבוצה חדשה.');
-    if (type === 'forgot') alert('שכחת סיסמה? לא נורא.\nפנה למנהל הליגה (ערן) בווצאפ והוא יאפס לך את הסיסמה בשנייה מתוך פאנל הניהול.');
+    if (type === 'forgot') handleForgotPassword();
   };
 
   return (
@@ -291,6 +345,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             <button type="button" onClick={() => handleHelp('forgot')} className="text-xs text-green-500 hover:text-green-400 font-bold">שכחתי סיסמה</button>
           </div>
 
+          {resetSuccessMsg && <div className="bg-green-950/80 border border-green-500/50 text-green-300 p-3.5 rounded-xl text-center text-xs font-bold animate-in fade-in">{resetSuccessMsg}</div>}
           {error && <div className="bg-red-950/50 border border-red-500/50 text-red-400 p-3 rounded-xl text-center text-sm font-bold animate-in fade-in">{error}</div>}
 
           <button 

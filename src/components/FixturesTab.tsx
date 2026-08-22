@@ -6,6 +6,16 @@ import { sortMatchesChronologically } from '../utils/dateUtils';
 
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
+const formatMatchTime = (t?: string) => {
+  if (!t) return '20:00';
+  const str = String(t).trim();
+  const parts = str.split(':');
+  if (parts.length >= 2) {
+    return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+  }
+  return str;
+};
+
 // הוספנו את isAdmin ל-props כדי לדעת אם להציג את עורך ההיסטוריה
 interface FixturesTabProps {
   currentRound: number;
@@ -175,7 +185,7 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
                   
                   <div className="px-4 shrink-0 flex flex-col items-center justify-center">
                     <div className="bg-zinc-950 border border-zinc-700/80 px-4 py-2 rounded-2xl shadow-inner text-center">
-                      <div className="text-lg font-black text-yellow-400 font-mono tracking-tight">{m.time}</div>
+                      <div className="text-lg font-black text-yellow-400 font-mono tracking-tight">{formatMatchTime(m.time)}</div>
                     </div>
                   </div>
 

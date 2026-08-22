@@ -102,19 +102,21 @@ const GhostJersey = () => (
 );
 
 const normalizePos = (pos: string) => {
-  if (!pos) return 'DEF';
+  if (!pos) return 'MID';
   const p = pos.trim().toUpperCase();
-  if (p === 'שוער' || p === 'GK') return 'GK';
-  if (p === 'הגנה' || p === 'DEF' || p === 'בלם' || p === 'מגן') return 'DEF';
-  if (p === 'קישור' || p === 'MID' || p === 'קשר') return 'MID';
-  if (p === 'חלוץ' || p === 'FWD' || p === 'התקפה') return 'FWD';
-  return 'DEF'; 
+  if (p === 'GK' || p === 'שוער') return 'GK';
+  if (p.includes('/') || (p.includes('MID') && p.includes('FWD')) || (p.includes('חלוץ') && p.includes('קשר'))) return 'FWD';
+  if (p === 'DEF' || p === 'הגנה' || p === 'בלם' || p === 'מגן') return 'DEF';
+  if (p === 'MID' || p === 'קישור' || p === 'קשר') return 'MID';
+  if (p === 'FWD' || p === 'ATT' || p === 'חלוץ' || p === 'התקפה') return 'FWD';
+  return 'FWD'; 
 };
 
 const getHebrewRole = (pos: string) => {
-  if (!pos) return 'מגן';
+  if (!pos) return 'קשר';
   const p = pos.trim().toUpperCase();
   if (p === 'GK' || p === 'שוער') return 'שוער';
+  if (p.includes('/') || (p.includes('MID') && p.includes('FWD')) || (p.includes('חלוץ') && p.includes('קשר'))) return 'קשר - חלוץ';
   if (p === 'DEF' || p === 'הגנה' || p === 'בלם' || p === 'מגן') return 'מגן';
   if (p === 'MID' || p === 'קישור' || p === 'קשר') return 'קשר';
   if (p === 'FWD' || p === 'ATT' || p === 'חלוץ' || p === 'התקפה') return 'חלוץ';
@@ -332,10 +334,10 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const activeLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
   const activeBench = bench.filter(p => p && p.id);
 
-  const defs = activeLineup.filter(p => p.position === 'DEF').length;
-  const mids = activeLineup.filter(p => p.position === 'MID').length;
-  const fwds = activeLineup.filter(p => p.position === 'FWD').length;
-  const gks = activeLineup.filter(p => p.position === 'GK').length;
+  const defs = activeLineup.filter(p => normalizePos(p.position) === 'DEF').length;
+  const mids = activeLineup.filter(p => normalizePos(p.position) === 'MID').length;
+  const fwds = activeLineup.filter(p => normalizePos(p.position) === 'FWD').length;
+  const gks = activeLineup.filter(p => normalizePos(p.position) === 'GK').length;
   const currentFormationStr = `${defs}-${mids}-${fwds}`;
   
   let isFormationValid = false;
@@ -575,10 +577,10 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         return showToast(`❌ חוק לוזון: אסור יותר מ-${maxAllowedFromTeam} שחקנים מאותה קבוצה (${player.team}) בהרכב!`, 'error');
       }
 
-      const newDefs = currentActiveLineup.filter(p => p.position === 'DEF').length + (player.position === 'DEF' ? 1 : 0);
-      const newMids = currentActiveLineup.filter(p => p.position === 'MID').length + (player.position === 'MID' ? 1 : 0);
-      const newFwds = currentActiveLineup.filter(p => p.position === 'FWD').length + (player.position === 'FWD' ? 1 : 0);
-      const newGks = currentActiveLineup.filter(p => p.position === 'GK').length + (player.position === 'GK' ? 1 : 0);
+      const newDefs = currentActiveLineup.filter(p => normalizePos(p.position) === 'DEF').length + (normalizePos(player.position) === 'DEF' ? 1 : 0);
+      const newMids = currentActiveLineup.filter(p => normalizePos(p.position) === 'MID').length + (normalizePos(player.position) === 'MID' ? 1 : 0);
+      const newFwds = currentActiveLineup.filter(p => normalizePos(p.position) === 'FWD').length + (normalizePos(player.position) === 'FWD' ? 1 : 0);
+      const newGks = currentActiveLineup.filter(p => normalizePos(p.position) === 'GK').length + (normalizePos(player.position) === 'GK' ? 1 : 0);
 
       if (newGks > 1) return showToast('❌ חוק לוזון: מקסימום שוער 1 בהרכב הפותח!', 'error');
 
@@ -983,30 +985,41 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
   if (!myTeam) return <div className="flex justify-center items-center pt-32 h-full"><div className="w-10 h-10 border-[3px] border-green-500/20 border-t-green-500 rounded-full animate-spin"></div></div>;
 
+  const isDualPlayer = (player: any) => {
+    if (!player) return false;
+    if (player.isDual === true || player.isDualPosition === true) return true;
+    const p = String(player.position || player.pos || '').toUpperCase();
+    if (p.includes('/') || (p.includes('MID') && p.includes('FWD'))) return true;
+    return false;
+  };
+
   const renderListRow = (player: Player, isBench: boolean) => {
     const isSub = checkIsHalftimeSub(player.name);
-    const colors = getTeamColors(myTeam?.teamName || '', player.position === 'GK');
+    const playerPos = (player as any).pos || player.position;
+    const colors = getTeamColors(myTeam?.teamName || '', normalizePos(playerPos) === 'GK');
+    const dual = isDualPlayer(player);
     
     return (
       <div key={player.id} onClick={(e) => { e.stopPropagation(); setSelectedPlayer(player); }} className="flex items-center justify-between bg-slate-800/40 hover:bg-slate-800 p-3 rounded-2xl border border-slate-700/50 cursor-pointer transition-all active:scale-[0.98] group">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 shrink-0 relative">
-            <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={player.position === 'GK' ? '🧤' : player.position} />
+            <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={normalizePos(playerPos) === 'GK' ? '🧤' : normalizePos(playerPos)} />
           </div>
           <div className="flex flex-col">
             <span className="font-black text-white text-sm md:text-base group-hover:text-green-400 transition-colors flex items-center gap-2">
               {player.name}
               {isSub && <span className="bg-orange-500 text-black text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black">חילוף</span>}
-              {((player as any).isDual || player.position?.includes('/') || player.name?.includes('מזל') || player.name?.includes('פלקוש')) && (
-                <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-                  ⚡ קשר / חלוץ
-                </span>
-              )}
             </span>
-            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
+            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5 mt-0.5">
               <span>{player.team}</span>
               <span className="text-slate-600">•</span>
-              <span className="text-slate-400 font-semibold">{getHebrewRole(player.position)}</span>
+              {dual ? (
+                <span className="text-purple-400 font-black">
+                  קשר - חלוץ
+                </span>
+              ) : (
+                <span className="text-slate-400 font-semibold">{getHebrewRole(playerPos)}</span>
+              )}
             </span>
           </div>
         </div>
@@ -1333,21 +1346,22 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                       <div key={player.id} onClick={() => setSelectedPlayer(player)} className="flex items-center justify-between bg-slate-800/40 hover:bg-slate-800 p-3 rounded-2xl border border-transparent hover:border-slate-700 transition-colors cursor-pointer group">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 shrink-0 relative">
-                             <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={player.position === 'GK' ? '🧤' : player.position} />
+                             <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={normalizePos((player as any).pos || player.position) === 'GK' ? '🧤' : normalizePos((player as any).pos || player.position)} />
                           </div>
                           <div>
                             <div className="text-sm font-black text-slate-200 group-hover:text-white transition-colors flex items-center gap-1.5">
                               {player.name}
-                              {((player as any).isDual || player.position?.includes('/') || player.name?.includes('מזל') || player.name?.includes('פלקוש')) && (
-                                <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">
-                                  ⚡ קשר/חלוץ
-                                </span>
-                              )}
                             </div>
                             <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
                               <span>{player.team}</span>
                               <span className="text-slate-600">•</span>
-                              <span className="text-slate-400 font-semibold">{getHebrewRole(player.position)}</span>
+                              {isDualPlayer(player) ? (
+                                <span className="text-purple-400 font-black">
+                                  קשר - חלוץ
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-semibold">{getHebrewRole((player as any).pos || player.position)}</span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1382,8 +1396,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                   <h4 className="text-lg md:text-xl font-black text-green-400 mb-4 flex items-center gap-2 border-b border-green-500/20 pb-2">
                     <span className="text-2xl">🏃‍♂️</span> הרכב פותח
                   </h4>
+
                   {['GK', 'DEF', 'MID', 'FWD'].map(pos => {
-                     const playersInPos = lineup.filter(p => p.position === pos);
+                     const playersInPos = lineup.filter(p => normalizePos((p as any).pos || p.position) === pos);
                      if (playersInPos.length === 0) return null;
                      
                      return (
@@ -1404,7 +1419,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                     <span className="text-2xl">🪑</span> ספסל מחליפים
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {bench.sort((a,b)=>POS_ORDER[a.position]-POS_ORDER[b.position]).map(player => renderListRow(player, true))}
+                    {bench.sort((a,b)=>POS_ORDER[(a as any).pos || a.position]-POS_ORDER[(b as any).pos || b.position]).map(player => renderListRow(player, true))}
                   </div>
                 </div>
               </div>
@@ -1436,7 +1451,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
                 <div className="absolute inset-0 pt-16 pb-6 flex flex-col justify-around z-20">
                   {['GK', 'DEF', 'MID', 'FWD'].map((pos, rowIndex) => {
-                    const posPlayers = lineup.filter(p => p.position === pos);
+                    const posPlayers = lineup.filter(p => normalizePos((p as any).pos || p.position) === pos);
                     const maxPos = pos === 'GK' ? 1 : pos === 'DEF' ? 5 : pos === 'MID' ? 5 : 3;
                     
                     const allowFreeForm = isCupModeActive ? (cupSettings.stage === 'semi' || cupSettings.stage === 'final') : isPlayoffRound;
@@ -1461,7 +1476,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                             const nameParts = player.name.trim().split(/\s+/);
                             const lastName = nameParts[nameParts.length - 1];
                             const isSub = checkIsHalftimeSub(player.name);
-                            const colors = getTeamColors(myTeam?.teamName || '', player.position === 'GK');
+                            const pPos = (player as any).pos || player.position;
+                            const colors = getTeamColors(myTeam?.teamName || '', normalizePos(pPos) === 'GK');
+                            const dual = isDualPlayer(player);
                             
                             return (
                               <div key={player.id} onClick={(e) => { e.stopPropagation(); setSelectedPlayer(player); }} className="relative flex flex-col items-center justify-start cursor-pointer group/player active:scale-90 transition-transform duration-300 hover:-translate-y-1.5 w-[46px] sm:w-[70px]">
@@ -1471,8 +1488,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                                 </div>
 
                                 <div className="relative w-11 h-11 sm:w-14 sm:h-14 md:w-16 md:h-16 z-20 transition-transform duration-300 group-hover/player:scale-110 group-hover/player:z-50">
-                                  <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={player.position === 'GK' ? '🧤' : player.position} />
-                                  
+                                  <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={normalizePos(pPos) === 'GK' ? '🧤' : normalizePos(pPos)} />
+
                                   {isSub && (
                                     <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-orange-400 to-red-500 w-4 h-4 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[8px] sm:text-[10px] shadow-xl border border-slate-900 z-40 animate-pulse">
                                       🔄
@@ -1660,20 +1677,41 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
               בחר <span className={POS_COLORS[activeZone]?.text}>{activeZone === 'GK' ? 'שוער' : activeZone === 'DEF' ? 'שחקן הגנה' : activeZone === 'MID' ? 'קשר' : 'חלוץ'}</span>
             </h3>
             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-              {bench.filter(p => p.position === activeZone).length === 0 ? (
-                <div className="text-center text-slate-500 py-10 font-bold bg-slate-800/30 rounded-2xl border border-dashed border-slate-700/50">אין שחקנים פנויים בעמדה זו בספסל.</div>
-              ) : (
-                bench.filter(p => p.position === activeZone).map(player => {
-                  const colors = getTeamColors(myTeam?.teamName || '', player.position === 'GK');
+              {(() => {
+                const matchingBench = bench.filter(p => {
+                  const pPos = normalizePos((p as any).pos || p.position);
+                  if (pPos === activeZone) return true;
+                  return false;
+                });
+
+                if (matchingBench.length === 0) {
+                  return <div className="text-center text-slate-500 py-10 font-bold bg-slate-800/30 rounded-2xl border border-dashed border-slate-700/50">אין שחקנים פנויים בעמדה זו בספסל.</div>;
+                }
+
+                return matchingBench.map(player => {
+                  const colors = getTeamColors(myTeam?.teamName || '', normalizePos((player as any).pos || player.position) === 'GK');
+                  const dual = isDualPlayer(player);
                   return (
                     <div key={player.id} className="flex justify-between items-center bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 shrink-0">
-                          <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={player.position === 'GK' ? '🧤' : player.position} />
+                          <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={normalizePos((player as any).pos || player.position) === 'GK' ? '🧤' : normalizePos((player as any).pos || player.position)} />
                         </div>
                         <div>
-                          <div className="font-black text-white text-sm">{player.name}</div>
-                          <div className="text-[10px] text-slate-400 font-bold">{player.team}</div>
+                          <div className="font-black text-white text-sm flex items-center gap-1.5">
+                            {player.name}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5 mt-0.5">
+                            <span>{player.team}</span>
+                            <span className="text-slate-600">•</span>
+                            {dual ? (
+                              <span className="text-purple-400 font-black">
+                                קשר - חלוץ
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-semibold">{getHebrewRole(player.position || (player as any).pos)}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <button 
@@ -1683,9 +1721,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                         <Plus className="w-4 h-4" /> הוסף
                       </button>
                     </div>
-                  )
-                })
-              )}
+                  );
+                });
+              })()}
             </div>
             <button onClick={() => setActiveZone(null)} className="mt-6 w-full py-4 bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-2xl transition-colors active:scale-95">סגור</button>
           </div>
@@ -1703,15 +1741,26 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 shrink-0 relative">
                    <Jersey 
-                     primary={getTeamColors(myTeam?.teamName || '', selectedPlayer.position === 'GK').prim} 
-                     secondary={getTeamColors(myTeam?.teamName || '', selectedPlayer.position === 'GK').sec} 
-                     textColor={getTeamColors(myTeam?.teamName || '', selectedPlayer.position === 'GK').text} 
-                     text={selectedPlayer.position === 'GK' ? '🧤' : selectedPlayer.position} 
+                     primary={getTeamColors(myTeam?.teamName || '', normalizePos((selectedPlayer as any).pos || selectedPlayer.position) === 'GK').prim} 
+                     secondary={getTeamColors(myTeam?.teamName || '', normalizePos((selectedPlayer as any).pos || selectedPlayer.position) === 'GK').sec} 
+                     textColor={getTeamColors(myTeam?.teamName || '', normalizePos((selectedPlayer as any).pos || selectedPlayer.position) === 'GK').text} 
+                     text={normalizePos((selectedPlayer as any).pos || selectedPlayer.position) === 'GK' ? '🧤' : normalizePos((selectedPlayer as any).pos || selectedPlayer.position)} 
                    />
                 </div>
                 <div className="flex flex-col justify-center">
                   <h3 className="text-2xl font-black text-white tracking-tight leading-none mb-1.5">{selectedPlayer.name}</h3>
-                  <span className="text-slate-300 text-xs font-bold px-2 py-0.5 bg-slate-800/80 rounded border border-slate-700/50 self-start">{selectedPlayer.team}</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-slate-300 text-xs font-bold px-2 py-0.5 bg-slate-800/80 rounded border border-slate-700/50 self-start">{selectedPlayer.team}</span>
+                    {isDualPlayer(selectedPlayer) ? (
+                      <span className="text-purple-400 font-black text-xs px-2 py-0.5">
+                        קשר - חלוץ
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs font-semibold px-2 py-0.5 bg-slate-800/50 rounded border border-slate-700/30">
+                        {getHebrewRole(selectedPlayer.position || (selectedPlayer as any).pos)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex flex-col items-center bg-slate-800/60 px-4 py-2.5 rounded-2xl border border-slate-700/50 shadow-inner">
