@@ -10,7 +10,7 @@ export const parseMatchDateTime = (m: any): number => {
     return Infinity;
   }
 
-  const dateMatch = dateStr.match(/(\d{1,2})[\/\.](\d{1,2})(?:[\/\.](\d{2,4}))?/);
+  const dateMatch = dateStr.match(/(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?/);
   if (!dateMatch) return Infinity;
 
   const day = parseInt(dateMatch[1], 10);
