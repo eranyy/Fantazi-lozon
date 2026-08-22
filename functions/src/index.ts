@@ -1301,12 +1301,32 @@ export const runOneHourPreMatchReminder = async (forceManual: boolean = false) =
         return { success: true, message: 'All teams have full lineups!' };
     }
 
-    // 🟢 Send Personal FCM Push Notifications directly to the devices of missing team managers 🟢
+    // 🟢 Send Personal FCM Push Notifications directly to all device tokens of missing team managers & co-managers 🟢
     for (const team of missingTeams) {
-        if (team.fcmTokens && team.fcmTokens.length > 0) {
+        const teamTokensSet = new Set<string>();
+
+        usersSnap.forEach(dSnap => {
+            const data = dSnap.data();
+            const isMatch = (
+                dSnap.id === team.id ||
+                data.teamId === team.id ||
+                (data.email && team.email && data.email.toLowerCase() === team.email.toLowerCase()) ||
+                (data.assistantEmail && team.assistantEmail && data.assistantEmail.toLowerCase() === team.assistantEmail.toLowerCase()) ||
+                (team.id === 'hamsili' && data.email && data.email.toLowerCase().includes('eranyy'))
+            );
+
+            if (isMatch) {
+                if (Array.isArray(data.fcmTokens)) data.fcmTokens.forEach((t: string) => teamTokensSet.add(t));
+                if (data.fcmToken) teamTokensSet.add(data.fcmToken);
+            }
+        });
+
+        const allTeamTokens = Array.from(teamTokensSet);
+
+        if (allTeamTokens.length > 0) {
             try {
                 await admin.messaging().sendEachForMulticast({
-                    tokens: team.fcmTokens,
+                    tokens: allTeamTokens,
                     notification: {
                         title: `⏰ תזכורת הרכב דחופה - ${team.teamName} ⚽`,
                         body: `נותרה שעה 1 בלבד לשריקת הפתיחה של מחזור ${round}! היכנס עכשיו לאפליקציה ועדכן הרכב פותח.`
@@ -1316,7 +1336,7 @@ export const runOneHourPreMatchReminder = async (forceManual: boolean = false) =
                         type: 'LINEUP_REMINDER_1H'
                     }
                 });
-                console.log(`[1h Reminder Push] Sent FCM push notification to ${team.teamName} (${team.fcmTokens.length} devices).`);
+                console.log(`[1h Reminder Push] Sent FCM push notification to ${team.teamName} (${allTeamTokens.length} devices).`);
             } catch (pushErr: any) {
                 console.error(`[1h Reminder Push] Error sending push to ${team.teamName}:`, pushErr?.message || pushErr);
             }

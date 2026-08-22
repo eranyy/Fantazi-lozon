@@ -29,4 +29,31 @@ describe('FantasyExcelParser', () => {
     expect(parsed).toHaveLength(1);
     expect(parsed[0].team).toBe('לא ידוע');
   });
+
+  it('maps positions correctly and handles quoted strings with quotes', () => {
+    const csvContent = `עמדה,שם שחקן,קבוצה במציאות,קבוצת פנטזי
+שוער,דניאל טננבאום,מכבי תא,חמסילי
+"הגנה","שריף כיוף","הפועל פ""ת","טמפה"
+קישור,גבי קניקובסקי,מכבי תא,חראלה
+חלוץ,ערן זהבי,מכבי תא,חמסילי
+`;
+
+    const parsed = parseFantasyExcel(csvContent);
+    expect(parsed).toHaveLength(4);
+    expect(parsed[0].position).toBe('GK');
+    expect(parsed[1].position).toBe('DEF');
+    expect(parsed[2].position).toBe('MID');
+    expect(parsed[3].position).toBe('FWD');
+  });
+
+  it('skips empty squad filler slots like מקום פנוי בסגל', () => {
+    const csvContent = `עמדה,שם שחקן,קבוצה במציאות,קבוצת פנטזי
+חלוץ,ערן זהבי,מכבי תא,חמסילי
+חלוץ,מקום פנוי בסגל,מכבי תא,חמסילי
+`;
+
+    const parsed = parseFantasyExcel(csvContent);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].name).toBe('ערן זהבי');
+  });
 });

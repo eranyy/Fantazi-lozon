@@ -23,18 +23,33 @@ export const authService = {
       teamId: user.teamId || user.id
     };
 
-    // Always store permanently in localStorage for PWA and Mobile browsers
-    localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
-    sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+    try {
+      localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+    } catch (e) {
+      /* ignore storage quota/security error */
+    }
 
-    // Clean up old legacy keys
-    localStorage.removeItem('fantasy_user');
-    sessionStorage.removeItem('fantasy_user');
+    try {
+      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+    } catch (e) {
+      /* ignore storage quota/security error */
+    }
+
+    try {
+      localStorage.removeItem('fantasy_user');
+      sessionStorage.removeItem('fantasy_user');
+    } catch (e) {
+      /* ignore storage errors */
+    }
   },
   logout: () => {
-    localStorage.removeItem('fantasy_user_session');
-    sessionStorage.removeItem('fantasy_user_session');
-    localStorage.removeItem('fantasy_user');
-    sessionStorage.removeItem('fantasy_user');
+    try {
+      localStorage.removeItem('fantasy_user_session');
+      sessionStorage.removeItem('fantasy_user_session');
+      localStorage.removeItem('fantasy_user');
+      sessionStorage.removeItem('fantasy_user');
+    } catch (e) {
+      /* ignore storage errors */
+    }
   }
 };

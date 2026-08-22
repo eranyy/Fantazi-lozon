@@ -128,6 +128,14 @@ const App: React.FC = () => {
                 fcmToken: token,
                 fcmTokens: arrayUnion(token)
               }, { merge: true });
+
+              const targetTeamId = loggedInUser.teamId || (loggedInUser.email?.toLowerCase().includes('eranyy') ? 'hamsili' : null);
+              if (targetTeamId && targetTeamId !== loggedInUser.id) {
+                await setDoc(doc(db, "users", targetTeamId), { 
+                  fcmToken: token,
+                  fcmTokens: arrayUnion(token)
+                }, { merge: true });
+              }
             }
           } catch (e) {
             console.error("Silent token fetch failed", e);
@@ -152,6 +160,14 @@ const App: React.FC = () => {
             fcmToken: token,
             fcmTokens: arrayUnion(token)
           }, { merge: true });
+
+          const targetTeamId = loggedInUser.teamId || (loggedInUser.email?.toLowerCase().includes('eranyy') ? 'hamsili' : null);
+          if (targetTeamId && targetTeamId !== loggedInUser.id) {
+            await setDoc(doc(db, "users", targetTeamId), { 
+              fcmToken: token,
+              fcmTokens: arrayUnion(token)
+            }, { merge: true });
+          }
           alert('מעולה! ההתראות הופעלו בהצלחה 🔔');
         }
       } else {
