@@ -4,151 +4,11 @@ import { Team, Player, User } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, doc, updateDoc, arrayUnion, onSnapshot, addDoc } from 'firebase/firestore';
 import { GoogleGenAI } from "@google/genai";
+import { POS_COLORS, POS_ORDER, POS_ARRAY, ALLOWED_FORMATIONS, REAL_TEAMS_ISRAEL, getTeamColors, isTeamMatch, normalizePos, getHebrewRole, cleanStr, createCancelLog, isDualPlayer } from '../utils/lineupUtils';
 
+import { Jersey, GhostJersey } from "./Jersey";
 interface LineupManagerProps { teams: Team[]; loggedInUser: User | null; currentRound: number; isAdmin: boolean; }
 
-const POS_COLORS: Record<string, { bg: string, border: string, text: string }> = { 
-  'GK': { bg: 'bg-gradient-to-br from-yellow-400 to-yellow-600', border: 'border-yellow-300', text: 'text-yellow-950' }, 
-  'DEF': { bg: 'bg-gradient-to-br from-blue-500 to-blue-700', border: 'border-blue-300', text: 'text-white' }, 
-  'MID': { bg: 'bg-gradient-to-br from-emerald-400 to-emerald-600', border: 'border-emerald-200', text: 'text-emerald-950' }, 
-  'FWD': { bg: 'bg-gradient-to-br from-red-500 to-red-700', border: 'border-red-300', text: 'text-white' } 
-};
-
-const POS_ORDER: Record<string, number> = { 'GK': 1, 'שוער': 1, 'DEF': 2, 'הגנה': 2, 'בלם': 2, 'מגן': 2, 'MID': 3, 'קשר': 3, 'קישור': 3, 'FWD': 4, 'חלוץ': 4, 'התקפה': 4 };
-const POS_ARRAY = ['GK', 'DEF', 'MID', 'FWD'];
-const ALLOWED_FORMATIONS = ['5-3-2', '5-4-1', '4-5-1', '4-4-2', '4-3-3', '3-5-2', '3-4-3'];
-const REAL_TEAMS_ISRAEL = [
-  'בית"ר ירושלים',
-  'בני סכנין',
-  'הפועל באר שבע',
-  'הפועל חיפה',
-  'הפועל ירושלים',
-  'הפועל פתח תקווה',
-  'הפועל רמת גן',
-  'הפועל תל אביב',
-  'עירוני קרית שמונה',
-  'מכבי חיפה',
-  'מכבי נתניה',
-  'מכבי פתח תקווה',
-  'מכבי תל אביב',
-  'עירוני טבריה',
-  'חופשי'
-];
-
-const getTeamColors = (teamName: string, isGK: boolean) => {
-  if (isGK) return { prim: '#bef264', sec: '#4d7c0f', text: '#14532d' }; 
-  const name = teamName || '';
-  if (name.includes('טמפה')) return { prim: '#ef4444', sec: '#991b1b', text: '#ffffff' }; 
-  if (name.includes('תומאלי') || name.includes('פיצ\'יצ\'י') || name.includes('פציצי')) return { prim: '#facc15', sec: '#1d4ed8', text: '#ffffff' }; 
-  if (name.includes('חמסילי')) return { prim: '#18181b', sec: '#16a34a', text: '#facc15' }; 
-  if (name.includes('חולוניה')) return { prim: '#a855f7', sec: '#4c1d95', text: '#ffffff' }; 
-  if (name.includes('חראלה')) return { prim: '#78350f', sec: '#b91c1c', text: '#ffffff' }; 
-  return { prim: '#3b82f6', sec: '#1e3a8a', text: '#ffffff' }; 
-};
-
-const isTeamMatch = (t1: string, t2: string) => {
-    if (!t1 || !t2) return false;
-    const normalize = (s: string) => s.replace(/['"״׳.-]/g, '').replace(/\s+/g, '').toLowerCase();
-    const c1 = normalize(t1);
-    const c2 = normalize(t2);
-
-    if (c1 === c2) return true;
-
-    const isMaccabiTA = (c: string) => c.includes('מכבי') && (c.includes('תא') || c.includes('תלאביב'));
-    if (isMaccabiTA(c1) && isMaccabiTA(c2)) return true;
-
-    const isHapoelTA = (c: string) => c.includes('הפועל') && (c.includes('תא') || c.includes('תלאביב'));
-    if (isHapoelTA(c1) && isHapoelTA(c2)) return true;
-
-    const isMaccabiHaifa = (c: string) => c.includes('מכבי') && c.includes('חיפה');
-    if (isMaccabiHaifa(c1) && isMaccabiHaifa(c2)) return true;
-
-    const isHapoelHaifa = (c: string) => c.includes('הפועל') && c.includes('חיפה');
-    if (isHapoelHaifa(c1) && isHapoelHaifa(c2)) return true;
-    
-    const isHapoelJlm = (c: string) => c.includes('הפועל') && c.includes('ירושלים');
-    if (isHapoelJlm(c1) && isHapoelJlm(c2)) return true;
-    
-    const isBeitarJlm = (c: string) => c.includes('ביתר') && c.includes('ירושלים');
-    if (isBeitarJlm(c1) && isBeitarJlm(c2)) return true;
-
-    const isMaccabiPT = (c: string) => c.includes('מכבי') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'));
-    if (isMaccabiPT(c1) && isMaccabiPT(c2)) return true;
-
-    const isHapoelPT = (c: string) => c.includes('הפועל') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'));
-    if (isHapoelPT(c1) && isHapoelPT(c2)) return true;
-
-    const isBS = (c: string) => c.includes('בש') || c.includes('בארשבע');
-    if (isBS(c1) && isBS(c2)) return true;
-
-    const isKS = (c: string) => c.includes('קש') || c.includes('שמונה');
-    if (isKS(c1) && isKS(c2)) return true;
-
-    if (c1.includes('ריינה') && c2.includes('ריינה')) return true;
-    if (c1.includes('אשדוד') && c2.includes('אשדוד')) return true;
-    if (c1.includes('טבריה') && c2.includes('טבריה')) return true;
-    if (c1.includes('סכנין') && c2.includes('סכנין')) return true;
-    if (c1.includes('נתניה') && c2.includes('נתניה')) return true;
-    if (c1.includes('חדרה') && c2.includes('חדרה')) return true;
-
-    return false;
-};
-
-const Jersey = ({ primary, secondary, textColor, text }: { primary: string, secondary: string, textColor: string, text: string }) => {
-  const gradId = `grad-${primary.replace('#', '')}-${secondary.replace('#', '')}`;
-  return (
-    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_10px_10px_rgba(0,0,0,0.6)]">
-      <defs>
-        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={primary} />
-          <stop offset="100%" stopColor={secondary} />
-        </linearGradient>
-      </defs>
-      <path d="M 35 10 C 35 25, 65 25, 65 10 L 90 20 L 95 45 L 75 50 L 75 95 C 75 98, 25 98, 25 95 L 25 50 L 5 45 L 10 20 Z" fill={`url(#${gradId})`} stroke="rgba(255,255,255,0.4)" strokeWidth="3" />
-      <text x="50" y="62" fontSize="26" fontFamily="system-ui, sans-serif" fontWeight="900" fill={textColor} textAnchor="middle" dominantBaseline="middle" style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.5)' }}>{text}</text>
-    </svg>
-  );
-};
-
-const GhostJersey = () => (
-  <svg viewBox="0 0 100 100" className="w-full h-full opacity-40 group-hover:opacity-100 transition-opacity drop-shadow-md">
-    <path d="M 35 10 C 35 25, 65 25, 65 10 L 90 20 L 95 45 L 75 50 L 75 95 C 75 98, 25 98, 25 95 L 25 50 L 5 45 L 10 20 Z" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.6)" strokeWidth="4" strokeDasharray="6 6" />
-    <text x="50" y="62" fontSize="46" fontFamily="sans-serif" fontWeight="300" fill="rgba(255,255,255,0.8)" textAnchor="middle" dominantBaseline="middle">+</text>
-  </svg>
-);
-
-const normalizePos = (pos: string) => {
-  if (!pos) return 'MID';
-  const p = pos.trim().toUpperCase();
-  if (p === 'GK' || p === 'שוער') return 'GK';
-  if (p.includes('/') || (p.includes('MID') && p.includes('FWD')) || (p.includes('חלוץ') && p.includes('קשר'))) return 'FWD';
-  if (p === 'DEF' || p === 'הגנה' || p === 'בלם' || p === 'מגן') return 'DEF';
-  if (p === 'MID' || p === 'קישור' || p === 'קשר') return 'MID';
-  if (p === 'FWD' || p === 'ATT' || p === 'חלוץ' || p === 'התקפה') return 'FWD';
-  return 'FWD'; 
-};
-
-const getHebrewRole = (pos: string) => {
-  if (!pos) return 'קשר';
-  const p = pos.trim().toUpperCase();
-  if (p === 'GK' || p === 'שוער') return 'שוער';
-  if (p.includes('/') || (p.includes('MID') && p.includes('FWD')) || (p.includes('חלוץ') && p.includes('קשר'))) return 'קשר - חלוץ';
-  if (p === 'DEF' || p === 'הגנה' || p === 'בלם' || p === 'מגן') return 'מגן';
-  if (p === 'MID' || p === 'קישור' || p === 'קשר') return 'קשר';
-  if (p === 'FWD' || p === 'ATT' || p === 'חלוץ' || p === 'התקפה') return 'חלוץ';
-  return pos;
-};
-
-const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\s]/g, '');
-
-const createCancelLog = (currentRound: number, playerInName: string, playerOutName: string) => ({
-    id: `cancel_${Date.now()}`,
-    type: 'CANCELLED_SUB',
-    round: currentRound,
-    playerIn: playerInName,
-    playerOut: playerOutName,
-    timestamp: new Date().toLocaleString('he-IL', { hour12: false })
-});
 
 const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, currentRound, isAdmin }) => {
   const [activeTeamId, setActiveTeamId] = useState<string>(() => {
@@ -1005,13 +865,6 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
   if (!myTeam) return <div className="flex justify-center items-center pt-32 h-full"><div className="w-10 h-10 border-[3px] border-green-500/20 border-t-green-500 rounded-full animate-spin"></div></div>;
 
-  const isDualPlayer = (player: any) => {
-    if (!player) return false;
-    if (player.isDual === true || player.isDualPosition === true) return true;
-    const p = String(player.position || player.pos || '').toUpperCase();
-    if (p.includes('/') || (p.includes('MID') && p.includes('FWD'))) return true;
-    return false;
-  };
 
   const renderListRow = (player: Player, isBench: boolean) => {
     const isSub = checkIsHalftimeSub(player.name);
