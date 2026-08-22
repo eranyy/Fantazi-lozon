@@ -655,8 +655,31 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
             }
             return `🔮 *טבלת נביאי הליגה (עונה 14):*\n\nהסקרים למחזור 1 יצאו לדרך! תצביעו בסקרים בקבוצה והניקוד המצטבר יעודכן כאן בסיום המחזור! 🏆`;
         }
+        // E. Live Events & Goal/Assist Reporting (e.g. ברוניניו כבש, חוגי בישל)
+        if (p.includes('כבש') || p.includes('שער') || p.includes('גול') || p.includes('בישל') || p.includes('אדום') || p.includes('צהוב') || p.includes('פנדל')) {
+            try {
+                const usersSnap = await db.collection('users').get();
+                const words = p.split(/\s+/).filter(w => w.length > 2 && !['לוזון', 'היי', 'שלום', 'אהלן', 'כבש', 'שער', 'גול', 'בישל', 'אדום', 'צהוב', 'פנדל'].includes(w));
+                for (const d of usersSnap.docs) {
+                    const u = d.data();
+                    const squad = u.squad || [];
+                    for (const pl of squad) {
+                        const plName = String(pl.name || '').toLowerCase();
+                        if (words.some(w => plName.includes(w) || (w.includes('ברוניניו') && plName.includes('ברוניניו')))) {
+                            const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
+                            const eventType = isGoal ? '⚽🔥 *שעררר!*' : '⚽ *אירוע לייב!*';
+                            return `${eventType}\n*${pl.name}* (${pl.realTeam || pl.team || ''}) ${isGoal ? 'כבש גול במציאות!' : 'רשם אירוע ברשת!'} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🎉🏆`;
+                        }
+                    }
+                }
+            }
+            catch (eventErr) {
+                console.error('Error in event fallback lookup:', eventErr);
+            }
+        }
+        const cleanPrompt = userPrompt.replace(/^(לוזון|היי לוזון|שלום לוזון|אהלן לוזון|luzon|hi luzon|!לוזון|לוזון:)/i, '').trim();
         return `⚽ *פנטזי לוזון 14:*
-אהלן ${managerName}! ⚽ שמעתי אותך, עונה 14 מתחילה מחר בשבת ב-17:00! אל תשכחו להעמיד הרכבים! 🏆`;
+אהלן ${managerName}! ⚽ שמעתי אותך לגבי "${cleanPrompt || userPrompt}"! העדכונים נרשמים בזירה! 🏆`;
     }
 };
 // 🟢 WhatsApp AI Webhook Endpoint (Meta WhatsApp Cloud API / Twilio) 🟢

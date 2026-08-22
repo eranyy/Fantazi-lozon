@@ -982,8 +982,10 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           published_subs_out: finalSubs 
       });
 
-      for (const dp of deletedPlayers) {
-          await addDoc(collection(db, 'logs_deleted_players'), {
+      if (deletedPlayers.length > 0) {
+        await Promise.all(
+          deletedPlayers.map((dp: any) => 
+            addDoc(collection(db, 'logs_deleted_players'), {
               teamName: myTeam.teamName,
               teamId: myTeam.id,
               managerName: `${loggedInUser?.name || 'אדמין'} (דרך ניהול סגל)`,
@@ -991,7 +993,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
               playerPos: dp.position,
               playerRealTeam: dp.team,
               timestamp: new Date().toISOString()
-          });
+            })
+          )
+        );
       }
 
       showToast('✅ הסגל עודכן (אדמין)', 'success'); setShowAdminSquadEditor(false);
