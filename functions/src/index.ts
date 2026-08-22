@@ -524,11 +524,93 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
 
         managerName = managerInfo ? managerInfo.split(' ')[0] : 'מנג\'ר';
 
-        // 🟢 1. TOP PRIORITY: Live Events & Goal/Assist/Card/Penalty Reporting (All 126 Draft Players) 🟢
-        const eventKeywords = ['כבש', 'שער', 'גול', 'בישל', 'בישול', 'אדום', 'צהוב', 'פנדל', 'ספג', 'שערים', 'עצר', 'החמיץ', 'עצמי'];
+        // 🟢 1. TOP PRIORITY: Live Events, Goals, Assists, Cards, Penalties & Real-Team Conceded Goals 🟢
+        const REAL_TEAMS_MAP: Record<string, string[]> = {
+            'מכבי חיפה': ['חיפה', 'מכבי חיפה'],
+            'מכבי תל אביב': ['מכבי תא', 'מכבי ת"א', 'מכבי תל אביב'],
+            'הפועל תל אביב': ['הפועל תא', 'הפועל ת"א', 'הפועל תל אביב'],
+            'הפועל באר שבע': ['הפועל בש', 'הפועל ב"ש', 'באר שבע', 'הפועל באר שבע'],
+            'בית"ר ירושלים': ['ביתר', 'ביתר ירושלים', 'בית"ר ירושלים'],
+            'מכבי נתניה': ['נתניה', 'מכבי נתניה'],
+            'עירוני קרית שמונה': ['קש', 'ק"ש', 'קרית שמונה', 'עירוני קרית שמונה'],
+            'בני סכנין': ['סכנין', 'בני סכנין'],
+            'עירוני טבריה': ['טבריה', 'עירוני טבריה'],
+            'הפועל רמת גן': ['הפועל רג', 'הפועל ר"ג', 'הפועל רמת גן', 'רמת גן'],
+            'הפועל פתח תקווה': ['הפועל פת', 'הפועל פ"ת', 'הפועל פתח תקווה', 'פתח תקווה'],
+            'מכבי פתח תקווה': ['מכבי פת', 'מכבי פ"ת', 'מכבי פתח תקווה'],
+            'הפועל חיפה': ['הפועל חיפה'],
+            'הפועל ירושלים': ['הפועל ירושלים', 'הפועל י-ם']
+        };
+
+        const eventKeywords = ['כבש', 'שער', 'גול', 'בישל', 'בישול', 'אדום', 'צהוב', 'פנדל', 'ספג', 'ספגה', 'שערים', 'עצר', 'החמיץ', 'עצמי', 'קיבלה', 'חטפה'];
         if (eventKeywords.some(kw => p.includes(kw))) {
             try {
                 const usersSnap = await db.collection('users').get();
+                
+                // 🥅 Check for Real-Team Goal Conceded (e.g. מכבי חיפה ספגה, ביתר ספגה גול) 🥅
+                const isTeamConceded = p.includes('ספג') || p.includes('ספגה') || p.includes('קיבלה') || p.includes('חטפה');
+                let targetRealTeam: string | null = null;
+                if (isTeamConceded) {
+                    for (const [teamCanonical, keywords] of Object.entries(REAL_TEAMS_MAP)) {
+                        if (keywords.some(kw => p.includes(kw))) {
+                            targetRealTeam = teamCanonical;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetRealTeam) {
+                    const affectedPlayersInfo: string[] = [];
+
+                    for (const d of usersSnap.docs) {
+                        const u = d.data();
+                        const lineup = u.published_lineup || u.lineup || [];
+                        if (!Array.isArray(lineup)) continue;
+
+                        let teamUpdated = false;
+                        const updatedLineup = lineup.map((pl: any) => {
+                            const plPos = String(pl.position || pl.pos || '').toUpperCase();
+                            const plRealTeam = String(pl.realTeam || pl.team || '');
+                            const isGKorDEF = plPos === 'GK' || plPos === 'DEF' || plPos.includes('שוער') || plPos.includes('הגנה') || plPos.includes('בלם') || plPos.includes('מגן');
+                            
+                            const teamMatches = norm(plRealTeam).includes(norm(targetRealTeam!)) || norm(targetRealTeam!).includes(norm(plRealTeam));
+                            if (isGKorDEF && teamMatches) {
+                                teamUpdated = true;
+                                const currentStats = pl.stats || {};
+                                const newConceded = (currentStats.conceded || 0) + 1;
+                                const ptsDeduct = (newConceded % 2 === 0) ? -1 : 0; // -1 pt for every 2 goals conceded
+
+                                affectedPlayersInfo.push(`• *${pl.name}* (${plPos}, קבוצת *${u.teamName || u.name}* - מנג'ר: ${u.manager || ''}) ספג ${newConceded} שערים`);
+
+                                return {
+                                    ...pl,
+                                    points: (Number(pl.points) || 0) + ptsDeduct,
+                                    stats: {
+                                        ...currentStats,
+                                        conceded: newConceded,
+                                        cleanSheet: false
+                                    }
+                                };
+                            }
+                            return pl;
+                        });
+
+                        if (teamUpdated) {
+                            await db.collection('users').doc(d.id).set({
+                                lineup: updatedLineup,
+                                published_lineup: updatedLineup
+                            }, { merge: true });
+                        }
+                    }
+
+                    if (affectedPlayersInfo.length > 0) {
+                        return `🥅 *עדכון ספיגת שער בלייב!*\nקבוצת *${targetRealTeam}* ספגה שער במציאות!\n\n⚡ *השחקנים המושפעים בהרכבים הפותחים עודכנו בלייב בזירה:*\n${affectedPlayersInfo.join('\n')}\n\n📱 הזירה באפליקציה עודכנה בזמן אמת! 🔥`;
+                    } else {
+                        return `🥅 קבוצת *${targetRealTeam}* ספגה שער במציאות, אך כרגע אין שוערי/מגיני ${targetRealTeam} בהרכבים הפותחים בזירה. ⚽`;
+                    }
+                }
+
+                // 👤 Individual Player Event Lookup (Goals, Assists, Cards, Penalties) 👤
                 const rawWords = p.split(/\s+/).filter(w => w.length >= 2 && !['לוזון', 'היי', 'שלום', 'אהלן', ...eventKeywords].includes(w));
                 
                 for (const d of usersSnap.docs) {
@@ -556,7 +638,7 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                         const isPenSaved = p.includes('עצר') && p.includes('פנדל');
                         const isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
                         const isOwnGoal = p.includes('עצמי');
-                        const isConceded = p.includes('ספג');
+                        const isConceded = p.includes('ספג') || p.includes('ספגה');
 
                         const matchedNorm = norm(matchedPlayer.name);
                         const isInLineup = Array.isArray(lineup) && lineup.some((pl: any) => 
