@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, functions } from './firebaseConfig'; 
-import { analyzeMatchImage, generateAISummary, generateRumors } from './geminiService'; 
+import { db, auth, functions } from './firebaseConfig';
+import { analyzeMatchImage, generateAISummary, generateRumors } from './geminiService';
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, query, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server, Zap } from 'lucide-react';
-import { parseFantasyExcel } from './utils/FantasyExcelParser'; 
+import { parseFantasyExcel } from './utils/FantasyExcelParser';
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
 
@@ -14,7 +14,7 @@ const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'ט�
 
 const normalizeTeamName = (name: string) => {
     if (!name) return '';
-    let n = name.trim().toLowerCase().replace(/["'״׳.]/g, '').replace(/-/g, ' '); 
+    let n = name.trim().toLowerCase().replace(/["'״׳.]/g, '').replace(/-/g, ' ');
     if (n.includes('תל אביב')) n = n.replace('תל אביב', 'תא');
     if (n.includes('באר שבע')) n = n.replace('באר שבע', 'בש');
     if (n.includes('קרית שמונה')) n = n.replace('קרית שמונה', 'קש');
@@ -37,7 +37,7 @@ const getNormalizedTeamId = (nameOrId: string) => {
     if (s.includes('טמפ') || s.includes('tampa')) return 'tampa';
     if (s.includes('חמס') || s.includes('hamsili')) return 'hamsili';
     if (s.includes('פיצ') || s.includes('pichichi')) return 'pichichi';
-    return s; 
+    return s;
 };
 
 const parseCsvRow = (str: string) => {
@@ -45,7 +45,7 @@ const parseCsvRow = (str: string) => {
     let result = [], cur = '', inQuotes = false;
     for (let i = 0; i < str.length; i++) {
         if (str[i] === '"') inQuotes = !inQuotes;
-        else if (str[i] === ',' && !inQuotes) { result.push(cur.trim()); cur = ''; } 
+        else if (str[i] === ',' && !inQuotes) { result.push(cur.trim()); cur = ''; }
         else { cur += str[i]; }
     }
     result.push(cur.trim());
@@ -69,47 +69,47 @@ const getStadium = (homeTeam: string) => {
 
 const formatTimeWithUS = (ilTime: string) => {
     if (!ilTime) return '';
-    if (ilTime.includes('🇺🇸')) return ilTime; 
-    
+    if (ilTime.includes('🇺🇸')) return ilTime;
+
     const timeMatch = ilTime.match(/(\d{1,2}):(\d{2})/);
     if (!timeMatch) return ilTime;
-    
+
     const h = parseInt(timeMatch[1], 10);
     const m = timeMatch[2];
     let usH = h - 7;
     if (usH < 0) usH += 24;
-    
+
     const hStr = h.toString().padStart(2, '0');
     const usHStr = usH.toString().padStart(2, '0');
-    
+
     return `${hStr}:${m} | ${usHStr}:${m} 🇺🇸`;
 };
 
 const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdmin = false }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'deleted-logs' | 'radar'>('users');
   const [users, setUsers] = useState<any[]>([]);
-  const [deletedTeams, setDeletedTeams] = useState<any[]>([]); 
+  const [deletedTeams, setDeletedTeams] = useState<any[]>([]);
   const [fixtures, setFixtures] = useState<any[]>([]);
   const [deletedLogs, setDeletedLogs] = useState<any[]>([]);
-  const [loginLogs, setLoginLogs] = useState<any[]>([]); 
+  const [loginLogs, setLoginLogs] = useState<any[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-  
+
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
   const [loading, setLoading] = useState(false);
-  
+
   const [isUndoing, setIsUndoing] = useState(false);
   const [isResettingLive, setIsResettingLive] = useState(false);
   const [isGeneratingPost, setIsGeneratingPost] = useState(false);
-  const [isSavingPlayoffs, setIsSavingPlayoffs] = useState(false); 
-  const [isSavingCup, setIsSavingCup] = useState(false); 
-  
+  const [isSavingPlayoffs, setIsSavingPlayoffs] = useState(false);
+  const [isSavingCup, setIsSavingCup] = useState(false);
+
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [resetLoadingEmail, setResetLoadingEmail] = useState<string | null>(null);
   const [resetModalMsg, setResetModalMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [teamToDelete, setTeamToDelete] = useState<any | null>(null); 
+  const [teamToDelete, setTeamToDelete] = useState<any | null>(null);
   const [newUser, setNewUser] = useState({ teamName: '', manager: '', assistantName: '', email: '', assistantEmail: '', role: 'USER', isApproved: true, assistants: [] as any[] });
-  
+
   const [showEndSeason, setShowEndSeason] = useState(false);
   const [showUndoConfirm, setShowUndoConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -118,29 +118,29 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
   const [endSeasonPwd, setEndSeasonPwd] = useState('');
   const [seasonArchiveName, setSeasonArchiveName] = useState('LUZON 14 - 2026');
-  const [cupWinner, setCupWinner] = useState(''); 
-  
+  const [cupWinner, setCupWinner] = useState('');
+
   const [tableDriveUrl, setTableDriveUrl] = useState('');
   const [isSyncingTable, setIsSyncingTable] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [squadsDriveUrl, setSquadsDriveUrl] = useState('');
   const [transfersDriveUrl, setTransfersDriveUrl] = useState('');
-  
-  const [playoffRoundsInput, setPlayoffRoundsInput] = useState<string>(''); 
+
+  const [playoffRoundsInput, setPlayoffRoundsInput] = useState<string>('');
   const [cupSettings, setCupSettings] = useState<any>({ isOpen: false, stage: 'groups', activeTeams: [], groupStandings: {} });
   const [tempCupOverrides, setTempCupOverrides] = useState<any>({});
-  
+
   const [globalLock, setGlobalLock] = useState<boolean>(false);
   const [globalUnlock, setGlobalUnlock] = useState<boolean>(false);
   const [systemCurrentRound, setSystemCurrentRound] = useState<number>(1);
   const [scanRoundInput, setScanRoundInput] = useState<string>('');
 
   const [topPlayersDriveUrl, setTopPlayersDriveUrl] = useState('');
-  const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+  const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || '';
   const [geminiApiKey, setGeminiApiKey] = useState(
-    localStorage.getItem('gemini_api_key') || 
-    (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
-    'AIzaSyBM6ArDeYA0oRuOLQPXt4qVIGDSrQALaYQ'
+    localStorage.getItem('gemini_api_key') ||
+    (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
+    ''
   );
 
   const [realFixturesMatches, setRealFixturesMatches] = useState<any[]>([]);
@@ -161,7 +161,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
     const unsubDeletedUsers = onSnapshot(collection(db, "deleted_users"), (snapshot) => setDeletedTeams(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubFixtures = onSnapshot(doc(db, "leagueData", "fixtures"), (docSnap) => { if(docSnap.exists()) setFixtures(docSnap.data().rounds || []); });
     const unsubLogs = onSnapshot(collection(db, "logs_deleted_players"), (snapshot) => setDeletedLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())));
-    
+
     const unsubLoginLogs = onSnapshot(collection(db, "login_logs"), (snapshot) => {
         setLoginLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
     });
@@ -198,11 +198,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         const active = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as any))
           .filter(user => user.lastSeen?.toMillis() > threeMinutesAgo);
-          
+
         const uniqueActiveByName = Array.from(new Map(active.map(u => [u.name, u])).values());
         setOnlineUsers(uniqueActiveByName);
     });
-    
+
     return () => { unsubUsers(); unsubDeletedUsers(); unsubFixtures(); unsubLogs(); unsubLoginLogs(); unsubSettings(); unsubCup(); unsubRealFixtures(); unsubPresence(); };
   }, []);
 
@@ -212,7 +212,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const timeLimit = thirtyDaysAgo.getTime();
         const oldLogs = loginLogs.filter(log => new Date(log.timestamp).getTime() < timeLimit);
-        
+
         if (oldLogs.length > 0) {
             const deleteOldLogs = async () => {
                 try {
@@ -304,8 +304,8 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
     showMessage(`שולח התראת פוש ${targetLabel}... 📢`, 'info');
     try {
       const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
-      const res: any = await sendPushFunc({ 
-        title: pushTitle.trim(), 
+      const res: any = await sendPushFunc({
+        title: pushTitle.trim(),
         message: pushMessage.trim(),
         targetUserId: pushTargetUserId
       });
@@ -342,14 +342,14 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               if (bPts !== aPts) return bPts - aPts;
               return ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0));
           });
-          
+
           const lannister = [sortedTable[0]?.id, sortedTable[2]?.id, sortedTable[4]?.id].filter(Boolean);
           const stark = [sortedTable[1]?.id, sortedTable[3]?.id, sortedTable[5]?.id].filter(Boolean);
 
           await setDoc(doc(db, 'leagueData', 'cup_settings'), {
               groups: { lannister, stark },
               activeTeams: [...lannister, ...stark],
-              groupStandings: { 
+              groupStandings: {
                   [sortedTable[0]?.id]: 0, [sortedTable[2]?.id]: 0, [sortedTable[4]?.id]: 0,
                   [sortedTable[1]?.id]: 0, [sortedTable[3]?.id]: 0, [sortedTable[5]?.id]: 0
               }
@@ -372,10 +372,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const handleSavePlayoffRounds = async () => {
     setIsSavingPlayoffs(true);
     try {
-        const roundsArray = playoffRoundsInput.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)); 
+        const roundsArray = playoffRoundsInput.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
         await setDoc(doc(db, 'leagueData', 'settings'), { playoffRounds: roundsArray }, { merge: true });
         showMessage(`✅ הוגדרו מחזורי פלייאוף: ${roundsArray.length > 0 ? roundsArray.join(', ') : 'אופס (רשימה ריקה)'}`, 'success');
-    } catch (e: any) { showMessage('❌ שגיאה בשמירת מחזורי הפלייאוף', 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה בשמירת מחזורי הפלייאוף', 'error'); }
     finally { setIsSavingPlayoffs(false); }
   };
 
@@ -419,7 +419,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             }
         }
         showMessage(`✅ שוחזר בהצלחה! הליגה חזרה למחזור ${previousRound}.`, 'success');
-    } catch (e: any) { showMessage('❌ שגיאה חמורה בשחזור: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה חמורה בשחזור: ' + e.message, 'error'); }
     finally { setIsUndoing(false); }
   };
 
@@ -429,7 +429,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
     try {
         const batch = writeBatch(db);
         const emptyStats = { started: false, played60: false, notInSquad: false, won: false, goals: 0, assists: 0, cleanSheet: false, conceded: 0, yellow: false, secondYellow: false, red: false, penaltyWon: 0, penaltyMissed: 0, penaltySaved: 0, ownGoals: 0, assistOwnGoal: 0 };
-        
+
         users.forEach(u => {
             if (u.id !== 'admin' && u.id !== 'system') {
                 const resetArray = (arr: any[]) => (arr || []).map((p:any) => ({...p, points: 0, stats: emptyStats}));
@@ -441,7 +441,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         });
         await batch.commit();
         showMessage('✅ הזירה אופסה בהצלחה! כל השחקנים חזרו ל-0 נקודות.', 'success');
-    } catch (e: any) { showMessage('❌ שגיאה באיפוס הזירה: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה באיפוס הזירה: ' + e.message, 'error'); }
     finally { setLoading(false); setIsResettingLive(false); }
   };
 
@@ -484,7 +484,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             likes: Math.floor(Math.random() * 20) + 10, likedBy: [], comments: [], timestamp: new Date().toISOString()
         });
         showMessage('✅ סיכום המחזור פורסם בהצלחה!', 'success');
-    } catch (e: any) { showMessage('❌ שגיאה ביצירת סיכום: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה ביצירת סיכום: ' + e.message, 'error'); }
     finally { setIsGeneratingPost(false); }
   };
 
@@ -498,14 +498,14 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             likes: Math.floor(Math.random() * 15) + 5, likedBy: [], comments: [], timestamp: new Date().toISOString()
         });
         showMessage('✅ השמועות פורסמו בהצלחה!', 'success');
-    } catch (e: any) { showMessage('❌ שגיאה ביצירת שמועות: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה ביצירת שמועות: ' + e.message, 'error'); }
     finally { setIsGeneratingPost(false); }
   };
 
   const recalculateTableFromApp = async () => {
     setLoading(true); setIsSyncingTable(true); showMessage('סורק משחקים ומחשב טבלה... 🧮', 'info');
     try {
-        const batch = writeBatch(db); let updatedCount = 0; let matchesProcessed = 0; 
+        const batch = writeBatch(db); let updatedCount = 0; let matchesProcessed = 0;
         const tableData: Record<string, any> = {};
         users.forEach(u => {
             if (u.id !== 'admin' && u.id !== 'system') {
@@ -527,14 +527,14 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                         matchesProcessed++; const diff = Math.abs(hScore - aScore);
                         if (tableData[homeKey]) {
                             tableData[homeKey].played++; tableData[homeKey].gf += hScore; tableData[homeKey].ga += aScore;
-                            if (hScore > aScore) { tableData[homeKey].wins++; tableData[homeKey].points += diff >= 20 ? 3 : 2; tableData[homeKey].matchHistory.push({ result: 'W', oppScore: aScore }); } 
-                            else if (hScore === aScore) { tableData[homeKey].draws++; tableData[homeKey].points += 1; tableData[homeKey].matchHistory.push({ result: 'D', oppScore: aScore }); } 
+                            if (hScore > aScore) { tableData[homeKey].wins++; tableData[homeKey].points += diff >= 20 ? 3 : 2; tableData[homeKey].matchHistory.push({ result: 'W', oppScore: aScore }); }
+                            else if (hScore === aScore) { tableData[homeKey].draws++; tableData[homeKey].points += 1; tableData[homeKey].matchHistory.push({ result: 'D', oppScore: aScore }); }
                             else { tableData[homeKey].losses++; tableData[homeKey].matchHistory.push({ result: 'L', oppScore: aScore }); }
                         }
                         if (tableData[awayKey]) {
                             tableData[awayKey].played++; tableData[awayKey].gf += aScore; tableData[awayKey].ga += hScore;
-                            if (aScore > hScore) { tableData[awayKey].wins++; tableData[awayKey].points += diff >= 20 ? 3 : 2; tableData[awayKey].matchHistory.push({ result: 'W', oppScore: hScore }); } 
-                            else if (aScore === hScore) { tableData[awayKey].draws++; tableData[awayKey].points += 1; tableData[awayKey].matchHistory.push({ result: 'D', oppScore: hScore }); } 
+                            if (aScore > hScore) { tableData[awayKey].wins++; tableData[awayKey].points += diff >= 20 ? 3 : 2; tableData[awayKey].matchHistory.push({ result: 'W', oppScore: hScore }); }
+                            else if (aScore === hScore) { tableData[awayKey].draws++; tableData[awayKey].points += 1; tableData[awayKey].matchHistory.push({ result: 'D', oppScore: hScore }); }
                             else { tableData[awayKey].losses++; tableData[awayKey].matchHistory.push({ result: 'L', oppScore: hScore }); }
                         }
                     }
@@ -558,7 +558,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
         await batch.commit();
         showMessage(`✅ מדהים! טבלה עודכנה ל-${updatedCount} קבוצות! (חושבו ${matchesProcessed} משחקים)`, 'success');
-    } catch (e: any) { showMessage('❌ שגיאה בחישוב הטבלה: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה בחישוב הטבלה: ' + e.message, 'error'); }
     finally { setLoading(false); setIsSyncingTable(false); }
   };
 
@@ -597,7 +597,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             const rows = rangeData.values;
             if (!rows) return;
             rows.forEach((row: any[]) => {
-                const playerName = row[0]?.trim(); const pointsStr = row[10]?.trim(); 
+                const playerName = row[0]?.trim(); const pointsStr = row[10]?.trim();
                 if (playerName && playerName !== 'שם שחקן' && pointsStr) {
                     const points = parseInt(pointsStr);
                     if (!isNaN(points)) {
@@ -626,33 +626,33 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         showMessage(`✅ הצלחה! האפליקציה פירקה ${roundSheets.length} מחזורים באפס תקלות! 👑`, 'success');
         setTopPlayersDriveUrl('');
 
-    } catch (err: any) { showMessage('❌ שגיאה: ' + err.message, 'error'); } 
+    } catch (err: any) { showMessage('❌ שגיאה: ' + err.message, 'error'); }
     finally { setLoading(false); }
   };
 
   // 🤖 פונקציית האוטומציה החדשה ללוח המשחקים שמחליפה את ה-AI 🤖
   const runAutoScanner = async () => {
-    setLoading(true); 
+    setLoading(true);
     const targetRound = scanRoundInput.trim() !== '' ? Number(scanRoundInput) : systemCurrentRound;
     showMessage(`שואב את לוח המשחקים של מחזור ${targetRound} מהרשת... 🤖`, 'info');
-    
+
     try {
         const fetchFixturesFunc = httpsCallable(functions, 'fetchLiveFixtures');
         const result: any = await fetchFixturesFunc({ roundHint: targetRound });
-        
+
         if (result.data.success) {
             const extractedMatches = result.data.matches;
-            
+
             const realFixturesSnap = await getDoc(doc(db, 'leagueData', 'real_fixtures'));
             let currentMatches = realFixturesSnap.exists() ? realFixturesSnap.data().matches : [];
             const newMatches = [...currentMatches];
-            
+
             extractedMatches.forEach((m: any) => {
                 // הוספת שעון ארצות הברית
                 m.time = formatTimeWithUS(m.time);
-                
+
                 const exists = newMatches.find(em => normalizeTeamName(em.homeTeam) === normalizeTeamName(m.homeTeam) && normalizeTeamName(em.awayTeam) === normalizeTeamName(m.awayTeam) && em.round === m.round);
-                
+
                 if (exists) {
                     Object.assign(exists, m);
                 } else {
@@ -664,9 +664,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             showMessage(`✅ סריקה הושלמה למחזור ${targetRound} (מקור: ${result.data.source})! ${extractedMatches.length} משחקים נשאבו.`, 'success');
             setScanRoundInput(''); // מנקה את השדה אחרי סריקה מוצלחת
         }
-    } catch (e: any) { 
+    } catch (e: any) {
         console.error(e);
-        showMessage('❌ שגיאה בסריקה: ' + e.message, 'error'); 
+        showMessage('❌ שגיאה בסריקה: ' + e.message, 'error');
     }
     setLoading(false);
   };
@@ -687,7 +687,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         const res = await fetch(tableDriveUrl); if (!res.ok) throw new Error('נכשל בהורדת הקובץ');
         const csvText = await res.text(); const rows = csvText.split('\n').map(row => parseCsvRow(row));
         const batch = writeBatch(db); let updatedCount = 0;
-        
+
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i]; if (row.length < 5) continue;
             const normId = getNormalizedTeamId(row[0]);
@@ -698,7 +698,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             }
         }
         await batch.commit(); showMessage(`✅ סונכרנו ${updatedCount} קבוצות מהאקסל בהצלחה!`, 'success'); setTableDriveUrl('');
-    } catch (e: any) { showMessage('❌ שגיאה בסנכרון: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה בסנכרון: ' + e.message, 'error'); }
     finally { setLoading(false); setIsSyncingTable(false); }
   };
 
@@ -727,7 +727,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         const syncMatchToExcelFunc = httpsCallable(functions, 'syncMatchToExcel');
         await syncMatchToExcelFunc({ rows: excelSyncRows, spreadsheetId: TARGET_SPREADSHEET_ID });
         showMessage(`✅ סונכרנו בהצלחה ${excelSyncRows.length} שורות היסטוריות לאקסל!`, 'success');
-    } catch (e: any) { showMessage('❌ שגיאה בסנכרון: ' + e.message, 'error'); } 
+    } catch (e: any) { showMessage('❌ שגיאה בסנכרון: ' + e.message, 'error'); }
     finally { setIsSyncingHistory(false); }
   };
 
@@ -748,7 +748,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         const res = await fetch(squadsDriveUrl); if (!res.ok) throw new Error('נכשל בהורדת הקובץ');
         const csvText = await res.text(); const rows = csvText.split('\n').map(row => parseCsvRow(row));
         const teamSquads: Record<string, any[]> = {};
-        
+
         rows.forEach((row, i) => {
             if (i === 0 || row.length < 3) return;
             const teamKey = getNormalizedTeamId(row[0]); if (!teamKey) return;
@@ -798,20 +798,20 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       setResetLoadingEmail(target);
       setResetModalMsg(null);
       showMessage(`שולח אימייל איפוס סיסמה ל-${target}... ⏳`, 'info');
-      try { 
-        await sendPasswordResetEmail(auth, target); 
+      try {
+        await sendPasswordResetEmail(auth, target);
         const msg = `✅ אימייל לאיפוס סיסמה נשלח בהצלחה ל-${target}! יש לבדוק דואר נכנס/ספאם.`;
         setResetModalMsg({ text: msg, type: 'success' });
-        showMessage(msg, 'success'); 
-      } 
-      catch (e: any) { 
+        showMessage(msg, 'success');
+      }
+      catch (e: any) {
         console.error(e);
         let errStr = e.message || 'שגיאה במערכת';
         if (e.code === 'auth/user-not-found') errStr = 'משתמש עם אימייל זה לא נמצא במערכת';
         if (e.code === 'auth/invalid-email') errStr = 'כתובת אימייל לא תקינה';
         const msg = '❌ שגיאה בשליחת אימייל: ' + errStr;
         setResetModalMsg({ text: msg, type: 'error' });
-        showMessage(msg, 'error'); 
+        showMessage(msg, 'error');
       } finally {
         setResetLoadingEmail(null);
       }
@@ -899,7 +899,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
   return (
     <div className="p-4 md:p-8 bg-slate-900 min-h-screen text-white pb-24" dir="rtl">
-      
+
       {toast && (
         <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-[9999] p-5 text-center font-black rounded-2xl border shadow-2xl animate-in slide-in-from-top-10 backdrop-blur-xl min-w-[320px] max-w-md ${toast.type === 'error' ? 'bg-red-950/95 text-red-400 border-red-500/50 shadow-red-900/50' : toast.type === 'info' ? 'bg-blue-950/95 text-blue-400 border-blue-500/50 shadow-blue-900/50' : 'bg-green-950/95 text-green-400 border-green-500/50 shadow-green-900/50'}`}>
           {toast.msg}
@@ -925,11 +925,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       </div>
 
       <div className="max-w-5xl mx-auto">
-        
+
         {/* --- מסך הרדאר --- */}
         {activeTab === 'radar' && (
            <div className="space-y-6 animate-in fade-in zoom-in-95">
-              
+
               {/* 🟢 באנר: מחוברים כרגע (Live) 🟢 */}
               <div className="bg-slate-800/80 p-6 rounded-[32px] border border-green-500/30 shadow-xl relative overflow-hidden">
                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1000,7 +1000,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                                     const dateObj = new Date(log.timestamp);
                                     const isMobile = log.deviceType === 'Mobile';
                                     const isOnline = onlineUsers.some(u => u.email === log.email || u.name === log.name);
-                                    
+
                                     return (
                                         <tr key={log.id} className="hover:bg-slate-800/50 transition-colors group">
                                             <td className="p-4">
@@ -1052,9 +1052,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               <div className="space-y-4 relative z-10">
                 <div>
                   <label className="block text-xs font-black text-slate-400 mb-2">נמען ההתראה (למי לשלוח)</label>
-                  <select 
-                    value={pushTargetUserId} 
-                    onChange={(e) => setPushTargetUserId(e.target.value)} 
+                  <select
+                    value={pushTargetUserId}
+                    onChange={(e) => setPushTargetUserId(e.target.value)}
                     className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold"
                   >
                     <option value="ALL">📣 כל המשתמשים (שידור גורף לכולם)</option>
@@ -1087,29 +1087,29 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
                 <div>
                   <label className="block text-xs font-black text-slate-400 mb-2">כותרת ההתראה</label>
-                  <input 
-                    type="text" 
-                    value={pushTitle} 
-                    onChange={(e) => setPushTitle(e.target.value)} 
-                    placeholder="פנטזי לוזון 14 ⚽" 
-                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold" 
+                  <input
+                    type="text"
+                    value={pushTitle}
+                    onChange={(e) => setPushTitle(e.target.value)}
+                    placeholder="פנטזי לוזון 14 ⚽"
+                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-black text-slate-400 mb-2">תוכן ההתראה (הודעה)</label>
-                  <textarea 
+                  <textarea
                     rows={3}
-                    value={pushMessage} 
-                    onChange={(e) => setPushMessage(e.target.value)} 
-                    placeholder="הקלד כאן את תוכן ההתראה שברצונך לשלוח לכולם..." 
-                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold resize-none" 
+                    value={pushMessage}
+                    onChange={(e) => setPushMessage(e.target.value)}
+                    placeholder="הקלד כאן את תוכן ההתראה שברצונך לשלוח לכולם..."
+                    className="w-full bg-black/50 border border-slate-600 p-4 rounded-xl text-white outline-none focus:border-yellow-400 font-bold resize-none"
                   />
                 </div>
 
-                <button 
-                  onClick={handleSendCustomPush} 
-                  disabled={isSendingPush || !pushMessage.trim()} 
+                <button
+                  onClick={handleSendCustomPush}
+                  disabled={isSendingPush || !pushMessage.trim()}
                   className={`w-full py-4 px-6 rounded-xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 ${pushMessage.trim() ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black hover:from-yellow-400 hover:to-amber-500' : 'bg-slate-700 text-slate-500'}`}
                 >
                   {isSendingPush ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Bell className="w-5 h-5" />}
@@ -1128,8 +1128,8 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                 לחיצה על כפתור זה תשלח אות רענון מיידי דרך Firestore לכל המשתמשים שפתוחים כרגע באתר או בנייד ותנקה אצלם את זיכרון המטמון!
               </p>
               <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
-                <button 
-                  onClick={handleForceGlobalRefresh} 
+                <button
+                  onClick={handleForceGlobalRefresh}
                   disabled={loading}
                   className="w-full py-4 px-6 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white shadow-green-500/30 border border-green-400"
                 >
@@ -1147,9 +1147,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                 <span className="text-green-400">ניצחון ב-20 הפרש ומעלה = 3 נק'</span> | <span className="text-green-400">ניצחון רגיל = 2 נק'</span> | <span className="text-yellow-400">תיקו = 1 נק'</span> | <span className="text-red-400">הפסד = 0 נק'</span>.<br/>
                 בנוסף יעדכן: 🔥 רצף ניצחונות, 🤡 רצף הפסדים, 🛡️ הגנת ברזל.
               </p>
-              <button 
-                onClick={recalculateTableFromApp} 
-                disabled={loading || isSyncingTable} 
+              <button
+                onClick={recalculateTableFromApp}
+                disabled={loading || isSyncingTable}
                 className="w-full md:w-auto px-10 py-4 bg-purple-600 hover:bg-purple-500 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 relative z-10"
               >
                 {(loading || isSyncingTable) ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Flame className="w-5 h-5" />}
@@ -1172,15 +1172,15 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               </div>
               <div className="space-y-4">
                 {users.map(u => {
-                  if (u.id === 'system') return null; 
+                  if (u.id === 'system') return null;
                   return (
                     <div key={u.id} className={`flex flex-col sm:flex-row justify-between items-center p-4 rounded-2xl border gap-4 ${u.id === 'admin' ? 'bg-slate-950 border-blue-500/30' : 'bg-slate-900 border-slate-700'}`}>
                       <div className="flex-1 w-full text-center sm:text-right">
                         <div className="flex items-center justify-center sm:justify-start gap-3 mb-1">
                           <span className="font-black text-xl text-white">{u.teamName}</span>
                           <span className={`text-[10px] px-2 py-1 rounded-md font-black ${
-                            u.role === 'ADMIN' ? 'bg-red-500/20 text-red-400' : 
-                            u.role === 'ARENA_MANAGER' ? 'bg-orange-500/20 text-orange-400' : 
+                            u.role === 'ADMIN' ? 'bg-red-500/20 text-red-400' :
+                            u.role === 'ARENA_MANAGER' ? 'bg-orange-500/20 text-orange-400' :
                             'bg-blue-500/20 text-blue-400'
                           }`}>
                             {u.role === 'ADMIN' ? 'אדמין (ערן)' : u.role === 'ARENA_MANAGER' ? 'מנהל זירה' : 'מנג\'ר'}
@@ -1220,15 +1220,15 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                   <h3 className="text-2xl font-black text-red-400 flex items-center gap-2">
                     <Trash2 className="w-6 h-6" /> שחקנים שנמחקו (מעקב)
                   </h3>
-                  <button 
-                    onClick={handleClearDeletedLogs} 
-                    disabled={loading || deletedLogs.length === 0} 
+                  <button
+                    onClick={handleClearDeletedLogs}
+                    disabled={loading || deletedLogs.length === 0}
                     className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2.5 rounded-xl border border-red-500/30 flex items-center gap-2 transition-all active:scale-95 shadow-inner text-sm font-black disabled:opacity-30"
                   >
                     <Eraser className="w-4 h-4" /> איפוס ארכיון מחיקות 🗑️
                   </button>
                 </div>
-                
+
                 {deletedLogs.length === 0 ? (
                   <div className="text-center py-10 bg-slate-900/50 rounded-2xl border border-slate-700">
                     <span className="text-slate-500 font-bold">אין שחקנים בארכיון.</span>
@@ -1277,7 +1277,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         {/* --- מסך סגלים ורכש --- */}
         {activeTab === 'system' && (
           <div className="space-y-6 animate-in fade-in zoom-in-95">
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-indigo-900/30 p-6 md:p-8 rounded-[32px] border border-indigo-500/30 shadow-xl relative overflow-hidden flex flex-col justify-between">
                    <div className="absolute top-0 left-0 w-32 h-32 bg-indigo-500/20 blur-[50px] pointer-events-none rounded-full"></div>
@@ -1298,9 +1298,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                     פעולה זו עוברת על כל "קופסאות הגיבוי" שנוצרו בסגירות המחזורים הקודמים, ושולחת את כל תוצאות השחקנים (מכל המחזורים) במכה אחת למסד הנתונים האוטומטי באקסל (גיליון DB_Matches).
                     <br/><span className="text-cyan-400">מומלץ לוודא שהגיליון באקסל ריק לפני הפעלה כדי למנוע כפילויות.</span>
                 </p>
-                <button 
-                    onClick={syncAllHistoryToExcel} 
-                    disabled={isSyncingHistory} 
+                <button
+                    onClick={syncAllHistoryToExcel}
+                    disabled={isSyncingHistory}
                     className="w-full md:w-auto px-8 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white font-black py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 relative z-10"
                 >
                     {isSyncingHistory ? <RefreshCw className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
@@ -1315,7 +1315,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10 leading-relaxed">
                 המערכת תסרוק אוטומטית את 365Scores, ערוץ הספורט ואתרי גיבוי נוספים כדי למשוך את שעות המשחקים ותוצאות הלייב של המחזור הנוכחי או כל מחזור עתידי שתבחר.
               </p>
-              
+
               <div className="flex flex-col md:flex-row gap-3 justify-center relative z-10 mb-4 max-w-md mx-auto">
                  <input
                     type="number"
@@ -1327,9 +1327,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               </div>
 
               <div className="flex justify-center relative z-10">
-                <button 
-                    onClick={runAutoScanner} 
-                    disabled={loading} 
+                <button
+                    onClick={runAutoScanner}
+                    disabled={loading}
                     className="w-full md:w-1/2 px-6 bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white font-black py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
                 >
                     <Sparkles className="w-5 h-5" /> {loading ? 'שואב נתונים מהרשת...' : 'סנכרן מחזור אוטומטית ⚡'}
@@ -1429,7 +1429,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                         {users.filter(u => u.id !== 'admin' && u.id !== 'system').map(u => {
                             const isActive = (cupSettings.activeTeams || []).includes(u.id);
                             return (
-                                <button 
+                                <button
                                     key={u.id}
                                     onClick={() => {
                                         const currentActive = cupSettings.activeTeams || [];
@@ -1465,14 +1465,14 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 md:p-8 rounded-[32px] border border-yellow-500/50 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden mt-6">
               <div className="absolute top-0 left-0 w-32 h-32 bg-yellow-500/10 blur-[50px] pointer-events-none rounded-full"></div>
-              
+
               <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2 relative z-10">
                  <Star className="text-yellow-400 fill-current w-6 h-6" /> אלגוריתם API: סנכרון מלכים חכם
               </h3>
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
                 המערכת סורקת לבד את **כל** הלשוניות שקוראים להן "מחזור", ומתקנת שגיאות כתיב בשמות השחקנים. אל תשכח לוודא שהאקסל פתוח לכולם בהגדרות השיתוף (Anyone with the link).
               </p>
-              
+
               <div className="space-y-4 relative z-10">
                 <div className="flex flex-col md:flex-row gap-3 mt-4">
                   <input type="text" value={topPlayersDriveUrl} onChange={(e) => setTopPlayersDriveUrl(e.target.value)} placeholder="קישור רגיל לאקסל (https://docs.google.com/spreadsheets/d/...)" className="flex-1 bg-black/50 border border-yellow-600/50 p-4 rounded-xl text-white outline-none focus:border-yellow-400 text-left font-mono text-sm" dir="ltr" />
@@ -1490,9 +1490,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
                 כפתור זה מיועד למקרה שבו תרצה לאפס את **כל הנקודות והסטטיסטיקות** של השחקנים במחזור הנוכחי בחזרה ל-0 (ללא סגירת המחזור וללא פגיעה בהרכבים עצמם).
               </p>
-              <button 
-                 onClick={() => setShowResetConfirm(true)} 
-                 disabled={isResettingLive} 
+              <button
+                 onClick={() => setShowResetConfirm(true)}
+                 disabled={isResettingLive}
                  className="w-full md:w-auto px-8 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-black py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 relative z-10"
               >
                 {isResettingLive ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Eraser className="w-5 h-5" />}
@@ -1507,9 +1507,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
                 סגרת מחזור בטעות בזירה? הפונקציה הזו תשאב את הגיבוי האחרון של הליגה, תאפס את הטבלאות וההרכבים חזרה אחורה, ותמחק את הפוסטים האוטומטיים שנוצרו.
               </p>
-              <button 
-                 onClick={triggerUndo} 
-                 disabled={isUndoing} 
+              <button
+                 onClick={triggerUndo}
+                 disabled={isUndoing}
                  className="w-full md:w-auto px-8 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-black py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 relative z-10"
               >
                 {isUndoing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Undo2 className="w-5 h-5" />}
@@ -1524,8 +1524,8 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               <p className="text-slate-400 text-sm font-bold mb-6 relative z-10">
                 פעולה זו תנעל את העונה הנוכחית, תשמור את האלופה והיורדות בארכיון, ותאפס את כל הקבוצות והסגלים לעונה הבאה.
               </p>
-              <button 
-                 onClick={() => setShowEndSeason(true)} 
+              <button
+                 onClick={() => setShowEndSeason(true)}
                  className="w-full md:w-auto px-8 bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl transition-all shadow-lg relative z-10"
               >
                 סגור עונה ואפס נתונים 🏆
@@ -1553,7 +1553,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                  <button onClick={() => setShowFixtureModal(false)} className="w-10 h-10 bg-slate-800 hover:bg-slate-700 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-colors font-black"><X className="w-5 h-5"/></button>
               </div>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
               {Object.keys(matchesByRound).length === 0 ? (
                   <div className="text-center py-10 bg-slate-900/50 rounded-2xl border border-slate-700 text-slate-500 font-bold">אין משחקים פעילים במערכת. לחץ "הוסף משחק" כדי להתחיל.</div>
@@ -1574,7 +1574,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
                                   return (
                                       <div key={idx} className="bg-slate-950 p-4 md:p-5 rounded-2xl border border-slate-700/80 hover:border-emerald-500/30 transition-colors flex flex-col xl:flex-row xl:items-center justify-between gap-4 shadow-sm">
-                                          
+
                                           {isEditing ? (
                                               <div className="flex-1 grid grid-cols-2 md:grid-cols-7 gap-3 w-full">
                                                   <input type="number" value={editingMatchData.round || ''} onChange={e => setEditingMatchData({...editingMatchData, round: Number(e.target.value)})} placeholder="מחזור" className="bg-slate-800 border border-slate-600 p-2.5 rounded-lg text-white font-bold text-sm outline-none focus:border-emerald-500 text-center" />
@@ -1653,13 +1653,13 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             <h3 className="text-2xl font-black text-white mb-6 text-center">עריכת קבוצה ✏️</h3>
             <div className="space-y-4">
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">שם הקבוצה</label><input type="text" value={editingUser.teamName} onChange={e => setEditingUser({...editingUser, teamName: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" /></div>
-              
+
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">שם המנג'ר (מופיע באתר)</label><input type="text" value={editingUser.name || editingUser.manager || ''} onChange={e => setEditingUser({...editingUser, manager: e.target.value, name: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" /></div>
-              
+
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">אימייל התחברות (מנג'ר)</label><input type="email" value={editingUser.email} onChange={e => setEditingUser({...editingUser, email: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" dir="ltr" /></div>
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">שם עוזר המאמן (אופציונלי)</label><input type="text" value={editingUser.assistantName || ''} onChange={e => setEditingUser({...editingUser, assistantName: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" /></div>
               <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">אימייל עוזר מאמן</label><input type="email" value={editingUser.assistantEmail || ''} onChange={e => setEditingUser({...editingUser, assistantEmail: e.target.value})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500" dir="ltr" /></div>
-              
+
               {/* --- שדה ההרשאות המפוצל --- */}
               <div>
                 <label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">הרשאת המנג'ר הראשי ({editingUser.manager || editingUser.name || 'מנג\'ר'})</label>
@@ -1679,7 +1679,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                   </select>
                 </div>
               )}
-              
+
               <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-800">
                   <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">נקודות בטבלה</label><input type="number" value={editingUser.points || 0} onChange={e => setEditingUser({...editingUser, points: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500 text-center" /></div>
                   <div><label className="text-xs text-slate-400 font-bold ml-1 mb-1 block">משחקים ששוחקו</label><input type="number" value={editingUser.played || 0} onChange={e => setEditingUser({...editingUser, played: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500 text-center" /></div>
@@ -1696,9 +1696,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
               {/* 📧 כפתורי איפוס סיסמה מפוצלים 📧 */}
               <div className="pt-4 border-t border-slate-800 flex flex-col gap-3">
-                <button 
+                <button
                   type="button"
-                  onClick={() => handleSendResetEmail(editingUser.email)} 
+                  onClick={() => handleSendResetEmail(editingUser.email)}
                   disabled={resetLoadingEmail === editingUser.email?.trim()?.toLowerCase()}
                   className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-blue-400 font-bold py-3 rounded-xl border border-slate-600 transition-colors text-sm flex items-center justify-center gap-2 active:scale-95"
                 >
@@ -1711,10 +1711,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                     <span>איפוס סיסמה למנג'ר ({editingUser.manager || editingUser.name || 'מנג\'ר'}) 📧</span>
                   )}
                 </button>
-                
-                <button 
+
+                <button
                   type="button"
-                  onClick={() => editingUser.assistantEmail ? handleSendResetEmail(editingUser.assistantEmail) : showMessage('קודם שמור את כתובת המייל של העוזר כדי שיהיה אפשר לשלוח לו!', 'error')} 
+                  onClick={() => editingUser.assistantEmail ? handleSendResetEmail(editingUser.assistantEmail) : showMessage('קודם שמור את כתובת המייל של העוזר כדי שיהיה אפשר לשלוח לו!', 'error')}
                   disabled={!editingUser.assistantEmail || resetLoadingEmail === editingUser.assistantEmail?.trim()?.toLowerCase()}
                   className={`w-full font-bold py-3 rounded-xl border transition-colors text-sm flex items-center justify-center gap-2 active:scale-95 ${editingUser.assistantEmail ? 'bg-slate-800/50 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'}`}
                 >
@@ -1740,7 +1740,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           <div className="bg-slate-900 border border-yellow-500/50 p-6 sm:p-8 rounded-[40px] w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button onClick={() => setShowCupAdminModal(false)} className="absolute top-6 left-6 text-slate-500 hover:text-white font-black text-xl bg-slate-800 w-10 h-10 rounded-full flex items-center justify-center transition-colors"><X className="w-5 h-5"/></button>
             <h3 className="text-2xl font-black text-white mb-6 text-center">עריכת נקודות גביע 🏆</h3>
-            
+
             <div className="space-y-6">
                 {cupSettings?.groups?.lannister?.length > 0 || cupSettings?.groups?.stark?.length > 0 ? (
                     <>
@@ -1860,26 +1860,26 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             <p className="text-sm text-slate-400 font-bold mb-6">
               אזהרה: פעולה זו היא בלתי הפיכה! כל הנתונים יאופסו והעונה תעבור לארכיון.
             </p>
-            <input 
-              type="text" 
-              value={seasonArchiveName} 
-              onChange={e => setSeasonArchiveName(e.target.value)} 
-              placeholder="שם העונה (לדוגמה: עונת 2023/24)" 
-              className="w-full bg-black/50 border border-slate-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 mb-4 text-center" 
+            <input
+              type="text"
+              value={seasonArchiveName}
+              onChange={e => setSeasonArchiveName(e.target.value)}
+              placeholder="שם העונה (לדוגמה: עונת 2023/24)"
+              className="w-full bg-black/50 border border-slate-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 mb-4 text-center"
             />
-            <input 
-              type="text" 
-              value={cupWinner} 
-              onChange={e => setCupWinner(e.target.value)} 
-              placeholder="שם זוכת הגביע (למשל: תומאלי)" 
-              className="w-full bg-black/50 border border-slate-700 p-4 rounded-xl text-white font-bold outline-none focus:border-yellow-500 mb-4 text-center" 
+            <input
+              type="text"
+              value={cupWinner}
+              onChange={e => setCupWinner(e.target.value)}
+              placeholder="שם זוכת הגביע (למשל: תומאלי)"
+              className="w-full bg-black/50 border border-slate-700 p-4 rounded-xl text-white font-bold outline-none focus:border-yellow-500 mb-4 text-center"
             />
-            <input 
-              type="password" 
-              value={endSeasonPwd} 
-              onChange={e => setEndSeasonPwd(e.target.value)} 
-              placeholder="הכנס סיסמת אדמין (ערן) לאישור..." 
-              className="w-full bg-black/50 border border-slate-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 mb-6 text-center" 
+            <input
+              type="password"
+              value={endSeasonPwd}
+              onChange={e => setEndSeasonPwd(e.target.value)}
+              placeholder="הכנס סיסמת אדמין (ערן) לאישור..."
+              className="w-full bg-black/50 border border-slate-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 mb-6 text-center"
               dir="ltr"
             />
             <div className="flex gap-3">

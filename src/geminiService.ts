@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 const modelName = "gemini-1.5-flash-latest";
 
-const FALLBACK_GEMINI_KEY = "AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk";
+const FALLBACK_GEMINI_KEY = "";
 
 const getApiKey = (providedKey?: string) => {
   return providedKey || 
