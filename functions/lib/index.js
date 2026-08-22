@@ -496,13 +496,12 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         if (isApprove || isReject) {
             const pendingSnap = await db.collection('live_pending_events')
                 .where('status', '==', 'pending')
-                .orderBy('createdAt', 'desc')
-                .limit(1)
                 .get();
             if (pendingSnap.empty) {
                 return `ℹ️ אין כרגע אירועים ממתינים לאישור סריקה ב-WhatsApp. 👍`;
             }
-            const pendingDoc = pendingSnap.docs[0];
+            const sortedDocs = pendingSnap.docs.sort((a, b) => (b.data().createdAt?.toMillis() || 0) - (a.data().createdAt?.toMillis() || 0));
+            const pendingDoc = sortedDocs[0];
             const pendingData = pendingDoc.data();
             if (isReject) {
                 await pendingDoc.ref.update({ status: 'rejected', rejectedAt: admin.firestore.FieldValue.serverTimestamp() });
