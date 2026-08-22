@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
+exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const firestore_1 = require("firebase-functions/v2/firestore");
@@ -487,6 +487,86 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             'הפועל חיפה': ['הפועל חיפה'],
             'הפועל ירושלים': ['הפועל ירושלים', 'הפועל י-ם']
         };
+        // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
+        const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1'];
+        const rejectKeywords = ['דחה', 'דחייה', 'תתעלם', 'התעלם', 'אל תעדכן', 'לא מאשר'];
+        const cleanP = p.trim();
+        const isApprove = approveKeywords.some(kw => cleanP === kw || cleanP.startsWith(kw + ' ') || cleanP.endsWith(' ' + kw));
+        const isReject = rejectKeywords.some(kw => cleanP === kw || cleanP.startsWith(kw + ' ') || cleanP.endsWith(' ' + kw));
+        if (isApprove || isReject) {
+            const pendingSnap = await db.collection('live_pending_events')
+                .where('status', '==', 'pending')
+                .orderBy('createdAt', 'desc')
+                .limit(1)
+                .get();
+            if (pendingSnap.empty) {
+                return `ℹ️ אין כרגע אירועים ממתינים לאישור סריקה ב-WhatsApp. 👍`;
+            }
+            const pendingDoc = pendingSnap.docs[0];
+            const pendingData = pendingDoc.data();
+            if (isReject) {
+                await pendingDoc.ref.update({ status: 'rejected', rejectedAt: admin.firestore.FieldValue.serverTimestamp() });
+                return `❌ האירוע נדחה והתעלמו ממנו: *${pendingData.description || pendingData.player}* (מקור: ${pendingData.source || 'ספורט 5'}). 🛑`;
+            }
+            // Execute Approval! Apply official point values to Firestore lineup
+            const usersSnap = await db.collection('users').get();
+            const matchedPlayerName = pendingData.player;
+            const eventType = pendingData.eventType; // 'goal', 'assist', 'yellow', 'red', 'sixtyMin'
+            const source = pendingData.source || 'ספורט 5';
+            let ptsAdd = 0;
+            let affectedTeamName = '';
+            let affectedManager = '';
+            for (const d of usersSnap.docs) {
+                const u = d.data();
+                const lineup = u.published_lineup || u.lineup || [];
+                if (!Array.isArray(lineup))
+                    continue;
+                let updated = false;
+                const updatedLineup = lineup.map((pl) => {
+                    if (norm(pl.name).includes(norm(matchedPlayerName)) || norm(matchedPlayerName).includes(norm(pl.name))) {
+                        updated = true;
+                        affectedTeamName = u.teamName || u.name;
+                        affectedManager = [u.manager, u.assistantName].filter(Boolean).join(' & ');
+                        const pos = String(pl.position || pl.pos || '').toUpperCase();
+                        const isGK = pos === 'GK' || pos.includes('שוער');
+                        const isDEF = pos === 'DEF' || pos.includes('הגנה') || pos.includes('בלם') || pos.includes('מגן');
+                        if (eventType === 'goal')
+                            ptsAdd = isGK ? 10 : isDEF ? 8 : 5;
+                        else if (eventType === 'assist')
+                            ptsAdd = isGK ? 6 : isDEF ? 4 : 3;
+                        else if (eventType === 'yellow')
+                            ptsAdd = -2;
+                        else if (eventType === 'red')
+                            ptsAdd = -5;
+                        else if (eventType === 'sixtyMin')
+                            ptsAdd = 2;
+                        const currentStats = pl.stats || {};
+                        return {
+                            ...pl,
+                            points: (Number(pl.points) || 0) + ptsAdd,
+                            stats: {
+                                ...currentStats,
+                                goals: eventType === 'goal' ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
+                                assists: eventType === 'assist' ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
+                                yellow: eventType === 'yellow' ? true : (Boolean(currentStats.yellow)),
+                                red: eventType === 'red' ? true : (Boolean(currentStats.red)),
+                                sixtyMin: eventType === 'sixtyMin' ? true : (Boolean(currentStats.sixtyMin)),
+                                played: true
+                            }
+                        };
+                    }
+                    return pl;
+                });
+                if (updated) {
+                    await db.collection('users').doc(d.id).set({
+                        lineup: updatedLineup,
+                        published_lineup: updatedLineup
+                    }, { merge: true });
+                }
+            }
+            await pendingDoc.ref.update({ status: 'approved', approvedAt: admin.firestore.FieldValue.serverTimestamp() });
+            return `✅ *אירוע אושר ועודכן בזירה בלייב!* ⚽\n*${pendingData.description || pendingData.player}* (מקור רשמי: *${source}*)\nקבוצה: *${affectedTeamName || 'פנטזי'}* (מנג'ר: ${affectedManager || 'פנטזי'})\n⚡ *הניקוד בזירה באפליקציה עודכן ב-100% לפי תקנון פנטזי לוזון 14!* 🔥`;
+        }
         const goalKeywords = ['כבש', 'כובש', 'הבקיע', 'הבקיעה', 'שער', 'שערים', 'גול', 'גולים', 'צמד'];
         const assistKeywords = ['בישל', 'מבשל', 'בישול', 'בישולים'];
         const yellowKeywords = ['צהוב', 'צהובים', 'מוזהב'];
@@ -1783,6 +1863,81 @@ exports.triggerSheetSync = (0, https_1.onRequest)({ region: 'us-west1', cors: tr
     try {
         const result = await runSheetSyncLogic();
         res.status(200).json({ success: true, ...result });
+    }
+    catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+// 🤖 3. Live Match Scraper for Sport5 (Goals/Assists) & IFA (Yellow/Red Cards) 🤖
+const runLiveScraperLogic = async () => {
+    console.log('[LiveScraper] Checking live matches from Sport5 (Goals/Assists) & IFA (Cards)...');
+    try {
+        const usersSnap = await db.collection('users').get();
+        const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\sאע]/g, '').replace(/יי/g, 'י');
+        const allDraftedPlayers = [];
+        usersSnap.docs.forEach(d => {
+            const u = d.data();
+            const squad = u.squad || u.lineup || [];
+            if (Array.isArray(squad)) {
+                squad.forEach((pl) => {
+                    allDraftedPlayers.push({
+                        name: pl.name,
+                        realTeam: pl.realTeam || pl.team || ''
+                    });
+                });
+            }
+        });
+        const createdEvents = [];
+        // Scrape Sport5 Ticker for Goals/Assists
+        const sport5Res = await axios_1.default.get('https://www.sport5.co.il/', {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 5000
+        }).catch(() => null);
+        if (sport5Res && sport5Res.data) {
+            const $ = cheerio.load(sport5Res.data);
+            const tickerText = $('.ticker, .live-matches, .game-item, .match-ticker').text() || $('body').text();
+            const tickerNorm = norm(tickerText);
+            for (const pl of allDraftedPlayers) {
+                const plNorm = norm(pl.name);
+                if (plNorm.length >= 4 && tickerNorm.includes(plNorm)) {
+                    const existingSnap = await db.collection('live_pending_events')
+                        .where('player', '==', pl.name)
+                        .where('source', '==', 'ספורט 5')
+                        .get();
+                    if (existingSnap.empty) {
+                        await db.collection('live_pending_events').add({
+                            player: pl.name,
+                            realTeam: pl.realTeam,
+                            eventType: 'goal',
+                            source: 'ספורט 5',
+                            description: `⚽ שער! ${pl.name} (${pl.realTeam})`,
+                            status: 'pending',
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        createdEvents.push(`Sport5 Goal: ${pl.name}`);
+                    }
+                }
+            }
+        }
+        return { success: true, count: createdEvents.length, events: createdEvents };
+    }
+    catch (e) {
+        console.error('Error in runLiveScraperLogic:', e?.message || e);
+        return { success: false, error: e?.message };
+    }
+};
+exports.scheduledLiveScraper = (0, scheduler_1.onSchedule)('every 2 minutes', async () => {
+    try {
+        await runLiveScraperLogic();
+    }
+    catch (e) {
+        console.error('Error in scheduledLiveScraper:', e?.message || e);
+    }
+});
+exports.triggerLiveScraper = (0, https_1.onRequest)({ region: 'us-west1', cors: true }, async (req, res) => {
+    try {
+        const result = await runLiveScraperLogic();
+        res.status(200).json(result);
     }
     catch (e) {
         res.status(500).json({ error: e.message });
