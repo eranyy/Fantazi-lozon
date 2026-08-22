@@ -16,14 +16,14 @@ describe('authService', () => {
     const mockUser = { id: 'u1', name: 'ערן', email: 'eran@test.com' };
     authService.login(mockUser);
     
-    expect(authService.getSession()).toMatchObject({ id: 'u1', name: 'ערן' });
+    expect(authService.getSession()).toMatchObject({ id: 'u1', email: 'eran@test.com' });
   });
 
   it('falls back to sessionStorage if localStorage is empty', () => {
     const mockUser = { id: 'u2', name: 'גיא', email: 'guy@test.com' };
-    sessionStorage.setItem('fantasy_user_session', JSON.stringify(mockUser));
+    sessionStorage.setItem('fantasy_user_session', JSON.stringify({ id: mockUser.id, email: mockUser.email }));
     
-    expect(authService.getSession()).toMatchObject({ id: 'u2', name: 'גיא' });
+    expect(authService.getSession()).toMatchObject({ id: 'u2', email: 'guy@test.com' });
   });
 
   it('clears sessions properly on logout', () => {
