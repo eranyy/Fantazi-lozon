@@ -543,13 +543,33 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
             'הפועל ירושלים': ['הפועל ירושלים', 'הפועל י-ם']
         };
 
-        const eventKeywords = ['כבש', 'שער', 'גול', 'בישל', 'בישול', 'אדום', 'צהוב', 'פנדל', 'ספג', 'ספגה', 'שערים', 'עצר', 'החמיץ', 'עצמי', 'קיבלה', 'חטפה'];
+        const goalKeywords = ['כבש', 'כובש', 'הבקיע', 'הבקיעה', 'שער', 'שערים', 'גול', 'גולים', 'צמד'];
+        const assistKeywords = ['בישל', 'מבשל', 'בישול', 'בישולים'];
+        const yellowKeywords = ['צהוב', 'צהובים', 'מוזהב'];
+        const redKeywords = ['אדום', 'אדומים', 'מורחק'];
+        const penSavedKeywords = ['עצר פנדל', 'עצירת פנדל'];
+        const penMissedKeywords = ['החמיץ פנדל', 'החמצת פנדל'];
+        const ownGoalKeywords = ['עצמי', 'שער עצמי'];
+        const concededKeywords = ['ספג', 'ספגה', 'סופג', 'סופגת', 'קיבלה', 'חטפה', 'חטף'];
+
+        const eventKeywords = [
+            ...goalKeywords,
+            ...assistKeywords,
+            ...yellowKeywords,
+            ...redKeywords,
+            ...penSavedKeywords,
+            ...penMissedKeywords,
+            ...ownGoalKeywords,
+            ...concededKeywords,
+            'פנדל', 'עצר', 'החמיץ'
+        ];
+
         if (eventKeywords.some(kw => p.includes(kw))) {
             try {
                 const usersSnap = await db.collection('users').get();
                 
                 // 🥅 Check for Real-Team Goal Conceded (e.g. מכבי חיפה ספגה, ביתר ספגה גול) 🥅
-                const isTeamConceded = p.includes('ספג') || p.includes('ספגה') || p.includes('קיבלה') || p.includes('חטפה');
+                const isTeamConceded = concededKeywords.some(kw => p.includes(kw));
                 let targetRealTeam: string | null = null;
                 if (isTeamConceded) {
                     for (const [teamCanonical, keywords] of Object.entries(REAL_TEAMS_MAP)) {
@@ -632,14 +652,14 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                     }
 
                     if (matchedPlayer) {
-                        const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
-                        const isAssist = p.includes('בישל') || p.includes('בישול');
-                        const isYellow = p.includes('צהוב');
-                        const isRed = p.includes('אדום');
+                        const isGoal = goalKeywords.some(kw => p.includes(kw));
+                        const isAssist = assistKeywords.some(kw => p.includes(kw));
+                        const isYellow = yellowKeywords.some(kw => p.includes(kw));
+                        const isRed = redKeywords.some(kw => p.includes(kw));
                         const isPenSaved = p.includes('עצר') && p.includes('פנדל');
                         const isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
-                        const isOwnGoal = p.includes('עצמי');
-                        const isConceded = p.includes('ספג') || p.includes('ספגה');
+                        const isOwnGoal = ownGoalKeywords.some(kw => p.includes(kw));
+                        const isConceded = concededKeywords.some(kw => p.includes(kw));
 
                         const matchedNorm = norm(matchedPlayer.name);
                         const isInLineup = Array.isArray(lineup) && lineup.some((pl: any) => 
