@@ -9,6 +9,7 @@ import * as cheerio from 'cheerio';
 
 admin.initializeApp();
 const db = admin.firestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 setGlobalOptions({ region: 'us-west1' });
 
@@ -673,8 +674,8 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                                             ...currentStats,
                                             goals: isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
                                             assists: isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
-                                            yellow: isYellow ? true : currentStats.yellow,
-                                            red: isRed ? true : currentStats.red,
+                                            yellow: isYellow ? true : (Boolean(currentStats.yellow)),
+                                            red: isRed ? true : (Boolean(currentStats.red)),
                                             penaltySaved: isPenSaved ? (currentStats.penaltySaved || 0) + 1 : (currentStats.penaltySaved || 0),
                                             penaltyMissed: isPenMissed ? (currentStats.penaltyMissed || 0) + 1 : (currentStats.penaltyMissed || 0),
                                             ownGoals: isOwnGoal ? (currentStats.ownGoals || 0) + 1 : (currentStats.ownGoals || 0),
@@ -723,7 +724,6 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
         let chatHistoryContext = '';
         try {
             const chatSnap = await db.collection('whatsapp_group_history')
-                .where('chatId', '==', chatId || 'group')
                 .orderBy('timestamp', 'desc')
                 .limit(30)
                 .get();
