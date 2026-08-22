@@ -23,17 +23,17 @@ const requestPushPermission = async (userId: string) => {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
       const token = await getToken(messaging, {
-        vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ" 
+        vapidKey: "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ"
       });
 
       if (token) {
         await setDoc(doc(db, "users", userId), {
-          fcmToken: token 
+          fcmToken: token
         }, { merge: true });
       }
     }
   } catch (error) {
-    console.error("שגיאה בהפעלת התראות:", error);
+    // Ignore notification setup errors
   }
 };
 
@@ -45,7 +45,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
 
   const processAuthenticatedUser = async (user: any, inputEmail: string, loginMethod: string) => {
-    console.log(`[Processing Auth User] Email: ${inputEmail}, UID: ${user.uid}`);
     const usersSnap = await getDocs(collection(db, 'users'));
     let foundUser: any = null;
 
@@ -53,11 +52,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       const data = doc.data();
       const mainEmail = data.email?.toLowerCase().trim();
       const asstEmail = data.assistantEmail?.toLowerCase().trim();
-      
+
       // בדיקה אם זה המנג'ר הראשי
       if (mainEmail === inputEmail) {
         foundUser = { id: doc.id, teamId: doc.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
-      } 
+      }
       // בדיקה אם זה עוזר המאמן
       else if (asstEmail === inputEmail) {
         foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: 'USER' };
@@ -84,14 +83,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           timestamp: new Date().toISOString()
         });
       } catch (logError) {
-        console.error("Failed to save login tracking log", logError);
+        // Ignore login tracking log errors
       }
 
       authService.login(foundUser, rememberMe);
       onLogin(foundUser);
       requestPushPermission(foundUser.id);
     } else {
-      console.warn(`[Login Warning] Authenticated email ${inputEmail} not found in Firestore.`);
       setError(`חשבון הגוגל שאיתו התחברת (${inputEmail}) אומת בהצלחה בגוגל, אך אימייל זה אינו רשום תחת אף קבוצה במערכת. אנא ודא שכתובת המייל המדויקת הזאת (${inputEmail}) מעודכנת עבור הקבוצה בפאנל הניהול.`);
     }
   };
@@ -108,16 +106,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
     const inputEmail = email.toLowerCase().trim();
     const inputPassword = password.trim();
-    
-    console.log(`[Login Attempt] Email: ${inputEmail}`);
 
     try {
       // 1. Try Firebase Authentication
       const userCredential = await signInWithEmailAndPassword(auth, inputEmail, inputPassword);
       await processAuthenticatedUser(userCredential.user, inputEmail, 'email');
     } catch (err: any) {
-      console.log(`[Login Error] Code: ${err.code}, Message: ${err.message}`);
-      
+
       // Auto-create user account if email exists in Firestore but has not created a Firebase Auth user yet
       if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
         try {
@@ -133,14 +128,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           });
 
           if (isTeamMember) {
-            console.log(`[Auto-Register] Email ${inputEmail} is valid team member, creating Auth account...`);
             const newCredential = await createUserWithEmailAndPassword(auth, inputEmail, inputPassword);
             await processAuthenticatedUser(newCredential.user, inputEmail, 'email_created');
             setLoading(false);
             return;
           }
         } catch (createErr: any) {
-          console.error("Auto registration error:", createErr);
           if (createErr.code === 'auth/weak-password') {
             setError('הסיסמה קצרה מדי. נא לבחור סיסמה בת 6 תווים לפחות.');
             setLoading(false);
@@ -179,7 +172,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           errorMessage: err.message,
           timestamp: new Date().toISOString()
         });
-      } catch (logErr) {}
+      } catch (logErr) {
+        // Ignore errors when saving login_errors log
+      }
     }
     setLoading(false);
   };
@@ -191,13 +186,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      
+
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
       const inputEmail = (user.email || '').toLowerCase().trim();
       await processAuthenticatedUser(user, inputEmail, 'google');
     } catch (err: any) {
-      console.error(`[Google Login Error] Code: ${err.code}, Message: ${err.message}`);
       if (err.code === 'auth/popup-closed-by-user') {
         setError('התחברות עם Google בוטלה.');
       } else if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
@@ -219,16 +213,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center font-['Assistant'] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-slate-950 px-4" dir="rtl">
-      
+
       <div className="bg-slate-900/90 backdrop-blur-md p-8 md:p-12 rounded-[40px] border border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.15)] w-full max-w-md">
-        
+
         <div className="text-center mb-10">
           <h1 className="text-5xl font-black text-white italic tracking-tighter mb-2">LUZON <span className="text-green-500">14</span></h1>
           <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">ניהול ליגת פנטזי מקצועית</p>
         </div>
 
         {/* Google Sign-In Option */}
-        <button 
+        <button
           type="button"
           onClick={handleGoogleLogin}
           disabled={loading}
@@ -255,8 +249,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label className="block text-slate-400 text-xs font-bold mb-2 ml-1">אימייל (מנג'ר / עוזר מאמן)</label>
-            <input 
-              type="email" 
+            <input
+              type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full bg-black/50 border border-slate-700 p-4 rounded-2xl text-white outline-none focus:border-green-500 transition-colors"
@@ -267,8 +261,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
           <div>
             <label className="block text-slate-400 text-xs font-bold mb-2 ml-1">סיסמה</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="w-full bg-black/50 border border-slate-700 p-4 rounded-2xl text-white outline-none focus:border-green-500 transition-colors"
@@ -279,22 +273,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={rememberMe}
                 onChange={e => setRememberMe(e.target.checked)}
-                className="w-5 h-5 accent-green-500" 
+                className="w-5 h-5 accent-green-500"
               />
               <span className="text-sm text-slate-300 font-bold">זכור אותי מחובר</span>
             </label>
-            
+
             <button type="button" onClick={() => handleHelp('forgot')} className="text-xs text-green-500 hover:text-green-400 font-bold">שכחתי סיסמה</button>
           </div>
 
           {error && <div className="bg-red-950/50 border border-red-500/50 text-red-400 p-3 rounded-xl text-center text-sm font-bold animate-in fade-in">{error}</div>}
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
             className="w-full bg-green-600 hover:bg-green-500 text-black font-black text-xl py-4 rounded-2xl shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all hover:scale-[1.02]"
           >
