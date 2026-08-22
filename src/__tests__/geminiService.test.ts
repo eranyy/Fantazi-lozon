@@ -160,6 +160,37 @@ describe('geminiService', () => {
         expect(promptUsed).not.toContain('Admin');
         expect(promptUsed).not.toContain('System');
     });
+
+    it('should use provided API key if available', async () => {
+      mockGenerateContent.mockResolvedValue({ text: 'Summary text' });
+
+      const promise = generateAISummary([], [], 'provided-summary-key');
+      vi.runAllTimers();
+      await promise;
+
+      expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'provided-summary-key' });
+    });
+
+    it('should throw error on timeout', async () => {
+      // Mock a promise that never resolves
+      mockGenerateContent.mockImplementation(() => new Promise(() => {}));
+
+      const promise = generateAISummary([], []);
+
+      // Fast-forward past the 25-second timeout
+      vi.advanceTimersByTime(26000);
+
+      await expect(promise).rejects.toThrow(/Timeout/);
+    });
+
+    it('should throw error if API call fails', async () => {
+      mockGenerateContent.mockRejectedValue(new Error('API failure'));
+
+      const promise = generateAISummary([], []);
+      vi.runAllTimers();
+
+      await expect(promise).rejects.toThrow('API failure');
+    });
   });
 
   describe('generateRumors', () => {
