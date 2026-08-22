@@ -662,7 +662,7 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                                 teamUpdated = true;
                                 const currentStats = pl.stats || {};
                                 const newConceded = (currentStats.conceded || 0) + 1;
-                                const ptsDeduct = (newConceded % 2 === 0) ? -1 : 0; // -1 pt for every 2 goals conceded
+                                const ptsDeduct = -1; // Official Rule: -1 pt for EVERY goal conceded
 
                                 affectedPlayersInfo.push(`• *${pl.name}* (${plPos}, קבוצת *${u.teamName || u.name}* - מנג'ר: ${u.manager || ''}) ספג ${newConceded} שערים`);
 
@@ -688,7 +688,7 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                     }
 
                     if (affectedPlayersInfo.length > 0) {
-                        return `🥅 *עדכון ספיגת שער בלייב!*\nקבוצת *${targetRealTeam}* ספגה שער במציאות!\n\n⚡ *השחקנים המושפעים בהרכבים הפותחים עודכנו בלייב בזירה:*\n${affectedPlayersInfo.join('\n')}\n\n📱 הזירה באפליקציה עודכנה בזמן אמת! 🔥`;
+                        return `🥅 *עדכון ספיגת שער בלייב!*\nקבוצת *${targetRealTeam}* ספגה שער במציאות!\n\n⚡ *השחקנים המושפעים בהרכבים הפותחים עודכנו (-1 נק' לכל שער) בלייב בזירה:*\n${affectedPlayersInfo.join('\n')}\n\n📱 הזירה באפליקציה עודכנה בזמן אמת! 🔥`;
                     } else {
                         return `🥅 קבוצת *${targetRealTeam}* ספגה שער במציאות, אך כרגע אין שוערי/מגיני ${targetRealTeam} בהרכבים הפותחים בזירה. ⚽`;
                     }
@@ -773,46 +773,46 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                     const isSubOn = p.includes('נכנס') || p.includes('עלה');
                     const isNoPlay = p.includes('לא שיחק') || p.includes('לא פתח');
 
-                        if (isSixtySingle || isSubOff || isSubOn || isNoPlay) {
-                            const ptsSet = isSixtySingle ? 2 : (isSubOff || isSubOn) ? 1 : 0;
-                            const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
+                    if (isSixtySingle || isSubOff || isSubOn || isNoPlay) {
+                        const ptsSet = isSixtySingle ? 2 : (isSubOff || isSubOn) ? 1 : 0;
+                        const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
 
-                            if (Array.isArray(lineup)) {
-                                const updatedLineup = lineup.map((pl: any) => {
-                                    const plNorm = norm(pl.name);
-                                    if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name || plNorm.includes(matchedNorm) || matchedNorm.includes(plNorm)) {
-                                        const currentStats = pl.stats || {};
-                                        const ptsDiff = isNoPlay ? -(Number(pl.points) || 0) : (currentStats.sixtyMin ? 0 : ptsSet);
-                                        return {
-                                            ...pl,
-                                            points: isNoPlay ? 0 : (Number(pl.points) || 0) + ptsDiff,
-                                            stats: {
-                                                ...currentStats,
-                                                sixtyMin: isSixtySingle,
-                                                played: !isNoPlay,
-                                                didNotPlay: isNoPlay
-                                            }
-                                        };
-                                    }
-                                    return pl;
-                                });
-
-                                if (isInLineup) {
-                                    await db.collection('users').doc(dId).set({
-                                        lineup: updatedLineup,
-                                        published_lineup: updatedLineup
-                                    }, { merge: true });
+                        if (Array.isArray(lineup)) {
+                            const updatedLineup = lineup.map((pl: any) => {
+                                const plNorm = norm(pl.name);
+                                if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name || plNorm.includes(matchedNorm) || matchedNorm.includes(plNorm)) {
+                                    const currentStats = pl.stats || {};
+                                    const ptsDiff = isNoPlay ? -(Number(pl.points) || 0) : (currentStats.sixtyMin ? 0 : ptsSet);
+                                    return {
+                                        ...pl,
+                                        points: isNoPlay ? 0 : (Number(pl.points) || 0) + ptsDiff,
+                                        stats: {
+                                            ...currentStats,
+                                            sixtyMin: isSixtySingle,
+                                            played: !isNoPlay,
+                                            didNotPlay: isNoPlay
+                                        }
+                                    };
                                 }
-                            }
+                                return pl;
+                            });
 
-                            if (isNoPlay) {
-                                return `🛑 *עדכון אי-השתתפות בלייב!*\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) לא שיחק במציאות! השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames}).\n⚡ *השחקן עודכן ב-0 נקודות בזירה וסומן לחילוף אוטומטי (Auto-Sub) בסיום המחזור!* 🪑➡️🏟️`;
-                            } else if (isSixtySingle) {
-                                return `⏱️⚡ *עדכון 60+ דקות בלייב!*\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) השלים 60 דקות במציאות! השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames}).\n⚡ *השחקן עודכן ב-+2 נקודות השתתפות בזירה באפליקציה!* 🔥`;
-                            } else {
-                                return `⏱️ *עדכון חילוף/השתתפות בלייב!*\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) שיחק פחות מ-60 דקות (נכנס/יצא במציאות)! השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames}).\n⚡ *השחקן עודכן ב-+1 נקודת השתתפות בזירה באפליקציה!* ⚽`;
+                            if (isInLineup) {
+                                await db.collection('users').doc(dId).set({
+                                    lineup: updatedLineup,
+                                    published_lineup: updatedLineup
+                                }, { merge: true });
                             }
                         }
+
+                        if (isNoPlay) {
+                            return `🛑 *עדכון אי-השתתפות בלייב!*\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) לא שיחק במציאות! השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames}).\n⚡ *השחקן עודכן ב-0 נקודות בזירה וסומן לחילוף אוטומטי (Auto-Sub) בסיום המחזור!* 🪑➡️🏟️`;
+                        } else if (isSixtySingle) {
+                            return `⏱️⚡ *עדכון 60+ דקות בלייב!*\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) השלים 60 דקות במציאות! השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames}).\n⚡ *השחקן עודכן ב-+2 נקודות השתתפות בזירה באפליקציה!* 🔥`;
+                        } else {
+                            return `⏱️ *עדכון חילוף/השתתפות בלייב!*\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) שיחק פחות מ-60 דקות (נכנס/יצא במציאות)! השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames}).\n⚡ *השחקן עודכן ב-+1 נקודת השתתפות בזירה באפליקציה!* ⚽`;
+                        }
+                    }
 
                         const isCancel = cancelKeywords.some(kw => p.includes(kw));
                         let isGoal = goalKeywords.some(kw => p.includes(kw));
@@ -825,26 +825,31 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                         let isConceded = concededKeywords.some(kw => p.includes(kw));
 
                         if (isCancel && !isGoal && !isAssist && !isYellow && !isRed && !isConceded) {
-                        // Calculate exact fantasy points according to position & event type
+                            isGoal = true; // Default cancellation target if unspecified
+                        }
+                        // 🏆 Official Fantazy Luzon 14 Point System Rules 🏆
                         const pos = String(matchedPlayer.position || matchedPlayer.pos || '').toUpperCase();
+                        const isGK = pos === 'GK' || pos.includes('שוער');
+                        const isDEF = pos === 'DEF' || pos.includes('הגנה') || pos.includes('בלם') || pos.includes('מגן');
+                        
                         let ptsAdd = 0;
                         if (isCancel) {
-                            if (isGoal) ptsAdd = (pos === 'DEF' || pos === 'GK') ? -6 : -5;
-                            else if (isAssist) ptsAdd = -3;
-                            else if (isYellow) ptsAdd = 1;
-                            else if (isRed) ptsAdd = 3;
-                            else if (isPenSaved) ptsAdd = -5;
-                            else if (isPenMissed) ptsAdd = 2;
-                            else if (isOwnGoal) ptsAdd = 2;
+                            if (isGoal) ptsAdd = isGK ? -10 : isDEF ? -8 : -5;
+                            else if (isAssist) ptsAdd = isGK ? -6 : isDEF ? -4 : -3;
+                            else if (isYellow) ptsAdd = 2;
+                            else if (isRed) ptsAdd = 5;
+                            else if (isPenSaved) ptsAdd = -3;
+                            else if (isPenMissed) ptsAdd = 3;
+                            else if (isOwnGoal) ptsAdd = 3;
                             else if (isConceded) ptsAdd = 1;
                         } else {
-                            if (isGoal) ptsAdd = (pos === 'DEF' || pos === 'GK') ? 6 : 5;
-                            else if (isAssist) ptsAdd = 3;
-                            else if (isYellow) ptsAdd = -1;
-                            else if (isRed) ptsAdd = -3;
-                            else if (isPenSaved) ptsAdd = 5;
-                            else if (isPenMissed) ptsAdd = -2;
-                            else if (isOwnGoal) ptsAdd = -2;
+                            if (isGoal) ptsAdd = isGK ? 10 : isDEF ? 8 : 5;
+                            else if (isAssist) ptsAdd = isGK ? 6 : isDEF ? 4 : 3;
+                            else if (isYellow) ptsAdd = -2;
+                            else if (isRed) ptsAdd = -5;
+                            else if (isPenSaved) ptsAdd = 3;
+                            else if (isPenMissed) ptsAdd = -3;
+                            else if (isOwnGoal) ptsAdd = -3;
                             else if (isConceded) ptsAdd = -1;
                         }
 
@@ -889,7 +894,6 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
 
                         return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${actionDescription} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                     }
-                }
 
                 // If player is not drafted by any team (Free Agent / שחקן חופשי)
                 if (rawWords.length > 0) {
