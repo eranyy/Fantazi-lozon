@@ -534,6 +534,16 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                         return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : 'רשם אירוע ברשת!'} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                     }
                 }
+                // If player is not drafted by any team (Free Agent / שחקן חופשי)
+                if (rawWords.length > 0) {
+                    const searchedName = rawWords.join(' ');
+                    const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
+                    const isAssist = p.includes('בישל');
+                    const isYellow = p.includes('צהוב');
+                    const isRed = p.includes('אדום');
+                    const actionStr = isGoal ? 'כבש גול' : isAssist ? 'רשם בישול' : isYellow ? 'ספג צהוב' : isRed ? 'ספג אדום' : 'רשם אירוע';
+                    return `ℹ️ *${searchedName}* ${actionStr} במציאות, אך השחקן הינו *שחקן חופשי* (לא נבחר בדראפט ע"י אף מנג'ר בפנטזי לוזון 14), ולכן לא מתווספות/יורדות נקודות לאף קבוצה בזירה! ⚽`;
+                }
             }
             catch (eventErr) {
                 console.error('Error in live event processing:', eventErr);
@@ -725,77 +735,6 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
                 console.error('Error fetching predictor standings:', pErr);
             }
             return `🔮 *טבלת נביאי הליגה (עונה 14):*\n\nהסקרים למחזור 1 יצאו לדרך! תצביעו בסקרים בקבוצה והניקוד המצטבר יעודכן כאן בסיום המחזור! 🏆`;
-        }
-        // E. Live Events & Goal/Assist/Card Reporting (e.g. ברוניניו כבש, בטאי צהוב, חוגי בישל)
-        if (p.includes('כבש') || p.includes('שער') || p.includes('גול') || p.includes('בישל') || p.includes('אדום') || p.includes('צהוב') || p.includes('פנדל')) {
-            try {
-                const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\s]/g, '').replace(/יי/g, 'י');
-                const usersSnap = await db.collection('users').get();
-                const rawWords = p.split(/\s+/).filter(w => w.length >= 2 && !['לוזון', 'היי', 'שלום', 'אהלן', 'כבש', 'שער', 'גול', 'בישל', 'אדום', 'צהוב', 'פנדל'].includes(w));
-                for (const d of usersSnap.docs) {
-                    const u = d.data();
-                    const squad = u.squad || [];
-                    const lineup = u.published_lineup || u.lineup || [];
-                    let matchedPlayer = null;
-                    for (const pl of squad) {
-                        const plNameNorm = norm(pl.name);
-                        if (rawWords.some(w => {
-                            const wNorm = norm(w);
-                            return plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm) || (wNorm.includes('בטאי') && plNameNorm.includes('בטאי')) || (wNorm.includes('ברוניניו') && plNameNorm.includes('ברוניניו'));
-                        })) {
-                            matchedPlayer = pl;
-                            break;
-                        }
-                    }
-                    if (matchedPlayer) {
-                        const isGoal = p.includes('כבש') || p.includes('שער') || p.includes('גול');
-                        const isAssist = p.includes('בישל');
-                        const isYellow = p.includes('צהוב');
-                        const isRed = p.includes('אדום');
-                        const matchedNorm = norm(matchedPlayer.name);
-                        const isInLineup = Array.isArray(lineup) && lineup.some((pl) => pl.id === matchedPlayer.id ||
-                            pl.name === matchedPlayer.name ||
-                            norm(pl.name).includes(matchedNorm) ||
-                            matchedNorm.includes(norm(pl.name)));
-                        // 🟢 Real-time Firestore update for Live Arena sync 🟢
-                        if (Array.isArray(lineup) && (isGoal || isAssist || isYellow || isRed)) {
-                            const ptsAdd = isGoal ? 5 : isAssist ? 3 : isYellow ? -1 : isRed ? -3 : 0;
-                            const updatedLineup = lineup.map((pl) => {
-                                const plNorm = norm(pl.name);
-                                if (pl.id === matchedPlayer.id || pl.name === matchedPlayer.name || plNorm.includes(matchedNorm) || matchedNorm.includes(plNorm)) {
-                                    const currentStats = pl.stats || {};
-                                    return {
-                                        ...pl,
-                                        points: (Number(pl.points) || 0) + ptsAdd,
-                                        stats: {
-                                            ...currentStats,
-                                            goals: isGoal ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
-                                            assists: isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
-                                            yellow: isYellow ? true : currentStats.yellow,
-                                            red: isRed ? true : currentStats.red
-                                        }
-                                    };
-                                }
-                                return pl;
-                            });
-                            if (isInLineup) {
-                                await db.collection('users').doc(d.id).set({
-                                    lineup: updatedLineup,
-                                    published_lineup: updatedLineup
-                                }, { merge: true });
-                                console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd} pts) in team ${d.id}`);
-                            }
-                        }
-                        const eventType = isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : '⚽ *אירוע לייב!*';
-                        const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
-                        const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח והזירה באפליקציה עודכנה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
-                        return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : 'רשם אירוע ברשת!'} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
-                    }
-                }
-            }
-            catch (eventErr) {
-                console.error('Error in event fallback lookup:', eventErr);
-            }
         }
         const cleanPrompt = userPrompt.replace(/^(לוזון|היי לוזון|שלום לוזון|אהלן לוזון|luzon|hi luzon|!לוזון|לוזון:)/i, '').trim();
         return `⚽ *פנטזי לוזון 14:*
