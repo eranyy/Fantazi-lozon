@@ -85,3 +85,21 @@ export interface H2HMatch {
   awayScore: number;
   status: 'not_started' | 'live' | 'finished';
 }
+
+export interface TransferLogItem {
+  id: string;
+  type: 'IN' | 'OUT' | 'SWAP' | 'FREEZE_IN' | 'HALFTIME_SUB';
+  playerName?: string;
+  playerOut?: string;
+  playerOutTeam?: string;
+  playerOutPos?: string;
+  playerIn?: string;
+  playerInTeam?: string;
+  playerInPos?: string;
+  note?: string;
+  timestamp: string;
+  status?: string;
+  round?: number;
+  isFreeze?: boolean;
+  user?: string;
+}

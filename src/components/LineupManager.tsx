@@ -172,12 +172,13 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const [showTeamDropdown, setShowTeamDropdown] = useState(false);
 
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const [transferType, setTransferType] = useState<'IN' | 'OUT'>('IN');
+  const [transferType, setTransferType] = useState<'SWAP' | 'IN' | 'OUT'>('SWAP');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPos, setNewPlayerPos] = useState<'GK' | 'DEF' | 'MID' | 'FWD'>('DEF');
   const [newPlayerTeam, setNewPlayerTeam] = useState(REAL_TEAMS_ISRAEL[0]);
   const [isFreezeTransfer, setIsFreezeTransfer] = useState(false);
   const [playerOutId, setPlayerOutId] = useState('');
+  const [transferNote, setTransferNote] = useState('');
 
   const [editingLog, setEditingLog] = useState<any>(null);
   const [showAdminSquadEditor, setShowAdminSquadEditor] = useState(false);
@@ -830,14 +831,14 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const executeTransfer = async () => {
     if (!isMyTeam || !myTeam) return;
 
-    if (transferType === 'OUT') {
+    if (transferType === 'OUT' || transferType === 'SWAP') {
        const playerToSell = (myTeam.squad || []).find((p: any) => p.id === playerOutId);
        if (playerToSell && checkIsMatchStarted(playerToSell.team) && !isManagerOrAdmin) {
-           return showToast(`❌ המשחק של ${playerToSell.team} כבר החל (או המחזור נעול)! לא ניתן למכור.`, 'error');
+           return showToast(`❌ המשחק של ${playerToSell.team} כבר החל (או המחזור נעול)! לא ניתן לבצע חילוף/מכירה.`, 'error');
        }
     }
     
-    if (transferType === 'IN') {
+    if (transferType === 'IN' || transferType === 'SWAP') {
        if (newPlayerTeam && checkIsMatchStarted(newPlayerTeam) && !isManagerOrAdmin) {
            return showToast(`❌ המשחק של ${newPlayerTeam} כבר החל (או המחזור נעול)! לא ניתן לרכוש.`, 'error');
        }
@@ -856,7 +857,66 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         actionBy = `${loggedInUser?.name || 'מנהל'} עבור ${myTeam.teamName}`;
     }
 
-    if (transferType === 'IN') {
+    if (transferType === 'SWAP') {
+      if (!playerOutId) return showToast('נא לבחור שחקן שיצא מהסגל.', 'error');
+      if (!newPlayerName.trim()) return showToast('נא להזין שם לשחקן הנכנס.', 'error');
+
+      const playerToSell = updatedSquad.find(p => p.id === playerOutId);
+      if (!playerToSell) return showToast('השחקן המיועד למכירה לא נמצא בסגל!', 'error');
+
+      if (!isFreezeTransfer && usedTransfers >= 14) {
+        if(!window.confirm('⚠️ ניצלת את כל 14 החילופים! האם להמשיך בכל זאת?')) return;
+      }
+
+      soldPlayerForLog = playerToSell;
+      boughtPlayerName = newPlayerName;
+
+      const newPlayer: Player = { 
+        id: `p_${Math.random().toString(36).substr(2,9)}_${Date.now()}`, 
+        name: newPlayerName, 
+        position: newPlayerPos, 
+        team: newPlayerTeam, 
+        points: 0, 
+        breakdown: [],
+        isStarting: false 
+      };
+
+      const isWasStarting = lineup.some(p => p.id === playerOutId);
+
+      updatedSquad = updatedSquad.filter(p => p.id !== playerOutId);
+      updatedLineup = lineup.filter(p => p.id !== playerOutId);
+      updatedBench = bench.filter(p => p.id !== playerOutId);
+
+      if (isWasStarting) {
+        newPlayer.isStarting = true;
+        updatedLineup.push(newPlayer);
+      } else {
+        newPlayer.isStarting = false;
+        updatedBench.push(newPlayer);
+      }
+
+      updatedSquad.push(newPlayer);
+      updatedBench.sort((a, b) => POS_ORDER[a.position] - POS_ORDER[b.position]);
+
+      setLineup(updatedLineup);
+      setBench(updatedBench);
+
+      logEntry = { 
+        id: `tr_${Date.now()}`, 
+        type: 'SWAP', 
+        playerOut: playerToSell.name, 
+        playerOutTeam: playerToSell.team, 
+        playerOutPos: playerToSell.position, 
+        playerIn: newPlayerName, 
+        playerInTeam: newPlayerTeam, 
+        playerInPos: newPlayerPos, 
+        note: transferNote.trim(), 
+        isFreeze: isFreezeTransfer, 
+        actionBy, 
+        timestamp 
+      };
+
+    } else if (transferType === 'IN') {
       if (!newPlayerName.trim()) return showToast('נא להזין שם שחקן.', 'error');
       if (!isFreezeTransfer && usedTransfers >= 14) {
         if(!window.confirm('⚠️ ניצלת את כל 14 החילופים! האם להמשיך בכל זאת?')) return;
@@ -874,7 +934,16 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       updatedSquad = [...updatedSquad, newPlayer];
       updatedBench = [...bench, newPlayer].sort((a, b) => POS_ORDER[a.position] - POS_ORDER[b.position]);
       setBench(updatedBench);
-      logEntry = { id: `tr_${Date.now()}`, type: isFreezeTransfer ? 'FREEZE_IN' : 'IN', player: newPlayerName, team: newPlayerTeam, position: newPlayerPos, actionBy, timestamp };
+      logEntry = { 
+        id: `tr_${Date.now()}`, 
+        type: isFreezeTransfer ? 'FREEZE_IN' : 'IN', 
+        player: newPlayerName, 
+        team: newPlayerTeam, 
+        position: newPlayerPos, 
+        note: transferNote.trim(), 
+        actionBy, 
+        timestamp 
+      };
     } else {
       if (!playerOutId) return showToast('נא לבחר שחקן למכירה.', 'error');
       const playerToSell = updatedSquad.find(p => p.id === playerOutId);
@@ -885,7 +954,16 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       updatedLineup = lineup.filter(p => p.id !== playerOutId);
       updatedBench = bench.filter(p => p.id !== playerOutId).sort((a, b) => POS_ORDER[a.position] - POS_ORDER[b.position]);
       setLineup(updatedLineup); setBench(updatedBench);
-      logEntry = { id: `tr_${Date.now()}`, type: 'OUT', player: playerToSell.name, team: playerToSell.team, position: playerToSell.position, actionBy, timestamp };
+      logEntry = { 
+        id: `tr_${Date.now()}`, 
+        type: 'OUT', 
+        player: playerToSell.name, 
+        team: playerToSell.team, 
+        position: playerToSell.position, 
+        note: transferNote.trim(), 
+        actionBy, 
+        timestamp 
+      };
     }
 
     try {
@@ -907,9 +985,9 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       
       await updateDoc(doc(db, 'users', myTeam.id), updateData);
       setTransfersLog([logEntry, ...transfersLog]);
-      showToast(`✅ פעולת הרכש בוצעה! השחקן ממתין בחדר ההלבשה.`, 'success');
+      showToast(`✅ פעולת הרכש בוצעה בהצלחה!`, 'success');
       
-      if (transferType === 'OUT' && soldPlayerForLog) {
+      if (soldPlayerForLog) {
           await addDoc(collection(db, 'logs_deleted_players'), {
               teamName: myTeam.teamName,
               teamId: myTeam.id,
@@ -928,12 +1006,15 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           const ai = new GoogleGenAI({ apiKey: activeApiKey });
           
           let aiPrompt = "";
-          if (transferType === 'IN') {
+          if (transferType === 'SWAP') {
+             aiPrompt = `אתה פרשן כדורגל ופנטזי עוקצני ומשעשע. קבוצת הפנטזי "${myTeam.teamName}" ביצעה חילוף סגל: זרקה את השחקן "${soldPlayerForLog.name}" והחתימה במקומו את השחקן "${boughtPlayerName}" (${newPlayerTeam}). ${transferNote ? `סיבת החילוף: ${transferNote}.` : ''} 
+             כתוב ציוץ (עד 3 משפטים) שמדווח על החילוף הזה לפיד של הליגה שלנו ("פנטזי לוזון 14"). תהיה מצחיק, תעקוץ או תחמיא למנג'ר על המהלך. בלי כוכביות או סולמיות. הוסף אימוג'י.`;
+          } else if (transferType === 'IN') {
              aiPrompt = `אתה פרשן כדורגל ופנטזי עוקצני ומשעשע. קבוצת הפנטזי "${myTeam.teamName}" הרגע החתימה את השחקן "${boughtPlayerName}" שמשחק ב"${newPlayerTeam}". 
-             כתוב ציוץ (עד 3 משפטים) שמדווח על הרכש הזה לפיד של הליגה שלנו ("פנטזי לוזון 14"). תהיה מצחיק, תעקוץ או תחמיא למנג'ר על המהלך. בלי כוכביות או סולמיות (האשטגים). הוסף אימוג'י.`;
+             כתוב ציוץ (עד 3 משפטים) שמדווח על הרכש הזה לפיד של הליגה שלנו ("פנטזי לוזון 14"). תהיה מצחיק, תעקוץ או תחמיא למנג'ר על המהלך. בלי כוכביות או סולמיות. הוסף אימוג'י.`;
           } else {
              aiPrompt = `אתה פרשן כדורגל ופנטזי עוקצני ומשעשע. קבוצת הפנטזי "${myTeam.teamName}" הרגע חתכה וזרקה מהסגל שלה את השחקן "${soldPlayerForLog.name}". 
-             כתוב ציוץ (עד 3 משפטים) שמדווח על המכירה הזו לפיד של הליגה שלנו ("פנטזי לוזון 14"). תהיה מצחיק, תגיד שזה צעד מתבקש או צעד מטופש. בלי כוכביות או סולמיות (האשטגים). הוסף אימוג'י.`;
+             כתוב ציוץ (עד 3 משפטים) שמדווח על המכירה הזו לפיד של הליגה שלנו ("פנטזי לוזון 14"). תהיה מצחיק. בלי כוכביות או סולמיות. הוסף אימוג'י.`;
           }
 
           const response = await ai.models.generateContent({
@@ -960,7 +1041,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         }
       }
 
-      setShowTransferModal(false); setNewPlayerName(''); setIsFreezeTransfer(false); setPlayerOutId('');
+      setShowTransferModal(false); setNewPlayerName(''); setIsFreezeTransfer(false); setPlayerOutId(''); setTransferNote('');
     } catch (e) { showToast('שגיאה בביצוע הפעולה.', 'error'); }
   };
 
@@ -1582,7 +1663,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       )}
 
       {activeTab === 'transfers' && (() => {
-        const filteredTransfersLog = transfersLog.filter(log => ['IN', 'OUT', 'FREEZE_IN'].includes(log.type));
+        const filteredTransfersLog = transfersLog.filter(log => ['IN', 'OUT', 'SWAP', 'FREEZE_IN'].includes(log.type));
         return (
           <div className="flex flex-col gap-6 md:gap-8 animate-in slide-in-from-right duration-300">
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
@@ -1592,7 +1673,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                    className={`w-full h-full min-h-[120px] rounded-[32px] border-2 flex flex-col items-center justify-center gap-2 transition-all shadow-xl ${isMyTeam && (!globalLock || isManagerOrAdmin) ? 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white border-blue-400/50 active:scale-[0.98]' : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'}`}
                  >
                    <ArrowRightLeft className="w-8 h-8 md:w-10 md:h-10 mb-1" />
-                   <span className="text-xl md:text-2xl font-black">{isMyTeam && (!globalLock || isManagerOrAdmin) ? 'בצע רכש / מכירה' : globalLock && !isManagerOrAdmin ? 'השוק נעול' : 'מצב צפייה בלבד'}</span>
+                   <span className="text-xl md:text-2xl font-black">{isMyTeam && (!globalLock || isManagerOrAdmin) ? 'בצע חילוף סגל / רכש' : globalLock && !isManagerOrAdmin ? 'השוק נעול' : 'מצב צפייה בלבד'}</span>
                  </button>
                </div>
 
@@ -1641,36 +1722,64 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                ) : (
                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                    {filteredTransfersLog.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map(log => {
+                     const isSwap = log.type === 'SWAP' || (log.playerOut && log.playerIn);
                      
                      const iconObj = {
+                       'SWAP': { icon: '🔄', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20', label: 'חילוף' },
                        'IN': { icon: '⬇️', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20', label: 'נכנס' },
                        'OUT': { icon: '⬆️', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', label: 'יצא' },
                        'FREEZE_IN': { icon: '❄️', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20', label: 'הקפאה' }
                      }[log.type as string] || { icon: '•', color: 'text-slate-400', bg: 'bg-slate-800', border: 'border-slate-700', label: 'אחר' };
 
                      return (
-                       <div key={log.id} className={`bg-slate-950/50 p-4 md:p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-slate-600 transition-colors group border-slate-800/50`}>
-                         <div className="flex items-center gap-4 md:gap-5">
-                           <div className={`w-14 h-14 shrink-0 rounded-2xl flex flex-col items-center justify-center border shadow-lg ${iconObj.bg} ${iconObj.border} ${iconObj.color}`}>
-                             <span className="text-xl mb-0.5">{iconObj.icon}</span>
-                             <span className="text-[9px] font-black uppercase tracking-wider">{iconObj.label}</span>
+                       <div key={log.id} className="bg-slate-950/60 p-4 md:p-5 rounded-2xl border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-slate-600 transition-colors group">
+                         <div className="flex items-start md:items-center gap-4 flex-1">
+                           <div className={`w-12 h-12 shrink-0 rounded-2xl flex flex-col items-center justify-center border shadow-lg ${iconObj.bg} ${iconObj.border} ${iconObj.color}`}>
+                             <span className="text-lg mb-0.5">{iconObj.icon}</span>
+                             <span className="text-[8px] font-black uppercase tracking-wider">{iconObj.label}</span>
                            </div>
-                           <div className="flex flex-col justify-center">
-                             <div className="text-xs text-slate-500 font-mono tracking-widest mb-1.5">{log.timestamp}</div>
-                             
-                             <div className="flex flex-wrap items-center gap-2 text-base md:text-lg font-black text-white">
-                               <span>{log.player}</span>
-                               {log.position && <span className="bg-white/10 px-2 py-0.5 rounded text-[10px] text-slate-300">{log.position}</span>}
-                               {log.team && <span className="text-slate-500 text-sm font-bold ml-1">- {log.team}</span>}
+                           <div className="flex flex-col justify-center flex-1">
+                             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tracking-widest mb-1.5">
+                               <span>{log.timestamp}</span>
+                               {log.actionBy && <span className="text-slate-400 font-bold">• ע"י {log.actionBy}</span>}
+                               {log.isFreeze && <span className="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded font-black border border-blue-500/30">❄️ הקפאה</span>}
                              </div>
+
+                             {isSwap ? (
+                               <div className="flex flex-wrap items-center gap-2 text-sm md:text-base font-black">
+                                 <div className="flex items-center gap-1.5 bg-red-500/10 px-3 py-1 rounded-xl border border-red-500/20 text-red-300">
+                                   <span className="text-xs">🔴 יצא:</span>
+                                   <span>{log.playerOut}</span>
+                                   {log.playerOutPos && <span className="text-[10px] text-slate-400 font-bold">({log.playerOutPos})</span>}
+                                 </div>
+                                 <span className="text-blue-400 text-lg font-black">➔</span>
+                                 <div className="flex items-center gap-1.5 bg-green-500/10 px-3 py-1 rounded-xl border border-green-500/20 text-green-300">
+                                   <span className="text-xs">🟢 נכנס:</span>
+                                   <span>{log.playerIn}</span>
+                                   {log.playerInPos && <span className="text-[10px] text-slate-400 font-bold">({log.playerInPos})</span>}
+                                   {log.playerInTeam && <span className="text-[10px] text-slate-400 font-bold">- {log.playerInTeam}</span>}
+                                 </div>
+                               </div>
+                             ) : (
+                               <div className="flex flex-wrap items-center gap-2 text-base font-black text-white">
+                                 <span>{log.player}</span>
+                                 {log.position && <span className="bg-white/10 px-2 py-0.5 rounded text-[10px] text-slate-300">{log.position}</span>}
+                                 {log.team && <span className="text-slate-500 text-sm font-bold ml-1">- {log.team}</span>}
+                               </div>
+                             )}
+
+                             {log.note && (
+                               <div className="mt-2 text-xs font-bold text-amber-300/90 bg-amber-950/40 px-3 py-1.5 rounded-xl border border-amber-500/30 flex items-center gap-1.5">
+                                 <span>💬</span>
+                                 <span>הערה: {log.note}</span>
+                               </div>
+                             )}
                            </div>
                          </div>
+
                          {isMyTeam && (
-                           <div className="flex gap-2 justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                             <button onClick={() => setEditingLog(log)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2.5 px-4 rounded-xl border border-slate-700 flex items-center gap-2">
-                               <Settings2 className="w-3.5 h-3.5" /> ערוך
-                             </button>
-                             <button onClick={() => handleDeleteLog(log.id)} className="bg-red-900/30 hover:bg-red-900/60 text-red-400 text-xs font-bold py-2.5 px-4 rounded-xl border border-red-900/50 flex items-center gap-2">
+                           <div className="flex gap-2 justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
+                             <button onClick={() => handleDeleteLog(log.id)} className="bg-red-900/30 hover:bg-red-900/60 text-red-400 text-xs font-bold py-2 px-3 rounded-xl border border-red-900/50 flex items-center gap-1.5">
                                <Trash2 className="w-3.5 h-3.5" /> מחק
                              </button>
                            </div>
@@ -1847,54 +1956,84 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
       {showTransferModal && isMyTeam && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[2000] flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-blue-500/30 p-6 md:p-8 rounded-[32px] w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-3xl font-black text-white italic">שוק ההעברות 💱</h3>
+          <div className="bg-slate-900 border border-blue-500/30 p-6 md:p-8 rounded-[32px] w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl md:text-3xl font-black text-white italic flex items-center gap-2">
+                  <span>שוק ההעברות והרכש</span> 💱
+                </h3>
+                <p className="text-xs text-slate-400 font-bold mt-1">בצע חילוף סגל (שחקן יוצא + שחקן נכנס) עם תיעוד מלא</p>
+              </div>
               <button onClick={() => setShowTransferModal(false)} className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors font-black">✕</button>
             </div>
-            <div className="flex bg-slate-950 p-1.5 rounded-2xl mb-8">
-              <button onClick={() => setTransferType('IN')} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all shadow-sm ${transferType === 'IN' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-black' : 'text-slate-500 hover:text-slate-300'}`}>רכש (IN)</button>
-              <button onClick={() => setTransferType('OUT')} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all shadow-sm ${transferType === 'OUT' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>מכירה (OUT)</button>
+
+            <div className="flex bg-slate-950 p-1.5 rounded-2xl mb-6 text-xs md:text-sm font-black">
+              <button onClick={() => setTransferType('SWAP')} className={`flex-1 py-3 rounded-xl transition-all shadow-sm ${transferType === 'SWAP' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>🔄 חילוף סגל (החלפה)</button>
+              <button onClick={() => setTransferType('IN')} className={`flex-1 py-3 rounded-xl transition-all shadow-sm ${transferType === 'IN' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-black' : 'text-slate-500 hover:text-slate-300'}`}>🟢 רכש בלבד</button>
+              <button onClick={() => setTransferType('OUT')} className={`flex-1 py-3 rounded-xl transition-all shadow-sm ${transferType === 'OUT' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>🔴 מכירה בלבד</button>
             </div>
-            {transferType === 'IN' ? (
-              <div className="space-y-4">
-                <input type="text" placeholder="הקלד שם שחקן..." value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white font-bold outline-none focus:border-blue-500 focus:bg-slate-800/80 transition-colors" />
-                <div className="flex gap-3">
-                  <select value={newPlayerPos} onChange={e => setNewPlayerPos(e.target.value as 'GK' | 'DEF' | 'MID' | 'FWD')} className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white font-bold outline-none appearance-none text-center">
-                    {POS_ARRAY.map(pos => <option key={pos} value={pos} className="bg-slate-900">{pos}</option>)}
-                  </select>
-                  <select value={newPlayerTeam} onChange={e => setNewPlayerTeam(e.target.value)} className="flex-[2] bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white font-bold outline-none appearance-none">
-                    {REAL_TEAMS_ISRAEL.map(t => <option key={t} value={t} className="bg-slate-900">{t}</option>)}
-                  </select>
+
+            <div className="space-y-4">
+              {(transferType === 'SWAP' || transferType === 'OUT') && (
+                <div className="bg-slate-950/80 p-4 rounded-2xl border border-red-500/30">
+                  <label className="text-xs font-black text-red-400 block mb-2">🔴 בחר שחקן שיצא מהסגל שלך (חובה):</label>
+                  <div className="relative">
+                    <select value={playerOutId} onChange={e => setPlayerOutId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none appearance-none pr-10 text-sm">
+                      <option value="" className="text-slate-500">בחר שחקן מהסגל...</option>
+                      {(myTeam.squad || []).sort((a: any, b: any)=>POS_ORDER[a.position]-POS_ORDER[b.position]).map((p: any) => (
+                        <option key={p.id} value={p.id} className="bg-slate-900">
+                          {p.name} ({p.team}) - {p.position}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-base">🗑️</span>
+                  </div>
                 </div>
-                <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded-2xl flex items-center justify-between mt-4 cursor-pointer hover:bg-blue-900/30 transition-colors" onClick={() => setIsFreezeTransfer(!isFreezeTransfer)}>
+              )}
+
+              {(transferType === 'SWAP' || transferType === 'IN') && (
+                <div className="bg-slate-950/80 p-4 rounded-2xl border border-green-500/30 space-y-3">
+                  <label className="text-xs font-black text-green-400 block">🟢 פרטי שחקן חדש שנכנס לסגל (חובה):</label>
+                  <input type="text" placeholder="הקלד שם שחקן חדש..." value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none focus:border-blue-500 text-sm transition-colors" />
+                  <div className="flex gap-2">
+                    <select value={newPlayerPos} onChange={e => setNewPlayerPos(e.target.value as 'GK' | 'DEF' | 'MID' | 'FWD')} className="flex-1 bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none appearance-none text-center text-sm">
+                      {POS_ARRAY.map(pos => <option key={pos} value={pos} className="bg-slate-900">{pos}</option>)}
+                    </select>
+                    <select value={newPlayerTeam} onChange={e => setNewPlayerTeam(e.target.value)} className="flex-[2] bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white font-bold outline-none appearance-none text-sm">
+                      {REAL_TEAMS_ISRAEL.map(t => <option key={t} value={t} className="bg-slate-900">{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <label className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                  <span>💬 תיעוד / סיבת חילוף (מלל חופשי):</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="לדוגמה: פציעה בשריר, עזב את הליגה, חילוף טקטי..." 
+                  value={transferNote} 
+                  onChange={e => setTransferNote(e.target.value)} 
+                  className="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-white font-bold text-xs outline-none focus:border-amber-500 transition-colors" 
+                />
+              </div>
+
+              {(transferType === 'SWAP' || transferType === 'IN') && (
+                <div className="bg-blue-900/20 border border-blue-500/30 p-3.5 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-blue-900/30 transition-colors" onClick={() => setIsFreezeTransfer(!isFreezeTransfer)}>
                   <div>
-                    <span className="text-sm font-black text-blue-300 block">החתמה כשחקן הקפאה? ❄️</span>
+                    <span className="text-xs font-black text-blue-300 block">החתמה כשחקן הקפאה? ❄️</span>
                     <span className="text-[10px] text-blue-400/70 font-bold">שחקן זה לא יספר במכסת החילופים</span>
                   </div>
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${isFreezeTransfer ? 'bg-blue-500 text-black' : 'bg-slate-800 border border-slate-600'}`}>
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition-all ${isFreezeTransfer ? 'bg-blue-500 text-black' : 'bg-slate-800 border border-slate-600'}`}>
                     {isFreezeTransfer && '✓'}
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="relative">
-                  <select value={playerOutId} onChange={e => setPlayerOutId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white font-bold outline-none appearance-none pr-12">
-                    <option value="" className="text-slate-500">בחר שחקן למכירה...</option>
-                    {(myTeam.squad || []).sort((a: any, b: any)=>POS_ORDER[a.position]-POS_ORDER[b.position]).map((p: any) => (
-                      <option key={p.id} value={p.id} className="bg-slate-900">
-                        {p.name} ({p.team}) - {p.position}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">🗑️</span>
-                </div>
-                <p className="text-xs text-red-400 font-bold bg-red-500/10 p-3 rounded-xl border border-red-500/20 text-center">⚠️ שחקן שימכר ימחק לצמיתות מהסגל שלך!</p>
-              </div>
-            )}
-            <button onClick={executeTransfer} className={`w-full mt-8 py-5 rounded-2xl font-black text-lg transition-all active:scale-95 shadow-xl flex items-center justify-center gap-2 ${transferType === 'IN' ? 'bg-white text-black hover:bg-slate-200' : 'bg-red-600 text-white hover:bg-red-500'}`}>
-              <span>אשר פעולת {transferType === 'IN' ? 'רכש' : 'מכירה'}</span>
+              )}
+            </div>
+
+            <button onClick={executeTransfer} className={`w-full mt-6 py-4 rounded-2xl font-black text-lg transition-all active:scale-95 shadow-xl flex items-center justify-center gap-2 ${transferType === 'SWAP' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:brightness-110' : transferType === 'IN' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-black hover:brightness-110' : 'bg-gradient-to-r from-red-600 to-rose-600 text-white hover:brightness-110'}`}>
+              <span>אשר {transferType === 'SWAP' ? 'חילוף סגל 🔄' : transferType === 'IN' ? 'פעולת רכש 🟢' : 'פעולת מכירה 🔴'}</span>
               <Send className="w-5 h-5" />
             </button>
           </div>

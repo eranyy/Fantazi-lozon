@@ -1905,10 +1905,11 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
         db.doc('leagueData/settings').get(),
         db.doc('leagueData/fixtures').get(),
         db.doc('leagueData/real_fixtures').get(),
-        db.collection('users').where('role', 'in', ['USER', 'OWNER']).get()
+        db.collection('users').get()
     ]);
 
     const currentRound = (settingsSnap.exists ? settingsSnap.data()?.currentRound : 1) || 1;
+    const cutoffDate = new Date('2026-08-24T21:00:00Z').getTime();
 
     // Check if reminder was already sent today for this round
     const remindersSnap = await db.doc('leagueData/reminders').get();
@@ -1931,18 +1932,21 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
 
     usersSnap.forEach(docSnap => {
         const u = docSnap.data();
+        if (!u.manager && !canonicalTeamNames[docSnap.id]) return;
+
         const teamName = u.teamName || u.name || canonicalTeamNames[docSnap.id] || docSnap.id;
         teamsMap[docSnap.id] = teamName;
         if (u.teamId) teamsMap[u.teamId] = teamName;
 
-        const lineup = u.published_lineup || u.lineup || [];
-        const isFullLineup = Array.isArray(lineup) && lineup.length >= 11;
+        const lastUpdate = u.lastLineupUpdate ? new Date(u.lastLineupUpdate).getTime() : 0;
+        const hasRoundLineup = Boolean(u.lineupsByRound?.[currentRound] || (currentRound > 1 ? lastUpdate > cutoffDate : lastUpdate > 0));
 
-        if (!isFullLineup) {
+        if (!hasRoundLineup) {
             const phonesList: string[] = [];
             if (u.phone) phonesList.push(u.phone);
             if (u.assistantPhone) phonesList.push(u.assistantPhone);
-            
+            if (Array.isArray(u.phones)) phonesList.push(...u.phones);
+
             missingTeams.push({
                 id: docSnap.id,
                 teamName,
@@ -1982,12 +1986,14 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
     const kickoffStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''} (${firstMatch.homeTeam} 🆚 ${firstMatch.awayTeam})` : 'יום שבת בשעה 20:00';
     const deadlineStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''}` : 'יום שבת בשעה 20:00';
 
+    let missingHeader = `⚠️ *מצב הגשת הרכבים כרגע:*`;
     let missingLines = '';
     if (missingTeams.length > 0) {
+        missingHeader = `⚠️ *טרם עדכנו הרכב למחזור ${currentRound}:*`;
         missingLines = missingTeams.map(t => {
             const mentionsStr = t.phones.map((p: string) => `@${p.replace(/\D/g, '')}`).join(' ');
             const managerNames = [t.manager, t.assistantName].filter(Boolean).join(' & ');
-            return `▫️ *${t.teamName}* (${managerNames}): ${mentionsStr}`;
+            return `▫️ *${t.teamName}* (${managerNames})${mentionsStr ? ': ' + mentionsStr : ''}`;
         }).join('\n');
     } else {
         missingLines = `🎉 *כל המנג'רים כבר עדכנו הרכב מלא למחזור!* 👏`;
@@ -1999,7 +2005,7 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
         `⏰ *שעת המשחק הראשון בליגת העל:*\n` +
         `${kickoffStr}\n\n` +
         `🔒 *נעילת הרכבים:* יש לשלוח/לעדכן הרכב באפליקציה **עד ${deadlineStr} בדיוק!**\n\n` +
-        `⚠️ *מצב הגשת הרכבים כרגע:*\n` +
+        `${missingHeader}\n` +
         `${missingLines}\n\n` +
         `📱 *עדכון הרכב באפליקציה:*\n` +
         `https://fantasy-luzon.web.app`;
