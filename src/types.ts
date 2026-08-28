@@ -42,6 +42,7 @@ export interface Team {
   lineup: Player[];
   published_lineup?: Player[];
   published_subs_out?: Player[];
+  lineupsByRound?: Record<number, { lineup: Player[]; subsOut: Player[]; savedAt?: string }>;
   transferHistory?: any[];
   transfers?: any[];
   cup_lineup?: Player[];

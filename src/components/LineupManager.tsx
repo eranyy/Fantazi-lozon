@@ -320,8 +320,13 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                 benchPlayers = safeSquad.filter(p => !p.isStarting);
             }
         } else {
-            startingPlayers = safeSquad.filter(p => p.isStarting === true);
-            benchPlayers = safeSquad.filter(p => !p.isStarting);
+            if (team.lineupsByRound && team.lineupsByRound[currentRound] && Array.isArray(team.lineupsByRound[currentRound].lineup) && team.lineupsByRound[currentRound].lineup.length > 0) {
+              startingPlayers = team.lineupsByRound[currentRound].lineup.map((p: any) => ({ ...p, isStarting: true }));
+              benchPlayers = (team.lineupsByRound[currentRound].subsOut || []).map((p: any) => ({ ...p, isStarting: false }));
+            } else {
+              startingPlayers = safeSquad.filter(p => p.isStarting === true);
+              benchPlayers = safeSquad.filter(p => !p.isStarting);
+            }
         }
 
         if (startingPlayers.length > 11) {
@@ -341,7 +346,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         setTransfersLog(team.transfers || []);
       }
     }
-  }, [activeTeamId, teams, isCupModeActive]);
+  }, [activeTeamId, teams, isCupModeActive, currentRound]);
 
   const usedTransfers = transfersLog.filter(t => t.type === 'IN').length;
   const freezeCount = transfersLog.filter(t => t.type === 'FREEZE_IN').length;
@@ -774,6 +779,13 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           updateData.published_subs_out = activeBench;
           updateData.lineup = activeLineup;
           updateData.lastLineupUpdate = new Date().toISOString();
+          if (currentRound) {
+            updateData[`lineupsByRound.${currentRound}`] = {
+              lineup: activeLineup,
+              subsOut: activeBench,
+              savedAt: new Date().toISOString()
+            };
+          }
           
           if (playersInNames.length > 0 || playersOutNames.length > 0) {
               let actionBy = loggedInUser?.name || 'מנג\'ר';
@@ -882,6 +894,13 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         lineup: updatedLineup,
         published_subs_out: updatedBench 
       };
+      if (currentRound) {
+        updateData[`lineupsByRound.${currentRound}`] = {
+          lineup: updatedLineup,
+          subsOut: updatedBench,
+          savedAt: new Date().toISOString()
+        };
+      }
       
       await updateDoc(doc(db, 'users', myTeam.id), updateData);
       setTransfersLog([logEntry, ...transfersLog]);
@@ -975,12 +994,20 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       newlyAddedToAdmin.forEach(p => p.isStarting = false);
       const finalSubs = [...updatedSubs, ...newlyAddedToAdmin];
 
-      await updateDoc(doc(db, 'users', myTeam.id), { 
+      const updateData: any = { 
           squad: adminSquad, 
           players: adminSquad, 
           published_lineup: updatedLineup, 
           published_subs_out: finalSubs 
-      });
+      };
+      if (currentRound) {
+        updateData[`lineupsByRound.${currentRound}`] = {
+          lineup: updatedLineup,
+          subsOut: finalSubs,
+          savedAt: new Date().toISOString()
+        };
+      }
+      await updateDoc(doc(db, 'users', myTeam.id), updateData);
 
       if (deletedPlayers.length > 0) {
         await Promise.all(

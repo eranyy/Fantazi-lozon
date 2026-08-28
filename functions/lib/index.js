@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
+exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.triggerFridayReminder = exports.scheduledFridayReminder = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const firestore_1 = require("firebase-functions/v2/firestore");
@@ -1693,6 +1693,92 @@ exports.scheduled1HourReminder = (0, scheduler_1.onSchedule)('every 15 minutes',
 exports.trigger1HourReminder = (0, https_1.onRequest)({ region: 'us-west1', cors: true }, async (req, res) => {
     try {
         const result = await (0, exports.runOneHourPreMatchReminder)(true);
+        res.status(200).json(result);
+    }
+    catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+// 🟢 2. Friday Pre-Round WhatsApp Reminder Engine (Every Friday at 12:00 PM Jerusalem time) 🟢
+const runFridayPreRoundReminder = async (force = false) => {
+    console.log('[FridayReminder] Checking Friday pre-round WhatsApp reminder...');
+    const settingsSnap = await db.doc('leagueData/settings').get();
+    const currentRound = (settingsSnap.exists ? settingsSnap.data()?.currentRound : 1) || 1;
+    // Check if reminder was already sent today for this round
+    const remindersSnap = await db.doc('leagueData/reminders').get();
+    if (!force && remindersSnap.exists && remindersSnap.data()?.[`sent_friday_round_${currentRound}`]) {
+        console.log(`[FridayReminder] Friday reminder for round ${currentRound} already sent today.`);
+        return { success: true, message: `Friday reminder already sent for round ${currentRound}` };
+    }
+    const fixturesSnap = await db.doc('leagueData/real_fixtures').get();
+    const matches = fixturesSnap.exists ? fixturesSnap.data()?.matches || [] : [];
+    const usersSnap = await db.collection('users').where('role', 'in', ['USER', 'OWNER']).get();
+    const missingTeams = [];
+    usersSnap.forEach(docSnap => {
+        const u = docSnap.data();
+        const lineup = u.published_lineup || u.lineup || [];
+        const isFullLineup = Array.isArray(lineup) && lineup.length >= 11;
+        if (!isFullLineup) {
+            const phonesList = [];
+            if (u.phone)
+                phonesList.push(u.phone);
+            if (u.assistantPhone)
+                phonesList.push(u.assistantPhone);
+            missingTeams.push({
+                id: docSnap.id,
+                teamName: u.teamName || u.name,
+                manager: u.manager || '',
+                assistantName: u.assistantName || '',
+                phones: Array.from(new Set(phonesList))
+            });
+        }
+    });
+    const matchesListStr = matches.slice(0, 4).map((m) => `• *${m.homeTeam}* נגד *${m.awayTeam}* (${m.date || ''} ${m.time || ''})`).join('\n');
+    let missingLines = '';
+    if (missingTeams.length > 0) {
+        missingLines = missingTeams.map(t => {
+            const mentionsStr = t.phones.map((p) => `@${p.replace(/\D/g, '')}`).join(' ');
+            const managerNames = [t.manager, t.assistantName].filter(Boolean).join(' & ');
+            return `⚠️ *${t.teamName}* (${managerNames}): ${mentionsStr}`;
+        }).join('\n');
+    }
+    else {
+        missingLines = `🎉 *כל המנג'רים כבר עדכנו הרכב מלא למחזור!* 👏`;
+    }
+    const fullMessage = ` Shabbat Shalom! ⚽ *תזכורת שישי לקראת מחזור ${currentRound} בפנטזי לוזון 14!* 🏆\n\n` +
+        `📅 *משחקי המחזור הקרוב בליגת העל:*\n` +
+        `${matchesListStr || 'משחקי הליגה בסוף השבוע'}\n\n` +
+        `🚨 *מצב הגשת הרכבים בזירה:*\n` +
+        `${missingLines}\n\n` +
+        `📱 היכנסו עכשיו לאפליקציה ועדכנו הרכב:\n` +
+        `https://fantasy-luzon.web.app`;
+    const groupChatId = '120363412136780106@g.us';
+    const greenHost = 'https://7107.api.greenapi.com';
+    const greenId = '710722713612';
+    const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+    await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+        chatId: groupChatId,
+        message: fullMessage
+    });
+    await db.doc('leagueData/reminders').set({
+        [`sent_friday_round_${currentRound}`]: true,
+        lastSentAt: new Date().toISOString()
+    }, { merge: true });
+    console.log(`[FridayReminder] Sent Friday pre-round reminder for round ${currentRound}.`);
+    return { success: true, round: currentRound, missingTeamsCount: missingTeams.length, message: fullMessage };
+};
+// Friday at 12:00 PM Jerusalem time
+exports.scheduledFridayReminder = (0, scheduler_1.onSchedule)({ schedule: '0 12 * * 5', timeZone: 'Asia/Jerusalem' }, async () => {
+    try {
+        await runFridayPreRoundReminder(false);
+    }
+    catch (e) {
+        console.error('Error in scheduledFridayReminder:', e?.message || e);
+    }
+});
+exports.triggerFridayReminder = (0, https_1.onRequest)({ region: 'us-west1', cors: true }, async (req, res) => {
+    try {
+        const result = await runFridayPreRoundReminder(true);
         res.status(200).json(result);
     }
     catch (e) {

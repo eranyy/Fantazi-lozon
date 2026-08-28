@@ -1041,6 +1041,47 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         {activeTab === 'users' && (
           <div className="space-y-6">
 
+            {/* ⚽ 0. הגדרת מחזור נוכחי בליגה ⚽ */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-blue-500/50 shadow-xl relative overflow-hidden animate-in fade-in zoom-in-95">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] pointer-events-none rounded-full"></div>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                <div>
+                  <h3 className="text-2xl font-black text-white flex items-center gap-2">
+                    <Trophy className="text-yellow-400" /> הגדרת מחזור נוכחי בליגה: <span className="text-blue-400 font-extrabold text-3xl mr-2">מחזור {systemCurrentRound}</span>
+                  </h3>
+                  <p className="text-slate-400 text-sm font-bold mt-1">
+                    בחר את המחזור הפעיל בליגה (למשל: שנה ל-מחזור 2 לקראת המשחקים בשבת).
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <select
+                    value={manualRound || systemCurrentRound}
+                    onChange={(e) => setManualRound(e.target.value)}
+                    className="bg-black/60 border border-slate-600 p-3.5 rounded-xl text-white font-black text-base outline-none focus:border-blue-400 min-w-[150px]"
+                  >
+                    {[...Array(36)].map((_, i) => (
+                      <option key={i + 1} value={i + 1}>מחזור {i + 1}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={async () => {
+                      const targetR = parseInt(manualRound) || systemCurrentRound;
+                      setLoading(true);
+                      try {
+                        await setDoc(doc(db, 'leagueData', 'settings'), { currentRound: targetR }, { merge: true });
+                        showMessage(`✅ המחזור הנוכחי עודכן בהצלחה למחזור ${targetR}!`, 'success');
+                      } catch(e) { showMessage('❌ שגיאה בעדכון המחזור', 'error'); }
+                      setLoading(false);
+                    }}
+                    disabled={loading}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-3.5 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
+                  >
+                    שמור מחזור 💾
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* 📢 1. מערכת שליחת התראות פוש (לכל המשתמשים) - ראשון בקטגוריה! 📢 */}
             <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-yellow-500/40 shadow-xl relative overflow-hidden animate-in fade-in zoom-in-95">
               <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 blur-[50px] pointer-events-none rounded-full"></div>
