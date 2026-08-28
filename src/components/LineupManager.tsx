@@ -352,8 +352,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     }
   }, [activeTeamId, teams, isCupModeActive, currentRound]);
 
-  const usedTransfers = transfersLog.filter(t => t.type === 'IN').length;
-  const freezeCount = transfersLog.filter(t => t.type === 'FREEZE_IN').length;
+  const usedTransfers = transfersLog.filter(t => (t.type === 'IN' || t.type === 'SWAP') && !t.isFreeze).length;
+  const freezeCount = transfersLog.filter(t => t.type === 'FREEZE_IN' || t.isFreeze).length;
   const transferPercent = Math.min((usedTransfers / 14) * 100, 100);
 
   const activeLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
@@ -1663,7 +1663,42 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       )}
 
       {activeTab === 'transfers' && (() => {
-        const filteredTransfersLog = transfersLog.filter(log => ['IN', 'OUT', 'SWAP', 'FREEZE_IN'].includes(log.type));
+        const rawLogs = transfersLog.filter(log => ['IN', 'OUT', 'SWAP', 'FREEZE_IN'].includes(log.type));
+        
+        // Smart dynamic pairing of legacy OUT + IN logs from same day/session
+        const filteredTransfersLog: any[] = [];
+        let i = 0;
+        const sortedRaw = [...rawLogs].sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        
+        while (i < sortedRaw.length) {
+          const curr = sortedRaw[i];
+          const next = sortedRaw[i + 1];
+
+          if (curr.type === 'SWAP' || (curr.playerOut && curr.playerIn)) {
+            filteredTransfersLog.push(curr);
+            i++;
+          } else if (next && ((curr.type === 'OUT' && next.type === 'IN') || (curr.type === 'IN' && next.type === 'OUT'))) {
+            const outLog = curr.type === 'OUT' ? curr : next;
+            const inLog = curr.type === 'IN' ? curr : next;
+            filteredTransfersLog.push({
+              id: outLog.id || inLog.id || `tr_swap_${i}`,
+              type: 'SWAP',
+              playerOut: outLog.player || outLog.playerOut || '',
+              playerOutTeam: outLog.team || outLog.playerOutTeam || '',
+              playerOutPos: outLog.position || outLog.playerOutPos || '',
+              playerIn: inLog.player || inLog.playerIn || '',
+              playerInTeam: inLog.team || inLog.playerInTeam || '',
+              playerInPos: inLog.position || inLog.playerInPos || '',
+              actionBy: outLog.actionBy || inLog.actionBy || 'מנג\'ר',
+              timestamp: inLog.timestamp || outLog.timestamp,
+              note: outLog.note || inLog.note || ''
+            });
+            i += 2;
+          } else {
+            filteredTransfersLog.push(curr);
+            i++;
+          }
+        }
         return (
           <div className="flex flex-col gap-6 md:gap-8 animate-in slide-in-from-right duration-300">
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">

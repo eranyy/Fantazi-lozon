@@ -501,6 +501,83 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             const isEnabled = !settingsSnap.exists || settingsSnap.data()?.enabled !== false;
             return `🤖 *סטטוס סורק פנטזי לוזון:* \nמצב: ${isEnabled ? '🟢 *פעיל*' : '🔴 *מופסק (כבוי)*'}\nסריקות פעילות: *ספורט 5 (שערים/בישולים) + ההתאחדות (כרטיסים)*\nניהול מרחוק: רשום *לוזון עצור סורק* או *לוזון הפעל סורק*. 📱`;
         }
+        // 🧠 AI League Memory & Witty Sports Commentator Engine 🧠
+        const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב');
+        const isControlCmd = p.includes('סורק') || p.includes('מאשר') || p.includes('אישור') || p.includes('דחה') || p.includes('ביטול');
+        if (isAiQuery && !isControlCmd) {
+            const [settingsSnap, fantasyFixturesSnap, usersSnap] = await Promise.all([
+                db.doc('leagueData/settings').get(),
+                db.doc('leagueData/fixtures').get(),
+                db.collection('users').get()
+            ]);
+            const currentRound = settingsSnap.data()?.currentRound || 1;
+            const canonicalNames = {
+                'hamsili': { name: 'חמסילי', manager: 'אסף & ערן' },
+                'harale': { name: 'חראלה', manager: 'גיא' },
+                'holonia': { name: 'חולוניה', manager: 'ארז' },
+                'pichichi': { name: 'פיציצי', manager: 'שלומי' },
+                'tampa': { name: 'טמפה', manager: 'יינון' },
+                'tumali': { name: 'תומאלי', manager: 'אלי & תום' }
+            };
+            const teamsData = [];
+            usersSnap.forEach(d => {
+                const u = d.data();
+                if (canonicalNames[d.id] || u.manager) {
+                    const info = canonicalNames[d.id] || { name: u.teamName || d.id, manager: u.manager || '' };
+                    teamsData.push({
+                        id: d.id,
+                        teamName: info.name,
+                        manager: info.manager,
+                        totalPoints: Number(u.totalPoints || u.points) || 0,
+                        wins: Number(u.wins) || 0,
+                        draws: Number(u.draws) || 0,
+                        losses: Number(u.losses) || 0,
+                        lineup: u.published_lineup || u.lineup || []
+                    });
+                }
+            });
+            teamsData.sort((a, b) => b.totalPoints - a.totalPoints);
+            // Save snapshot into persistent AI Memory in Firestore
+            await db.doc(`bot_league_memory/round_${currentRound}`).set({
+                round: currentRound,
+                updatedAt: new Date().toISOString(),
+                leader: teamsData[0]?.teamName || '',
+                leaderPoints: teamsData[0]?.totalPoints || 0,
+                standings: teamsData.map(t => ({ team: t.teamName, manager: t.manager, pts: t.totalPoints }))
+            }, { merge: true });
+            if (p.includes('טבלה') || p.includes('מי מוביל') || p.includes('מקום ראשון') || p.includes('מי בראש')) {
+                const leader = teamsData[0];
+                const second = teamsData[1];
+                const last = teamsData[teamsData.length - 1];
+                let msg = `🏆 *תחזית וניתוח טבלה בזירה - מחזור ${currentRound}!* 🏆\n\n`;
+                msg += `👑 *בפיסגת הליגה:* *${leader?.teamName}* (${leader?.manager}) עם ${leader?.totalPoints} נקודות!\n`;
+                if (second)
+                    msg += `🥈 *במקום השני:* *${second?.teamName}* (${second?.manager}) עם ${second?.totalPoints} נק' (${leader?.totalPoints - second?.totalPoints} נק' מהפסגה!)\n`;
+                if (last)
+                    msg += `📉 *בתחתית הבוערת:* *${last?.teamName}* (${last?.manager}) עם ${last?.totalPoints} נק' בלבד.\n\n`;
+                msg += `📊 *הטבלה המלאה בזירה:*\n`;
+                teamsData.forEach((t, idx) => {
+                    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '⚽';
+                    msg += `${medal} ${idx + 1}. *${t.teamName}* (${t.manager}) - ${t.totalPoints} נק' (${t.wins}נ', ${t.draws}ת', ${t.losses}ה')\n`;
+                });
+                msg += `\n💬 *פרשנות לוזון AI:* הכל פתוח! מחזור ${currentRound} הולך להיות לוהט! 🔥`;
+                return msg;
+            }
+            if (p.includes('מי נגד מי') || p.includes('משחקים') || p.includes('תחזית')) {
+                const fantasyRound = (fantasyFixturesSnap.data()?.rounds || []).find((r) => r.round === currentRound);
+                const matches = fantasyRound?.matches || [];
+                let msg = `⚔️ *ניתוח טקטי של לוזון AI למחזור ${currentRound} בזירה!* ⚔️\n\n`;
+                matches.forEach((m) => {
+                    const hTeam = teamsData.find(t => t.id === m.h) || { teamName: m.h, manager: '' };
+                    const aTeam = teamsData.find(t => t.id === m.a) || { teamName: m.a, manager: '' };
+                    msg += `⚔️ *${hTeam.teamName}* (${hTeam.manager}) 🆚 *${aTeam.teamName}* (${aTeam.manager})\n`;
+                    msg += `   📊 מאזן נקודות: ${hTeam.totalPoints || 0} נק' מול ${aTeam.totalPoints || 0} נק'\n`;
+                });
+                msg += `\n🔒 *תזכורת:* הרכבים ננעלים בשבת בשעה 20:00!`;
+                return msg;
+            }
+            return `⚽ *שלום ${managerName}! לוזון AI בוט לשירותך!* 🤖\nאני עוקב אחרי כל הנתונים, ההרכבים והניקוד בזירה בזמן אמת.\nרשום בקבוצה: *"לוזון טבלה"*, *"לוזון תחזית"* או *"לוזון מי מוביל"* ותקבל ניתוח מקצועי ושנון! 🔥`;
+        }
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
         const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1'];
         const rejectKeywords = ['דחה', 'דחייה', 'תתעלם', 'התעלם', 'אל תעדכן', 'לא מאשר'];
