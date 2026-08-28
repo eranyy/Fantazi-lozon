@@ -505,13 +505,15 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב');
         const isControlCmd = p.includes('סורק') || p.includes('מאשר') || p.includes('אישור') || p.includes('דחה') || p.includes('ביטול');
         if (isAiQuery && !isControlCmd) {
-            const [settingsSnap, fantasyFixturesSnap, usersSnap, fanProfilesSnap] = await Promise.all([
+            const [settingsSnap, fantasyFixturesSnap, usersSnap, fanProfilesSnap, realFixturesSnap] = await Promise.all([
                 db.doc('leagueData/settings').get(),
                 db.doc('leagueData/fixtures').get(),
                 db.collection('users').get(),
-                db.doc('bot_league_memory/fan_profiles').get()
+                db.doc('bot_league_memory/fan_profiles').get(),
+                db.doc('leagueData/real_fixtures').get()
             ]);
             const fanProfiles = fanProfilesSnap.exists ? fanProfilesSnap.data() || {} : {};
+            const realMatches = realFixturesSnap.data()?.matches || [];
             const currentRound = settingsSnap.data()?.currentRound || 1;
             const canonicalNames = {
                 'hamsili': { name: 'חמסילי', manager: 'אסף & ערן' },
@@ -551,12 +553,19 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             const isRealTeamQuery = p.includes('חיפה') || p.includes('נתניה') || p.includes('מכבי תא') || p.includes('מכבי ת"א') || p.includes('ביתר') || p.includes('בית"ר') || p.includes('הפועל תא') || p.includes('הפועל ת"א') || p.includes('הפועל חולון') || p.includes('חולון');
             if (isRealTeamQuery) {
                 const teamDiscussed = p.includes('חיפה') ? 'מכבי חיפה' : p.includes('נתניה') ? 'מכבי נתניה' : (p.includes('ביתר') || p.includes('בית"ר')) ? 'בית"ר ירושלים' : (p.includes('חולון') || p.includes('הפועל חולון')) ? 'הפועל חולון' : p.includes('הפועל') ? 'הפועל תל אביב' : 'מכבי תל אביב';
+                // Match last real match
+                const teamMatches = realMatches.filter((m) => ((m.homeTeam || '').includes(teamDiscussed) || (m.awayTeam || '').includes(teamDiscussed)) &&
+                    (m.status || '').includes('הסתיים'));
+                const lastMatch = teamMatches[teamMatches.length - 1];
                 // Match managers based on exact profile data
                 const supportingManagers = Object.values(fanProfiles).filter((f) => {
                     const str = (f.realFanOf || '') + ' ' + (f.banter || '') + ' ' + (Array.isArray(f.teamsList) ? f.teamsList.join(' ') : '');
                     return str.includes(teamDiscussed) || (teamDiscussed.includes('הפועל') && str.includes('הפועל')) || (teamDiscussed.includes('מכבי') && str.includes('מכבי'));
                 });
                 let msg = `🗣️ *דיון לוהט על ${teamDiscussed}! (ניתוח אובייקטיבי מבית לוזון AI)* ⚽\n\n`;
+                if (lastMatch) {
+                    msg += `⚽ *המשחק האחרון של ${teamDiscussed} בליגת העל במציאות:* \n▫️ *${lastMatch.homeTeam} 🆚 ${lastMatch.awayTeam}* (${lastMatch.roundStage})\n▫️ תוצאה: *${lastMatch.status}* (תאריך: ${lastMatch.date})\n\n`;
+                }
                 if (supportingManagers.length > 0) {
                     const managersStr = supportingManagers.map((f) => `*${f.managers}* (${f.realFanOf})`).join('\n▫️ ');
                     msg += `👀 *אהדה מוצהרת בזירה לקבוצה/נושא:* \n▫️ ${managersStr}\n\n`;
