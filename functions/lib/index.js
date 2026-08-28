@@ -505,11 +505,13 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב');
         const isControlCmd = p.includes('סורק') || p.includes('מאשר') || p.includes('אישור') || p.includes('דחה') || p.includes('ביטול');
         if (isAiQuery && !isControlCmd) {
-            const [settingsSnap, fantasyFixturesSnap, usersSnap] = await Promise.all([
+            const [settingsSnap, fantasyFixturesSnap, usersSnap, fanProfilesSnap] = await Promise.all([
                 db.doc('leagueData/settings').get(),
                 db.doc('leagueData/fixtures').get(),
-                db.collection('users').get()
+                db.collection('users').get(),
+                db.doc('bot_league_memory/fan_profiles').get()
             ]);
+            const fanProfiles = fanProfilesSnap.exists ? fanProfilesSnap.data() || {} : {};
             const currentRound = settingsSnap.data()?.currentRound || 1;
             const canonicalNames = {
                 'hamsili': { name: 'חמסילי', manager: 'אסף & ערן' },
@@ -545,6 +547,19 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                 leaderPoints: teamsData[0]?.totalPoints || 0,
                 standings: teamsData.map(t => ({ team: t.teamName, manager: t.manager, pts: t.totalPoints }))
             }, { merge: true });
+            // ⚽ Real-Life Israeli Premier League Team Argument & Fandom Banter ⚽
+            const isRealTeamQuery = p.includes('חיפה') || p.includes('מכבי תא') || p.includes('מכבי ת"א') || p.includes('ביתר') || p.includes('בית"ר') || p.includes('הפועל תא') || p.includes('באר שבע');
+            if (isRealTeamQuery) {
+                const teamDiscussed = p.includes('חיפה') ? 'מכבי חיפה' : (p.includes('ביתר') || p.includes('בית"ר')) ? 'בית"ר ירושלים' : p.includes('באר שבע') ? 'הפועל באר שבע' : p.includes('הפועל') ? 'הפועל תל אביב' : 'מכבי תל אביב';
+                const supportingManagers = Object.values(fanProfiles).filter((f) => f.realFanOf?.includes(teamDiscussed) || teamDiscussed.includes(f.realFanOf));
+                let msg = `🗣️ *דיון לוהט על ${teamDiscussed}! (ניתוח אובייקטיבי מבית לוזון AI)* ⚽\n\n`;
+                if (supportingManagers.length > 0) {
+                    const managersStr = supportingManagers.map((f) => `*${f.managers}* (קבוצת *${f.teamName}*)`).join(', ');
+                    msg += `👀 *אוהדי ${teamDiscussed} בזירה:* ${managersStr}\n`;
+                }
+                msg += `💡 *פרשנות ניטרלית ואובייקטיבית:* לוזון AI ממליץ לא להיות מונעים מטעמים רגשיים! בפנטזי מציבים שחקנים לפי כושר ותפוקה נטו במציאות ולא לפי הלב. 😉🔥`;
+                return msg;
+            }
             if (p.includes('טבלה') || p.includes('מי מוביל') || p.includes('מקום ראשון') || p.includes('מי בראש')) {
                 const leader = teamsData[0];
                 const second = teamsData[1];
