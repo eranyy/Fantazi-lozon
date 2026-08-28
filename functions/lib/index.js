@@ -547,15 +547,22 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                 leaderPoints: teamsData[0]?.totalPoints || 0,
                 standings: teamsData.map(t => ({ team: t.teamName, manager: t.manager, pts: t.totalPoints }))
             }, { merge: true });
-            // ⚽ Real-Life Israeli Premier League Team Argument & Fandom Banter ⚽
-            const isRealTeamQuery = p.includes('חיפה') || p.includes('מכבי תא') || p.includes('מכבי ת"א') || p.includes('ביתר') || p.includes('בית"ר') || p.includes('הפועל תא') || p.includes('באר שבע');
+            // ⚽ Real-Life Israeli Premier League Team Argument & Fandom Banter (Exact verified profiles) ⚽
+            const isRealTeamQuery = p.includes('חיפה') || p.includes('נתניה') || p.includes('מכבי תא') || p.includes('מכבי ת"א') || p.includes('ביתר') || p.includes('בית"ר') || p.includes('הפועל תא') || p.includes('הפועל ת"א') || p.includes('הפועל חולון') || p.includes('חולון');
             if (isRealTeamQuery) {
-                const teamDiscussed = p.includes('חיפה') ? 'מכבי חיפה' : (p.includes('ביתר') || p.includes('בית"ר')) ? 'בית"ר ירושלים' : p.includes('באר שבע') ? 'הפועל באר שבע' : p.includes('הפועל') ? 'הפועל תל אביב' : 'מכבי תל אביב';
-                const supportingManagers = Object.values(fanProfiles).filter((f) => f.realFanOf?.includes(teamDiscussed) || teamDiscussed.includes(f.realFanOf));
+                const teamDiscussed = p.includes('חיפה') ? 'מכבי חיפה' : p.includes('נתניה') ? 'מכבי נתניה' : (p.includes('ביתר') || p.includes('בית"ר')) ? 'בית"ר ירושלים' : (p.includes('חולון') || p.includes('הפועל חולון')) ? 'הפועל חולון' : p.includes('הפועל') ? 'הפועל תל אביב' : 'מכבי תל אביב';
+                // Match managers based on exact profile data
+                const supportingManagers = Object.values(fanProfiles).filter((f) => {
+                    const str = (f.realFanOf || '') + ' ' + (f.banter || '') + ' ' + (Array.isArray(f.teamsList) ? f.teamsList.join(' ') : '');
+                    return str.includes(teamDiscussed) || (teamDiscussed.includes('הפועל') && str.includes('הפועל')) || (teamDiscussed.includes('מכבי') && str.includes('מכבי'));
+                });
                 let msg = `🗣️ *דיון לוהט על ${teamDiscussed}! (ניתוח אובייקטיבי מבית לוזון AI)* ⚽\n\n`;
                 if (supportingManagers.length > 0) {
-                    const managersStr = supportingManagers.map((f) => `*${f.managers}* (קבוצת *${f.teamName}*)`).join(', ');
-                    msg += `👀 *אוהדי ${teamDiscussed} בזירה:* ${managersStr}\n`;
+                    const managersStr = supportingManagers.map((f) => `*${f.managers}* (${f.realFanOf})`).join('\n▫️ ');
+                    msg += `👀 *אהדה מוצהרת בזירה לקבוצה/נושא:* \n▫️ ${managersStr}\n\n`;
+                }
+                else {
+                    msg += `ℹ️ *מידע אמין בלבד:* אין לי זיכרון מוצהר על אוהדים שרופים של ${teamDiscussed} בזירה. לא מנחש!\n\n`;
                 }
                 msg += `💡 *פרשנות ניטרלית ואובייקטיבית:* לוזון AI ממליץ לא להיות מונעים מטעמים רגשיים! בפנטזי מציבים שחקנים לפי כושר ותפוקה נטו במציאות ולא לפי הלב. 😉🔥`;
                 return msg;
