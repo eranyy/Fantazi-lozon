@@ -209,36 +209,28 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     return { t1Wins, t2Wins, draws, t1Goals, t2Goals, pastEncounters: pastEncounters.sort((a, b) => b.round - a.round) };
   };
 
-  const getPlayerPointsForRound = (player: any, rNum: number) => {
+  const getPlayerPointsForRound = (player: any, team: any, rNum: number) => {
     if (!player) return 0;
-    // If stats object is populated on player for this live round (e.g. VAR points entered)
+    const fixtureRound = fixtures.find(f => f.round === rNum);
+    const isRoundPlayed = Boolean(fixtureRound && fixtureRound.isPlayed);
+
+    if (!isRoundPlayed) {
+      if (team?.lineupsByRound && team.lineupsByRound[rNum]) {
+        if (player.stats && Object.keys(player.stats).length > 0) {
+          const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
+          if (hasActiveStats) {
+            return calculatePointsFromStats(player.stats, player.position);
+          }
+        }
+      }
+      return 0;
+    }
+
     if (player.stats && Object.keys(player.stats).length > 0) {
       const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
       if (hasActiveStats) {
-        let p = 0;
-        if (player.stats.started) p += 1;
-        if (player.stats.played60) p += 1;
-        if (player.stats.notInSquad || player.stats.notPlayedIn16) p -= 1;
-        if (player.stats.won) p += 2;
-        p += (player.stats.goals || 0) * (player.position === 'FWD' ? 4 : player.position === 'MID' ? 5 : 6);
-        p += (player.stats.assists || 0) * 3;
-        if (player.stats.cleanSheet && (player.position === 'GK' || player.position === 'DEF')) p += 4;
-        p -= (player.stats.conceded || 0) * 1;
-        p += (player.stats.penaltyWon || 0) * 2;
-        p -= (player.stats.penaltyMissed || 0) * 3;
-        p += (player.stats.penaltySaved || 0) * 5;
-        p -= (player.stats.ownGoals || 0) * 3;
-        p += (player.stats.assistOwnGoal || 0) * 2;
-        if (player.stats.yellow) p -= 2;
-        if (player.stats.secondYellow) p -= 2;
-        if (player.stats.red) p -= 5;
-        return p;
+        return calculatePointsFromStats(player.stats, player.position);
       }
-    }
-    const currentFixtureRound = fixtures.find(f => f.round === rNum);
-    // If the fixture round is NOT played yet, player points for this round are ALWAYS 0!
-    if (!currentFixtureRound || !currentFixtureRound.isPlayed) {
-      return 0;
     }
     return Number(player.points) || 0;
   };
@@ -276,6 +268,14 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const getTeamLiveEvents = (teamId: string) => {
     const team = teams.find(t => t.id === teamId);
     if (!team) return { goals: 0, yellows: 0, reds: 0 };
+    
+    const fixtureRound = fixtures.find(f => f.round === selectedRound);
+    if (!fixtureRound || !fixtureRound.isPlayed) {
+      if (!team.lineupsByRound || !team.lineupsByRound[selectedRound]) {
+        return { goals: 0, yellows: 0, reds: 0 };
+      }
+    }
+
     let goals = 0, yellows = 0, reds = 0;
     const currentLineup = applySubstitutionsToLineup(team);
     
@@ -311,7 +311,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
       let count = 0;
       currentLineup.forEach((p: any) => {
-          const pts = getPlayerPointsForRound(p, selectedRound);
+          const pts = getPlayerPointsForRound(p, team, selectedRound);
           const hasPlayed = (p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0))) || (pts !== 0);
           if (!hasPlayed && pts === 0) {
               if (subInNames.includes(p.name)) count += 0.5;
@@ -325,23 +325,15 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const team = teams.find(t => t.id === teamId);
     if (!team) return 0;
     
-    const fixtureRound = fixtures.find(f => f.round === selectedRound);
-    // If the fixture round is NOT played yet and has no recorded match score, return 0
-    if (!fixtureRound || (!fixtureRound.isPlayed && !(fixtureRound.matches || []).some((m: any) => (m.h === teamId || m.a === teamId) && (m.hs > 0 || m.as > 0)))) {
-      const currentLineup = applySubstitutionsToLineup(team);
-      const hasAnyStats = currentLineup.some((p: any) => p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0)));
-      if (!hasAnyStats) return 0;
-    }
-
     let total = 0;
     const currentLineup = applySubstitutionsToLineup(team);
-    if (currentLineup) total += currentLineup.reduce((sum: number, p: any) => sum + getPlayerPointsForRound(p, selectedRound), 0);
+    if (currentLineup) total += currentLineup.reduce((sum: number, p: any) => sum + getPlayerPointsForRound(p, team, selectedRound), 0);
     
     const roundSubs = (team.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === selectedRound && t.status !== 'CANCELLED');
     roundSubs.forEach((sub: any) => {
         const allPossibleOutPlayers = [...getRoundBench(team, selectedRound), ...(team.squad || []), ...(team.players || [])];
         const benchedPlayerOut = allPossibleOutPlayers.find((p: any) => p.name === sub.playerOut);
-        if (benchedPlayerOut) total += getPlayerPointsForRound(benchedPlayerOut, selectedRound);
+        if (benchedPlayerOut) total += getPlayerPointsForRound(benchedPlayerOut, team, selectedRound);
     });
     return total;
   };
@@ -1080,6 +1072,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         </div>
                       </div>
 
+                      {expandedTeamObj && selectedRound !== 1 && (!expandedTeamObj.lineupsByRound || !expandedTeamObj.lineupsByRound[selectedRound]) && (
+                        <div className="mb-4 bg-amber-950/70 border border-amber-500/40 px-4 py-2.5 rounded-2xl flex items-center gap-2 text-amber-200 text-xs font-bold shadow-lg">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>הקבוצה טרם פרסמה הרכב שמור למחזור {selectedRound} (מוצג סגל ברירת מחדל - 0 נקודות).</span>
+                        </div>
+                      )}
+
                       <div className="bg-gradient-to-b from-[#13301d] to-[#0a1f11] rounded-[32px] p-4 md:p-6 min-h-[400px] md:min-h-[500px] relative overflow-hidden border-[4px] border-slate-800 shadow-2xl">
                         <div className="absolute inset-0 pointer-events-none opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 10%, #fff 10%, #fff 20%)' }}></div>
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/3 h-[15%] border-[2px] border-white/30 rounded-b-3xl pointer-events-none"></div>
@@ -1105,7 +1104,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                                   const nameParts = p.name.split(' '); const lastName = nameParts[nameParts.length - 1];
                                   const isSubIn = (expandedTeamObj?.transfers || []).some((t:any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED' && t.playerIn === p.name);
                                   const colors = getTeamColors(expandedTeamObj?.teamName || '', p.position === 'GK');
-                                  const playerPoints = getPlayerPointsForRound(p, selectedRound);
+                                  const playerPoints = getPlayerPointsForRound(p, expandedTeamObj, selectedRound);
                                   const hasPlayed = (p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0))) || (playerPoints !== 0);
                                   const isUntouched = !hasPlayed && playerPoints === 0;
 

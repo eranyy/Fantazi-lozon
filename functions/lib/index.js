@@ -1702,7 +1702,12 @@ exports.trigger1HourReminder = (0, https_1.onRequest)({ region: 'us-west1', cors
 // 🟢 2. Friday Pre-Round WhatsApp Reminder Engine (Every Friday at 12:00 PM Jerusalem time) 🟢
 const runFridayPreRoundReminder = async (force = false) => {
     console.log('[FridayReminder] Checking Friday pre-round WhatsApp reminder...');
-    const settingsSnap = await db.doc('leagueData/settings').get();
+    const [settingsSnap, fantasyFixturesSnap, realFixturesSnap, usersSnap] = await Promise.all([
+        db.doc('leagueData/settings').get(),
+        db.doc('leagueData/fixtures').get(),
+        db.doc('leagueData/real_fixtures').get(),
+        db.collection('users').where('role', 'in', ['USER', 'OWNER']).get()
+    ]);
     const currentRound = (settingsSnap.exists ? settingsSnap.data()?.currentRound : 1) || 1;
     // Check if reminder was already sent today for this round
     const remindersSnap = await db.doc('leagueData/reminders').get();
@@ -1710,12 +1715,22 @@ const runFridayPreRoundReminder = async (force = false) => {
         console.log(`[FridayReminder] Friday reminder for round ${currentRound} already sent today.`);
         return { success: true, message: `Friday reminder already sent for round ${currentRound}` };
     }
-    const fixturesSnap = await db.doc('leagueData/real_fixtures').get();
-    const matches = fixturesSnap.exists ? fixturesSnap.data()?.matches || [] : [];
-    const usersSnap = await db.collection('users').where('role', 'in', ['USER', 'OWNER']).get();
+    const canonicalTeamNames = {
+        'hamsili': 'חמסילי',
+        'harale': 'חראלה',
+        'holonia': 'חולוניה',
+        'pichichi': 'פיציצי',
+        'tampa': 'טמפה',
+        'tumali': 'תומאלי'
+    };
+    const teamsMap = { ...canonicalTeamNames };
     const missingTeams = [];
     usersSnap.forEach(docSnap => {
         const u = docSnap.data();
+        const teamName = u.teamName || u.name || canonicalTeamNames[docSnap.id] || docSnap.id;
+        teamsMap[docSnap.id] = teamName;
+        if (u.teamId)
+            teamsMap[u.teamId] = teamName;
         const lineup = u.published_lineup || u.lineup || [];
         const isFullLineup = Array.isArray(lineup) && lineup.length >= 11;
         if (!isFullLineup) {
@@ -1726,31 +1741,46 @@ const runFridayPreRoundReminder = async (force = false) => {
                 phonesList.push(u.assistantPhone);
             missingTeams.push({
                 id: docSnap.id,
-                teamName: u.teamName || u.name,
+                teamName,
                 manager: u.manager || '',
                 assistantName: u.assistantName || '',
                 phones: Array.from(new Set(phonesList))
             });
         }
     });
-    const matchesListStr = matches.slice(0, 4).map((m) => `• *${m.homeTeam}* נגד *${m.awayTeam}* (${m.date || ''} ${m.time || ''})`).join('\n');
+    // 1. Fantasy Matchups (מי נגד מי במחזור הקרוב)
+    const fantasyRound = (fantasyFixturesSnap.data()?.rounds || []).find((r) => r.round === currentRound);
+    const fantasyMatchesStr = (fantasyRound?.matches || []).map((m) => {
+        const homeName = teamsMap[m.h] || canonicalTeamNames[m.h] || m.h;
+        const awayName = teamsMap[m.a] || canonicalTeamNames[m.a] || m.a;
+        return `⚔️ *${homeName}* 🆚 *${awayName}*`;
+    }).join('\n');
+    // 2. Real Matches & First Kickoff Time / Deadline
+    const realMatches = realFixturesSnap.exists ? realFixturesSnap.data()?.matches || [] : [];
+    const upcoming = realMatches.filter((m) => !String(m.status || '').includes('הסתיים'));
+    const firstMatch = upcoming[0] || realMatches[0];
+    const kickoffStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''} (${firstMatch.homeTeam} 🆚 ${firstMatch.awayTeam})` : 'יום שבת בשעה 17:00';
+    const deadlineStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''}` : 'יום שבת בשעה 17:00';
     let missingLines = '';
     if (missingTeams.length > 0) {
         missingLines = missingTeams.map(t => {
             const mentionsStr = t.phones.map((p) => `@${p.replace(/\D/g, '')}`).join(' ');
             const managerNames = [t.manager, t.assistantName].filter(Boolean).join(' & ');
-            return `⚠️ *${t.teamName}* (${managerNames}): ${mentionsStr}`;
+            return `▫️ *${t.teamName}* (${managerNames}): ${mentionsStr}`;
         }).join('\n');
     }
     else {
         missingLines = `🎉 *כל המנג'רים כבר עדכנו הרכב מלא למחזור!* 👏`;
     }
-    const fullMessage = ` Shabbat Shalom! ⚽ *תזכורת שישי לקראת מחזור ${currentRound} בפנטזי לוזון 14!* 🏆\n\n` +
-        `📅 *משחקי המחזור הקרוב בליגת העל:*\n` +
-        `${matchesListStr || 'משחקי הליגה בסוף השבוע'}\n\n` +
-        `🚨 *מצב הגשת הרכבים בזירה:*\n` +
+    const fullMessage = `שבת שלום מנג'רים! ⚽ *תזכורת שישי לקראת מחזור ${currentRound} בפנטזי לוזון 14!* 🏆\n\n` +
+        `⚔️ *משחקי הזירה (מי נגד מי במחזור ${currentRound}):*\n` +
+        `${fantasyMatchesStr || 'משחקי הזירה הקרובים'}\n\n` +
+        `⏰ *שעת המשחק הראשון בליגת העל:*\n` +
+        `${kickoffStr}\n\n` +
+        `🔒 *נעילת הרכבים:* יש לשלוח/לעדכן הרכב באפליקציה **עד ${deadlineStr} בדיוק!**\n\n` +
+        `⚠️ *מצב הגשת הרכבים כרגע:*\n` +
         `${missingLines}\n\n` +
-        `📱 היכנסו עכשיו לאפליקציה ועדכנו הרכב:\n` +
+        `📱 *עדכון הרכב באפליקציה:*\n` +
         `https://fantasy-luzon.web.app`;
     const groupChatId = '120363412136780106@g.us';
     const greenHost = 'https://7107.api.greenapi.com';
