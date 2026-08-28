@@ -2147,7 +2147,29 @@ const runLiveScraperLogic = async () => {
 
         const createdEvents: string[] = [];
 
-        // Scrape Sport5 Ticker for Goals/Assists
+        const checkAndCreatePending = async (plName: string, realTeam: string, eventType: string, source: string, desc: string) => {
+            const existingSnap = await db.collection('live_pending_events')
+                .where('player', '==', plName)
+                .where('eventType', '==', eventType)
+                .get();
+
+            if (existingSnap.empty) {
+                await db.collection('live_pending_events').add({
+                    player: plName,
+                    realTeam,
+                    eventType,
+                    source,
+                    description: desc,
+                    status: 'pending',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                createdEvents.push(`${source} ${eventType}: ${plName}`);
+                return true;
+            }
+            return false;
+        };
+
+        // 1. Scrape Sport5 Ticker (Official Goals & Assists)
         const sport5Res = await axios.get('https://www.sport5.co.il/', {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             timeout: 5000
@@ -2161,22 +2183,48 @@ const runLiveScraperLogic = async () => {
             for (const pl of allDraftedPlayers) {
                 const plNorm = norm(pl.name);
                 if (plNorm.length >= 4 && tickerNorm.includes(plNorm)) {
-                    const existingSnap = await db.collection('live_pending_events')
-                        .where('player', '==', pl.name)
-                        .where('source', '==', 'ספורט 5')
-                        .get();
+                    await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ספורט 5', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+                }
+            }
+        }
 
-                    if (existingSnap.empty) {
-                        await db.collection('live_pending_events').add({
-                            player: pl.name,
-                            realTeam: pl.realTeam,
-                            eventType: 'goal',
-                            source: 'ספורט 5',
-                            description: `⚽ שער! ${pl.name} (${pl.realTeam})`,
-                            status: 'pending',
-                            createdAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                        createdEvents.push(`Sport5 Goal: ${pl.name}`);
+        // 2. Scrape ONE Ticker (Secondary Goals & Assists)
+        const oneRes = await axios.get('https://www.one.co.il/', {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 5000
+        }).catch(() => null);
+
+        if (oneRes && oneRes.data) {
+            const $ = cheerio.load(oneRes.data);
+            const oneText = $('.live-scores, .ticker, .matches-list').text() || $('body').text();
+            const oneNorm = norm(oneText);
+
+            for (const pl of allDraftedPlayers) {
+                const plNorm = norm(pl.name);
+                if (plNorm.length >= 4 && oneNorm.includes(plNorm)) {
+                    await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ONE', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+                }
+            }
+        }
+
+        // 3. Scrape IFA / Israeli Football Association (Cards & Yellows/Reds)
+        const ifaRes = await axios.get('https://www.football.org.il/', {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 5000
+        }).catch(() => null);
+
+        if (ifaRes && ifaRes.data) {
+            const $ = cheerio.load(ifaRes.data);
+            const ifaText = $('body').text();
+            const ifaNorm = norm(ifaText);
+
+            for (const pl of allDraftedPlayers) {
+                const plNorm = norm(pl.name);
+                if (plNorm.length >= 4 && ifaNorm.includes(plNorm)) {
+                    if (ifaNorm.includes(plNorm + 'צהוב') || ifaNorm.includes('צהוב' + plNorm)) {
+                        await checkAndCreatePending(pl.name, pl.realTeam, 'yellow', 'ההתאחדות לכדורגל', `🟨 כרטיס צהוב! ${pl.name} (${pl.realTeam})`);
+                    } else if (ifaNorm.includes(plNorm + 'אדום') || ifaNorm.includes('אדום' + plNorm)) {
+                        await checkAndCreatePending(pl.name, pl.realTeam, 'red', 'ההתאחדות לכדורגל', `🟥 כרטיס אדום! ${pl.name} (${pl.realTeam})`);
                     }
                 }
             }
