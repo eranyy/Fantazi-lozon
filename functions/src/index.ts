@@ -1949,9 +1949,22 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
         return `⚔️ *${homeName}* 🆚 *${awayName}*`;
     }).join('\n');
 
-    // 2. Real Matches & First Kickoff Time / Deadline
+    // 2. Real Matches & First Kickoff Time / Deadline (Sorted Chronologically)
+    const parseDate = (dStr: string, tStr: string) => {
+        if (!dStr) return new Date(9999, 0, 1).getTime();
+        const parts = dStr.split(/[\/\.]/);
+        if (parts.length < 3) return new Date(9999, 0, 1).getTime();
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        const [h, m] = (tStr || '20:00').split(':');
+        return new Date(year, month, day, parseInt(h || '20', 10), parseInt(m || '0', 10)).getTime();
+    };
+
     const realMatches = realFixturesSnap.exists ? realFixturesSnap.data()?.matches || [] : [];
     const upcoming = realMatches.filter((m: any) => !String(m.status || '').includes('הסתיים'));
+    upcoming.sort((a: any, b: any) => parseDate(a.date, a.time) - parseDate(b.date, b.time));
+
     const firstMatch = upcoming[0] || realMatches[0];
 
     const kickoffStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''} (${firstMatch.homeTeam} 🆚 ${firstMatch.awayTeam})` : 'יום שבת בשעה 17:00';

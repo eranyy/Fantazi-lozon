@@ -323,9 +323,12 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
             if (team.lineupsByRound && team.lineupsByRound[currentRound] && Array.isArray(team.lineupsByRound[currentRound].lineup) && team.lineupsByRound[currentRound].lineup.length > 0) {
               startingPlayers = team.lineupsByRound[currentRound].lineup.map((p: any) => ({ ...p, isStarting: true }));
               benchPlayers = (team.lineupsByRound[currentRound].subsOut || []).map((p: any) => ({ ...p, isStarting: false }));
+            } else if (currentRound === 1 && (team.published_lineup?.length || team.lineup?.length)) {
+              startingPlayers = (team.published_lineup || team.lineup || []).map((p: any) => ({ ...p, isStarting: true }));
+              benchPlayers = (team.published_subs_out || []).map((p: any) => ({ ...p, isStarting: false }));
             } else {
-              startingPlayers = safeSquad.filter(p => p.isStarting === true);
-              benchPlayers = safeSquad.filter(p => !p.isStarting);
+              startingPlayers = [];
+              benchPlayers = safeSquad.map((p: any) => ({ ...p, isStarting: false }));
             }
         }
 

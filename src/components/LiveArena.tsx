@@ -240,7 +240,10 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].lineup) && team.lineupsByRound[rNum].lineup.length > 0) {
       return team.lineupsByRound[rNum].lineup;
     }
-    return team.published_lineup || team.lineup || team.squad || [];
+    if (rNum === 1) {
+      return team.published_lineup || team.lineup || [];
+    }
+    return [];
   };
 
   const getRoundBench = (team: any, rNum: number = selectedRound) => {
@@ -248,7 +251,10 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].subsOut)) {
       return team.lineupsByRound[rNum].subsOut;
     }
-    return team.published_subs_out || [];
+    if (rNum === 1) {
+      return team.published_subs_out || [];
+    }
+    return [];
   };
 
   const applySubstitutionsToLineup = (team: any) => {
@@ -1072,10 +1078,11 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         </div>
                       </div>
 
-                      {expandedTeamObj && selectedRound !== 1 && (!expandedTeamObj.lineupsByRound || !expandedTeamObj.lineupsByRound[selectedRound]) && (
-                        <div className="mb-4 bg-amber-950/70 border border-amber-500/40 px-4 py-2.5 rounded-2xl flex items-center gap-2 text-amber-200 text-xs font-bold shadow-lg">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>הקבוצה טרם פרסמה הרכב שמור למחזור {selectedRound} (מוצג סגל ברירת מחדל - 0 נקודות).</span>
+                      {expandedTeamObj && applySubstitutionsToLineup(expandedTeamObj).length === 0 && (
+                        <div className="mb-4 bg-slate-900/90 border border-slate-700 p-6 rounded-2xl flex flex-col items-center justify-center text-center shadow-xl">
+                          <div className="w-14 h-14 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-2xl">📋</div>
+                          <h4 className="text-base font-black text-white mb-1">טרם הוגש הרכב למחזור {selectedRound}</h4>
+                          <p className="text-xs font-bold text-slate-400">המנג'ר עדיין לא פרסם את הרכב הקבוצה למחזור זה. השדה נשאר נקי עד לשמירת ההרכב.</p>
                         </div>
                       )}
 
