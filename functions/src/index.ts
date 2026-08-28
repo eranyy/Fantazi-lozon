@@ -1974,13 +1974,13 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
     };
 
     const realMatches = realFixturesSnap.exists ? realFixturesSnap.data()?.matches || [] : [];
-    const upcoming = realMatches.filter((m: any) => !String(m.status || '').includes('הסתיים'));
+    const upcoming = realMatches.filter((m: any) => (m.round === currentRound || !m.round) && !String(m.status || '').includes('הסתיים'));
     upcoming.sort((a: any, b: any) => parseDate(a.date, a.time) - parseDate(b.date, b.time));
 
     const firstMatch = upcoming[0] || realMatches[0];
 
-    const kickoffStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''} (${firstMatch.homeTeam} 🆚 ${firstMatch.awayTeam})` : 'יום שבת בשעה 17:00';
-    const deadlineStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''}` : 'יום שבת בשעה 17:00';
+    const kickoffStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''} (${firstMatch.homeTeam} 🆚 ${firstMatch.awayTeam})` : 'יום שבת בשעה 20:00';
+    const deadlineStr = firstMatch ? `${firstMatch.day || ''} (${firstMatch.date || ''}) בשעה ${firstMatch.time || ''}` : 'יום שבת בשעה 20:00';
 
     let missingLines = '';
     if (missingTeams.length > 0) {
@@ -2042,75 +2042,9 @@ export const triggerFridayReminder = onRequest({ region: 'us-west1', cors: true 
 });
 
 // 🟢 סנכרון אוטומטי מיומן Google Calendar (eranyy@gmail.com) 🟢
+// Google Sheet is the 100% authoritative single source of truth for real_fixtures.
 export const scheduledCalendarSync = onSchedule('every 6 hours', async () => {
-    try {
-        const calendarId = 'eranyy@gmail.com';
-        const apiKey = process.env.GOOGLE_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
-        const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?key=${apiKey}&singleEvents=true&orderBy=startTime`;
-
-        const response = await axios.get(url);
-        const items = response.data?.items || [];
-
-        const israeliTeams = [
-            'מכבי תל אביב', 'מכבי חיפה', 'הפועל באר שבע', 'הפועל תל אביב',
-            'בית"ר ירושלים', 'מכבי נתניה', 'הפועל ירושלים', 'הפועל חיפה',
-            'בני סכנין', 'מכבי פתח תקווה', 'הפועל פתח תקווה',
-            'עירוני קרית שמונה', 'עירוני טבריה', 'הפועל רמת גן'
-        ];
-
-        const matchedMatches: any[] = [];
-
-        items.forEach((item: any) => {
-            const summary = item.summary || '';
-            const description = item.description || '';
-            const location = item.location || '';
-            const fullText = `${summary} ${description} ${location}`;
-
-            const isWinnerLeague = fullText.includes('ליגת Winner') || fullText.includes('ליגת ווינר') || fullText.includes('ליגת העל');
-            const isCup = fullText.includes('גביע המדינה') || fullText.includes('גביע הטוטו');
-
-            if (isWinnerLeague && !isCup) {
-                const foundTeams = israeliTeams.filter(t => fullText.includes(t));
-                if (foundTeams.length >= 2 || summary.includes('נגד') || summary.includes('vs')) {
-                    const startDateTime = item.start?.dateTime || item.start?.date;
-                    const dateObj = new Date(startDateTime);
-                    const formattedDate = dateObj.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
-                    const formattedTime = dateObj.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' });
-
-                    let tvChannel = '';
-                    if (fullText.includes('ספורט 5')) tvChannel = 'ספורט 5';
-                    else if (fullText.includes('ספורט 1')) tvChannel = 'ספורט 1';
-                    else if (fullText.includes('ספורט 2')) tvChannel = 'ספורט 2';
-                    else if (fullText.includes('ספורט 3')) tvChannel = 'ספורט 3';
-                    else if (fullText.includes('ספורט 4')) tvChannel = 'ספורט 4';
-                    else if (fullText.includes('כאן 11')) tvChannel = 'כאן 11';
-
-                    matchedMatches.push({
-                        title: summary,
-                        date: formattedDate,
-                        time: formattedTime,
-                        stadium: location || 'אצטדיון',
-                        tvChannel: tvChannel || 'שידור ישיר',
-                        homeTeam: foundTeams[0] || summary.split('נגד')[0]?.trim() || '',
-                        awayTeam: foundTeams[1] || summary.split('נגד')[1]?.trim() || '',
-                        rawEventId: item.id
-                    });
-                }
-            }
-        });
-
-        if (matchedMatches.length > 0) {
-            await db.doc('leagueData/real_fixtures').set({
-                matches: matchedMatches,
-                lastUpdated: new Date().toISOString(),
-                calendarId,
-                updatedBy: 'Google Calendar Sync'
-            }, { merge: true });
-            console.log(`Synced ${matchedMatches.length} Winner League matches from Google Calendar.`);
-        }
-    } catch (e: any) {
-        console.error('Error syncing Google Calendar:', e?.message || e);
-    }
+    console.log('[scheduledCalendarSync] Calendar sync disabled in favor of official Google Sheet sync.');
 });
 
 // 🟢 סנכרון אוטומטי מתוך קובץ Google Sheets של משחקי ליגת העל והגביע 🟢
