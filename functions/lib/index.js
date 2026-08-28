@@ -584,8 +584,10 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         const assistKeywords = ['בישל', 'מבשל', 'בישול', 'בישולים'];
         const yellowKeywords = ['צהוב', 'צהובים', 'מוזהב'];
         const redKeywords = ['אדום', 'אדומים', 'מורחק'];
+        const penWonKeywords = ['סחט פנדל', 'סחיטת פנדל', 'יצר פנדל', 'יצירת פנדל', 'סחט', 'יצר'];
+        const penConcededKeywords = ['גרם לפנדל', 'גרימת פנדל', 'הכשיל לפנדל'];
         const penSavedKeywords = ['עצר פנדל', 'עצירת פנדל'];
-        const penMissedKeywords = ['החמיץ פנדל', 'החמצת פנדל'];
+        const penMissedKeywords = ['החמיץ פנדל', 'החמצת פנדל', 'החטיא פנדל', 'החטאת פנדל'];
         const ownGoalKeywords = ['עצמי', 'שער עצמי'];
         const concededKeywords = ['ספג', 'ספגה', 'סופג', 'סופגת', 'קיבלה', 'חטפה', 'חטף'];
         const cancelKeywords = ['ביטול', 'בוטל', 'נפסל', 'בטל', 'ביטל', 'נפסלה', 'בוטלה', 'VAR', 'var'];
@@ -595,13 +597,15 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             ...assistKeywords,
             ...yellowKeywords,
             ...redKeywords,
+            ...penWonKeywords,
+            ...penConcededKeywords,
             ...penSavedKeywords,
             ...penMissedKeywords,
             ...ownGoalKeywords,
             ...concededKeywords,
             ...cancelKeywords,
             ...minuteKeywords,
-            'פנדל', 'עצר', 'החמיץ'
+            'פנדל', 'עצר', 'החמיץ', 'סחט', 'יצר'
         ];
         if (eventKeywords.some(kw => p.includes(kw))) {
             try {
@@ -833,11 +837,13 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     let isAssist = assistKeywords.some(kw => p.includes(kw));
                     let isYellow = yellowKeywords.some(kw => p.includes(kw));
                     let isRed = redKeywords.some(kw => p.includes(kw));
-                    let isPenSaved = p.includes('עצר') && p.includes('פנדל');
-                    let isPenMissed = p.includes('החמיץ') && p.includes('פנדל');
+                    let isPenWon = penWonKeywords.some(kw => p.includes(kw));
+                    let isPenConceded = penConcededKeywords.some(kw => p.includes(kw));
+                    let isPenSaved = penSavedKeywords.some(kw => p.includes(kw)) || (p.includes('עצר') && p.includes('פנדל'));
+                    let isPenMissed = penMissedKeywords.some(kw => p.includes(kw)) || ((p.includes('החמיץ') || p.includes('החטיא')) && p.includes('פנדל'));
                     let isOwnGoal = ownGoalKeywords.some(kw => p.includes(kw));
                     let isConceded = concededKeywords.some(kw => p.includes(kw));
-                    if (isCancel && !isGoal && !isAssist && !isYellow && !isRed && !isConceded) {
+                    if (isCancel && !isGoal && !isAssist && !isYellow && !isRed && !isConceded && !isPenWon && !isPenConceded && !isPenSaved && !isPenMissed) {
                         isGoal = true; // Default cancellation target if unspecified
                     }
                     // 🏆 Official Fantazy Luzon 14 Point System Rules 🏆
@@ -854,6 +860,10 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                             ptsAdd = 2;
                         else if (isRed)
                             ptsAdd = 5;
+                        else if (isPenWon)
+                            ptsAdd = -2;
+                        else if (isPenConceded)
+                            ptsAdd = 2;
                         else if (isPenSaved)
                             ptsAdd = -3;
                         else if (isPenMissed)
@@ -872,6 +882,10 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                             ptsAdd = -2;
                         else if (isRed)
                             ptsAdd = -5;
+                        else if (isPenWon)
+                            ptsAdd = 2;
+                        else if (isPenConceded)
+                            ptsAdd = -2;
                         else if (isPenSaved)
                             ptsAdd = 3;
                         else if (isPenMissed)
@@ -896,6 +910,8 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                                         assists: isCancel && isAssist ? Math.max(0, (currentStats.assists || 0) - 1) : isAssist ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
                                         yellow: isCancel && isYellow ? false : isYellow ? true : (Boolean(currentStats.yellow)),
                                         red: isCancel && isRed ? false : isRed ? true : (Boolean(currentStats.red)),
+                                        penaltyWon: isCancel && isPenWon ? Math.max(0, (currentStats.penaltyWon || 0) - 1) : isPenWon ? (currentStats.penaltyWon || 0) + 1 : (currentStats.penaltyWon || 0),
+                                        penaltyConceded: isCancel && isPenConceded ? Math.max(0, (currentStats.penaltyConceded || 0) - 1) : isPenConceded ? (currentStats.penaltyConceded || 0) + 1 : (currentStats.penaltyConceded || 0),
                                         penaltySaved: isCancel && isPenSaved ? Math.max(0, (currentStats.penaltySaved || 0) - 1) : isPenSaved ? (currentStats.penaltySaved || 0) + 1 : (currentStats.penaltySaved || 0),
                                         penaltyMissed: isCancel && isPenMissed ? Math.max(0, (currentStats.penaltyMissed || 0) - 1) : isPenMissed ? (currentStats.penaltyMissed || 0) + 1 : (currentStats.penaltyMissed || 0),
                                         ownGoals: isCancel && isOwnGoal ? Math.max(0, (currentStats.ownGoals || 0) - 1) : isOwnGoal ? (currentStats.ownGoals || 0) + 1 : (currentStats.ownGoals || 0),
@@ -913,10 +929,10 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                             console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId}`);
                         }
                     }
-                    const eventType = isCancel ? '🔄❌ *ביטול אירוע בזירה (VAR / שגיאה)*' : isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
+                    const eventType = isCancel ? '🔄❌ *ביטול אירוע בזירה (VAR / שגיאה)*' : isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenWon ? '🎯 *פנדל נסחט / יצר פנדל!*' : isPenConceded ? '⚠️ *גרם לפנדל!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
                     const managerNames = [u.manager, u.assistantName].filter(Boolean).join(' & ');
-                    const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח (${ptsAdd > 0 ? '+' : ''}${ptsAdd} נק') והניקוד בזירה באפליקציה עודכן בחזרה בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
-                    const actionDescription = isCancel ? (isGoal ? 'בוטל לו השער!' : isYellow ? 'בוטל לו הכרטיס הצהוב!' : isRed ? 'בוטל לו הכרטיס האדום!' : 'בוטל האירוע!') : isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : isPenSaved ? 'עצר פנדל במציאות!' : isPenMissed ? 'החמיץ פנדל במציאות!' : isOwnGoal ? 'כבש שער עצמי!' : isConceded ? 'ספג שער במציאות!' : 'רשם אירוע ברשת!';
+                    const arenaStatusStr = isInLineup ? `⚡ *השחקן בהרכב הפותח (${ptsAdd > 0 ? '+' : ''}${ptsAdd} נק') והניקוד בזירה באפליקציה עודכן בלייב!*` : '🪑 (השחקן נמצא בספסל המחליפים)';
+                    const actionDescription = isCancel ? (isGoal ? 'בוטל לו השער!' : isYellow ? 'בוטל לו הכרטיס הצהוב!' : isRed ? 'בוטל לו הכרטיס האדום!' : 'בוטל האירוע!') : isGoal ? 'כבש גול במציאות!' : isAssist ? 'רשם בישול!' : isYellow ? 'ספג צהוב במציאות!' : isRed ? 'ספג אדום במציאות!' : isPenWon ? 'סחט פנדל במציאות! (+2 נק\')' : isPenConceded ? 'גרם לפנדל במציאות! (-2 נק\')' : isPenSaved ? 'עצר פנדל במציאות! (+3 נק\')' : isPenMissed ? 'החמיץ פנדל במציאות! (-3 נק\')' : isOwnGoal ? 'כבש שער עצמי!' : isConceded ? 'ספג שער במציאות!' : 'רשם אירוע ברשת!';
                     return `${eventType}\n*${matchedPlayer.name}* (${matchedPlayer.realTeam || matchedPlayer.team || ''}) ${actionDescription} השחקן שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${managerNames})! 🎉\n${arenaStatusStr}`;
                 }
                 // If player is not drafted by any team (Free Agent / שחקן חופשי)

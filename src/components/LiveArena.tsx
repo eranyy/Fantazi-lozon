@@ -211,6 +211,19 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
   const getPlayerPointsForRound = (player: any, team: any, rNum: number) => {
     if (!player) return 0;
+    
+    // Round 1 (initial/legacy round) - restore exact stats & points where we stopped
+    if (rNum === 1) {
+      if (player.stats && Object.keys(player.stats).length > 0) {
+        const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
+        if (hasActiveStats) {
+          return calculatePointsFromStats(player.stats, player.position);
+        }
+      }
+      return Number(player.points) || 0;
+    }
+
+    // Rounds > 1
     const fixtureRound = fixtures.find(f => f.round === rNum);
     const isRoundPlayed = Boolean(fixtureRound && fixtureRound.isPlayed);
 
