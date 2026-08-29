@@ -30,7 +30,7 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPos, setSelectedPos] = useState<'ALL' | 'GK' | 'DEF' | 'MID' | 'FWD'>('ALL');
-  const [filterMode, setFilterMode] = useState<'FREE_ONLY' | 'ALL' | 'DRAFTED'>('FREE_ONLY');
+  const [filterMode, setFilterMode] = useState<'ALL' | 'FREE_ONLY' | 'DRAFTED'>('ALL');
   const [editingPlayer, setEditingPlayer] = useState<FreeAgentPlayer | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -269,9 +269,15 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
         </div>
       ) : filteredPlayers.length === 0 ? (
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-12 text-center text-zinc-400">
-          <ShieldAlert className="w-12 h-12 mx-auto mb-3 text-zinc-500" />
-          <p className="text-lg font-semibold text-white mb-1">לא נמצאו שחקנים מתאימים</p>
-          <p className="text-sm">נסה לשנות את מילות החיפוש או פילטר העמדה</p>
+          <ShieldAlert className="w-12 h-12 mx-auto mb-3 text-emerald-500" />
+          <p className="text-lg font-semibold text-white mb-1">
+            {filterMode === 'FREE_ONLY' ? 'כל השחקנים בבסיס הנתונים כרגע תפוסים ע"י מנג\'רים!' : 'לא נמצאו שחקנים מתאימים'}
+          </p>
+          <p className="text-sm text-zinc-400">
+            {filterMode === 'FREE_ONLY' 
+              ? 'לחץ על הכפתור "🌐 כל שחקני הליגה" למעלה לצפייה בדירוג השחקנים המלא עם שיוך הקבוצות!'
+              : 'נסה לשנות את מילות החיפוש או פילטר העמדה'}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
