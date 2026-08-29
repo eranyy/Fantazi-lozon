@@ -560,12 +560,81 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
             return `🤖 *סטטוס סורק פנטזי לוזון:* \nמצב: ${isEnabled ? '🟢 *פעיל*' : '🔴 *מופסק (כבוי)*'}\nסריקות פעילות: *ספורט 5 (שערים/בישולים) + ההתאחדות (כרטיסים)*\nניהול מרחוק: רשום *לוזון עצור סורק* או *לוזון הפעל סורק*. 📱`;
         }
 
+        function calculateOptimalLineupServer(squad: any[]) {
+            if (!Array.isArray(squad) || squad.length === 0) return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: [] };
+
+            const getPos = (pStr: string) => {
+                const p = String(pStr || '').toUpperCase().trim();
+                if (p.includes('GK') || p.includes('שוער')) return 'GK';
+                if (p.includes('DEF') || p.includes('הגנה') || p.includes('בלם') || p.includes('מגן')) return 'DEF';
+                if (p.includes('MID') || p.includes('קשר') || p.includes('קישור')) return 'MID';
+                if (p.includes('FWD') || p.includes('חלוץ') || p.includes('התקפה')) return 'FWD';
+                return 'MID';
+            };
+
+            const gks: any[] = [];
+            const defs: any[] = [];
+            const mids: any[] = [];
+            const fwds: any[] = [];
+
+            squad.forEach(pl => {
+                const pos = getPos(pl.position);
+                if (pos === 'GK') gks.push(pl);
+                else if (pos === 'DEF') defs.push(pl);
+                else if (pos === 'MID') mids.push(pl);
+                else if (pos === 'FWD') fwds.push(pl);
+            });
+
+            const sortByPts = (a: any, b: any) => (Number(b.points) || 0) - (Number(a.points) || 0);
+            gks.sort(sortByPts); defs.sort(sortByPts); mids.sort(sortByPts); fwds.sort(sortByPts);
+
+            const bestGK = gks[0] || null;
+            if (!bestGK) return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
+
+            const FORMATIONS = [
+                { d: 5, m: 3, f: 2, name: '5-3-2' },
+                { d: 5, m: 4, f: 1, name: '5-4-1' },
+                { d: 4, m: 5, f: 1, name: '4-5-1' },
+                { d: 4, m: 4, f: 2, name: '4-4-2' },
+                { d: 4, m: 3, f: 3, name: '4-3-3' },
+                { d: 3, m: 5, f: 2, name: '3-5-2' },
+                { d: 3, m: 4, f: 3, name: '3-4-3' }
+            ];
+
+            let best: any = null;
+
+            for (const form of FORMATIONS) {
+                if (defs.length < form.d || mids.length < form.m || fwds.length < form.f) continue;
+                const selected11 = [bestGK, ...defs.slice(0, form.d), ...mids.slice(0, form.m), ...fwds.slice(0, form.f)];
+
+                let capt: any = null;
+                let maxP = -999;
+                selected11.forEach(pl => {
+                    const pts = Number(pl.points) || 0;
+                    if (pts > maxP) { maxP = pts; capt = pl; }
+                });
+
+                const totalPts = selected11.reduce((sum, pl) => sum + (pl === capt ? (Number(pl.points) || 0) * 2 : (Number(pl.points) || 0)), 0);
+
+                if (!best || totalPts > best.optimalPoints) {
+                    best = {
+                        optimalPoints: totalPts,
+                        formation: form.name,
+                        captain: capt,
+                        lineup: selected11
+                    };
+                }
+            }
+
+            return best || { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
+        }
+
         // 🧠 AI League Memory & Witty Sports Commentator Engine 🧠
-        const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב');
+        const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב') || p.includes('בינגו') || p.includes('אופטימלי');
         const isControlCmd = p.includes('סורק') || p.includes('מאשר') || p.includes('אישור') || p.includes('דחה') || p.includes('ביטול');
 
         if (isAiQuery && !isControlCmd) {
-            const [settingsSnap, fantasyFixturesSnap, usersSnap, fanProfilesSnap, realFixturesSnap] = await Promise.all([
+            const [settingsSnap, _fantasyFixturesSnap, usersSnap, fanProfilesSnap, realFixturesSnap] = await Promise.all([
                 db.doc('leagueData/settings').get(),
                 db.doc('leagueData/fixtures').get(),
                 db.collection('users').get(),
@@ -667,22 +736,30 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                 return msg;
             }
 
-            if (p.includes('מי נגד מי') || p.includes('משחקים') || p.includes('תחזית')) {
-                const fantasyRound = (fantasyFixturesSnap.data()?.rounds || []).find((r: any) => r.round === currentRound);
-                const matches = fantasyRound?.matches || [];
+            if (p.includes('בינגו') || p.includes('הרכב אופטימלי') || p.includes('אופטימלי')) {
+                let msg = `💡 *ניתוח הרכבי בינגו אופטימליים בזירה - מחזור ${currentRound}!* 💡\n\n`;
+                usersSnap.docs.forEach(d => {
+                    const u = d.data();
+                    const squad = u.published_lineup || u.lineup || [];
+                    const opt = calculateOptimalLineupServer(squad);
+                    const actualPts = squad.reduce((acc: number, pl: any) => {
+                        const pts = Number(pl.points) || 0;
+                        const isCapt = pl.isCaptain || pl.captain;
+                        return acc + (isCapt ? pts * 2 : pts);
+                    }, 0);
+                    const diff = Math.max(0, opt.optimalPoints - actualPts);
 
-                let msg = `⚔️ *ניתוח טקטי של לוזון AI למחזור ${currentRound} בזירה!* ⚔️\n\n`;
-                matches.forEach((m: any) => {
-                    const hTeam = teamsData.find(t => t.id === m.h) || { teamName: m.h, manager: '' };
-                    const aTeam = teamsData.find(t => t.id === m.a) || { teamName: m.a, manager: '' };
-                    msg += `⚔️ *${hTeam.teamName}* (${hTeam.manager}) 🆚 *${aTeam.teamName}* (${aTeam.manager})\n`;
-                    msg += `   📊 מאזן נקודות: ${hTeam.totalPoints || 0} נק' מול ${aTeam.totalPoints || 0} נק'\n`;
+                    msg += `👤 *${u.teamName || u.name || u.manager}* (${u.manager}):\n`;
+                    msg += `   📊 ניקוד בפועל: ${actualPts} נק'\n`;
+                    msg += `   💡 ניקוד אופטימלי: *${opt.optimalPoints} נק'* (מערך ${opt.formation}${opt.captain ? `, קפטן: ${opt.captain.name}` : ''})\n`;
+                    if (diff > 0) msg += `   ⚠️ פוטנציאל לא ממומש מהספסל: -${diff} נק'\n`;
+                    msg += `\n`;
                 });
-                msg += `\n🔒 *תזכורת:* הרכבים ננעלים בשבת בשעה 20:00!`;
+                msg += `💬 *לוזון AI:* בידקו את הרכב הבינגו שלכם באפליקציה! 🚀`;
                 return msg;
             }
 
-            return `⚽ *שלום ${managerName}! לוזון AI בוט לשירותך!* 🤖\nאני עוקב אחרי כל הנתונים, ההרכבים והניקוד בזירה בזמן אמת.\nרשום בקבוצה: *"לוזון טבלה"*, *"לוזון תחזית"* או *"לוזון מי מוביל"* ותקבל ניתוח מקצועי ושנון! 🔥`;
+            return `⚽ *שלום ${managerName}! לוזון AI בוט לשירותך!* 🤖\nאני עוקב אחרי כל הנתונים, ההרכבים והניקוד בזירה בזמן אמת.\nרשום בקבוצה: *"לוזון טבלה"*, *"לוזון בינגו"*, *"לוזון תחזית"* או *"לוזון מי מוביל"* ותקבל ניתוח מקצועי ושנון! 🔥`;
         }
 
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
