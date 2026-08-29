@@ -732,12 +732,15 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             }
             // Execute Approval! Apply official point values to Firestore lineup
             const usersSnap = await db.collection('users').get();
+            const settingsSnap = await db.doc('leagueData/settings').get();
+            const currentRound = settingsSnap.exists ? (settingsSnap.data()?.currentRound || 2) : 2;
             const matchedPlayerName = pendingData.player;
             const eventType = pendingData.eventType; // 'goal', 'assist', 'yellow', 'red', 'sixtyMin'
             const source = pendingData.source || 'ספורט 5';
             let ptsAdd = 0;
             let affectedTeamName = '';
             let affectedManager = '';
+            let updatedPlayerTotalPts = 0;
             for (const d of usersSnap.docs) {
                 const u = d.data();
                 const lineup = u.published_lineup || u.lineup || [];
@@ -762,10 +765,11 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                             ptsAdd = -5;
                         else if (eventType === 'sixtyMin')
                             ptsAdd = 2;
+                        updatedPlayerTotalPts = (Number(pl.points) || 0) + ptsAdd;
                         const currentStats = pl.stats || {};
                         return {
                             ...pl,
-                            points: (Number(pl.points) || 0) + ptsAdd,
+                            points: updatedPlayerTotalPts,
                             stats: {
                                 ...currentStats,
                                 goals: eventType === 'goal' ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
@@ -780,14 +784,49 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     return pl;
                 });
                 if (updated) {
+                    const currentLineupsByRound = u.lineupsByRound || {};
+                    const currentRData = currentLineupsByRound[currentRound] || {};
+                    const updatedRLineup = (currentRData.lineup || lineup).map((pl) => {
+                        if (norm(pl.name).includes(norm(matchedPlayerName)) || norm(matchedPlayerName).includes(norm(pl.name))) {
+                            const currentStats = pl.stats || {};
+                            return {
+                                ...pl,
+                                points: (Number(pl.points) || 0) + ptsAdd,
+                                stats: {
+                                    ...currentStats,
+                                    goals: eventType === 'goal' ? (currentStats.goals || 0) + 1 : (currentStats.goals || 0),
+                                    assists: eventType === 'assist' ? (currentStats.assists || 0) + 1 : (currentStats.assists || 0),
+                                    yellow: eventType === 'yellow' ? true : (Boolean(currentStats.yellow)),
+                                    red: eventType === 'red' ? true : (Boolean(currentStats.red)),
+                                    sixtyMin: eventType === 'sixtyMin' ? true : (Boolean(currentStats.sixtyMin)),
+                                    played: true
+                                }
+                            };
+                        }
+                        return pl;
+                    });
                     await db.collection('users').doc(d.id).set({
                         lineup: updatedLineup,
-                        published_lineup: updatedLineup
+                        published_lineup: updatedLineup,
+                        lineupsByRound: {
+                            ...currentLineupsByRound,
+                            [currentRound]: {
+                                ...currentRData,
+                                lineup: updatedRLineup
+                            }
+                        }
                     }, { merge: true });
                 }
             }
             await pendingDoc.ref.update({ status: 'approved', approvedAt: admin.firestore.FieldValue.serverTimestamp() });
-            return `✅ *אירוע אושר ועודכן בזירה בלייב!* ⚽\n*${pendingData.description || pendingData.player}* (מקור רשמי: *${source}*)\nקבוצה: *${affectedTeamName || 'פנטזי'}* (מנג'ר: ${affectedManager || 'פנטזי'})\n⚡ *הניקוד בזירה באפליקציה עודכן ב-100% לפי תקנון פנטזי לוזון 14!* 🔥`;
+            const ptsSign = ptsAdd > 0 ? `+${ptsAdd}` : `${ptsAdd}`;
+            const ptsLabel = eventType === 'goal' ? 'שער' : eventType === 'assist' ? 'בישול' : eventType === 'yellow' ? 'צהוב' : eventType === 'red' ? 'אדום' : '60 דקות';
+            return `✅ *אירוע אושר ועודכן בזירה בלייב!* ⚽\n\n` +
+                `• *${pendingData.description || pendingData.player}* (מקור: *${source}*)\n` +
+                `• ⚡ *עדכון ניקוד שחקן:* *${ptsSign} נק'* (${ptsLabel}) | סך ניקוד שחקן: *${updatedPlayerTotalPts} נק'*\n` +
+                `• 🛡️ *קבוצה בפנטזי:* *${affectedTeamName || 'פנטזי'}* (מנג'ר: ${affectedManager || 'פנטזי'})\n\n` +
+                `📱 *הניקוד בזירה באפליקציה עודכן ב-100%!* 🔥\n` +
+                `https://fantasy-luzon.web.app`;
         }
         const goalKeywords = ['כבש', 'כובש', 'הבקיע', 'הבקיעה', 'שער', 'שערים', 'גול', 'גולים', 'צמד'];
         const assistKeywords = ['בישל', 'מבשל', 'בישול', 'בישולים'];
