@@ -2515,13 +2515,20 @@ const runLiveScraperLogic = async () => {
         if (fixturesSnap.exists) {
             const matches = fixturesSnap.data()?.matches || [];
             const now = new Date();
-            const todayStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
             
-            for (const m of matches) {
-                const mDateNorm = String(m.date || '').replace(/\./g, '/');
-                const todayNorm = String(todayStr || '').replace(/\./g, '/');
+            const jerusalemDateStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' }); // "29.8.2026"
+            const parts = jerusalemDateStr.split('.');
+            const dStr = (parts[0] || '').padStart(2, '0');
+            const mStr = (parts[1] || '').padStart(2, '0');
+            const yStr = parts[2] || '2026';
 
-                if (mDateNorm.includes(todayNorm) || todayNorm.includes(mDateNorm)) {
+            const todayPadded = `${dStr}/${mStr}/${yStr}`; // "29/08/2026"
+            const todayRaw = `${parts[0]}/${parts[1]}/${yStr}`; // "29/8/2026"
+
+            for (const m of matches) {
+                const mDateNorm = String(m.date || '').replace(/\./g, '/').trim();
+
+                if (mDateNorm === todayPadded || mDateNorm === todayRaw || mDateNorm.includes(todayPadded) || mDateNorm.includes(todayRaw)) {
                     const [hourStr, minStr] = String(m.time || '20:00').split(':');
                     const matchHour = parseInt(hourStr || '20', 10);
                     const matchMin = parseInt(minStr || '0', 10);
@@ -2532,8 +2539,8 @@ const runLiveScraperLogic = async () => {
                     const nowTotalMins = nowHour * 60 + nowMin;
                     const matchTotalMins = matchHour * 60 + matchMin;
 
-                    // Active if within window: 15 mins before match until 180 mins after match
-                    if (nowTotalMins >= (matchTotalMins - 15) && nowTotalMins <= (matchTotalMins + 180)) {
+                    // Active if within window: 15 mins before match until 210 mins after match
+                    if (nowTotalMins >= (matchTotalMins - 15) && nowTotalMins <= (matchTotalMins + 210)) {
                         isGameLiveNow = true;
                         activeMatchInfo = `${m.homeTeam} נגד ${m.awayTeam} (${m.time})`;
                         break;
