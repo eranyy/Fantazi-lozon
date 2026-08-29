@@ -923,9 +923,26 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     'על', 'מה', 'עם', 'אם', 'גם', 'הוא', 'היא', 'שזה', 'שהוא', 'שהיא', 'שלו', 'שלה',
                     'ששמו', 'בשם', 'קוראים', 'מי', 'כל', 'כמו', 'לפי', 'רק', 'אבל', 'כי', 'כדי', 'לא'
                 ];
+                const aliasMap = {
+                    'אסנייה': 'סאנייה',
+                    'אסניה': 'סאנייה',
+                    'סניה': 'סאנייה',
+                    'סאניה': 'סאנייה',
+                    'אמאדו': 'סאנייה',
+                    'בןדוד': 'שי בן דוד',
+                    'בנדוד': 'שי בן דוד',
+                    'קימבודי': 'קמבודי',
+                    'לייבו': 'ליבוביץ'
+                };
                 const smartNorm = (s) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '').replace(/יי/g, 'י').replace(/וו/g, 'ו');
                 const stripPrefix = (w) => (w.length >= 4 ? w.replace(/^[בלמכשו]/, '') : w);
                 const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w)).map(w => stripPrefix(w)).filter(w => w.length >= 3);
+                // Apply alias replacement
+                for (let i = 0; i < rawWords.length; i++) {
+                    const w = rawWords[i];
+                    if (aliasMap[w])
+                        rawWords[i] = aliasMap[w];
+                }
                 let matchedPlayer = null;
                 let matchedDocId = null;
                 let matchedUserData = null;
