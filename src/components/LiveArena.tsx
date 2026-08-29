@@ -209,35 +209,18 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     return { t1Wins, t2Wins, draws, t1Goals, t2Goals, pastEncounters: pastEncounters.sort((a, b) => b.round - a.round) };
   };
 
-  const getPlayerPointsForRound = (player: any, team: any, rNum: number) => {
+  const getPlayerPointsForRound = (player: any, _team: any, _rNum: number) => {
     if (!player) return 0;
     
-    const fixtureRound = fixtures.find(f => f.round === rNum);
-    const isRoundPlayed = Boolean(fixtureRound && fixtureRound.isPlayed);
-
-    // If viewing an active / unplayed round (e.g. Round 2 before matches finish)
-    if (!isRoundPlayed) {
-      if (player.stats && Object.keys(player.stats).length > 0) {
-        const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
-        if (hasActiveStats) {
-          return calculatePointsFromStats(player.stats, player.position);
-        }
-      }
-      return 0; // Unplayed rounds start with 0 points per player
-    }
-
-    // If viewing a completed round (historical played round)
+    // Calculate live points directly from stats if stats object exists
     if (player.stats && Object.keys(player.stats).length > 0) {
-      const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
-      if (hasActiveStats) {
-        return calculatePointsFromStats(player.stats, player.position);
-      }
+      const computedPts = calculatePointsFromStats(player.stats, player.position || player.pos || '');
+      if (computedPts !== 0) return computedPts;
+      const hasAnyStatField = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
+      if (hasAnyStatField) return computedPts;
     }
 
-    if (rNum === 1) {
-      return Number(player.points) || 0;
-    }
-    return 0;
+    return Number(player.points) || 0;
   };
 
   const getRoundLineup = (team: any, rNum: number = selectedRound) => {
@@ -245,10 +228,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].lineup) && team.lineupsByRound[rNum].lineup.length > 0) {
       return team.lineupsByRound[rNum].lineup;
     }
-    if (rNum === 1) {
-      return team.published_lineup || team.lineup || [];
-    }
-    return [];
+    return team.published_lineup || team.lineup || (Array.isArray(team.squad) ? team.squad.slice(0, 11) : []);
   };
 
   const getRoundBench = (team: any, rNum: number = selectedRound) => {
@@ -256,10 +236,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].subsOut)) {
       return team.lineupsByRound[rNum].subsOut;
     }
-    if (rNum === 1) {
-      return team.published_subs_out || [];
-    }
-    return [];
+    return team.published_subs_out || (Array.isArray(team.squad) ? team.squad.slice(11) : []);
   };
 
   const applySubstitutionsToLineup = (team: any) => {
