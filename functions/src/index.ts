@@ -2526,6 +2526,20 @@ const runLiveScraperLogic = async () => {
                 });
                 createdEvents.push(`${source} ${eventType}: ${plName}`);
                 return true;
+            } else {
+                // 🟢 מניעת כפילויות ואיחוד מקורות מוצלבים 🟢
+                const eventDoc = existingSnap.docs[0];
+                const data = eventDoc.data();
+                const currentSource = String(data.source || '');
+
+                if (!currentSource.includes(source)) {
+                    const mergedSource = `${currentSource}, ${source}`;
+                    await eventDoc.ref.update({
+                        source: mergedSource,
+                        description: desc.replace(source, mergedSource)
+                    });
+                    console.log(`[Deduplication] Merged source "${source}" into existing event for ${plName} (${mergedSource})`);
+                }
             }
             return false;
         };
