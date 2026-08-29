@@ -1614,17 +1614,33 @@ const runRoundReminderLogic = async (force = false) => {
     const roundMatches = realMatches.filter((m) => m.round === round);
     if (roundMatches.length === 0)
         return { success: false, reason: `No matches for round ${round}` };
-    const firstMatch = roundMatches[0];
-    let kickoffTime = Date.now();
-    if (firstMatch.date && firstMatch.time) {
-        const parts = firstMatch.date.split('/');
-        if (parts.length === 3) {
-            const isoStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}T${firstMatch.time}:00+03:00`;
-            kickoffTime = new Date(isoStr).getTime();
+    // Calculate earliest match kickoff timestamp dynamically across ALL round matches
+    let earliestKickoffMs = Infinity;
+    const matchesWithTime = [];
+    roundMatches.forEach((m) => {
+        let kickoffMs = Infinity;
+        if (m.date && m.time) {
+            const parts = String(m.date).split('/');
+            if (parts.length === 3) {
+                const day = parts[0].padStart(2, '0');
+                const month = parts[1].padStart(2, '0');
+                const year = parts[2];
+                const isoStr = `${year}-${month}-${day}T${m.time}:00+03:00`;
+                const parsedMs = new Date(isoStr).getTime();
+                if (!isNaN(parsedMs)) {
+                    kickoffMs = parsedMs;
+                    if (parsedMs < earliestKickoffMs) {
+                        earliestKickoffMs = parsedMs;
+                    }
+                }
+            }
         }
-    }
+        matchesWithTime.push({ ...m, kickoffMs });
+    });
+    // Sort matches chronologically by kickoff time
+    matchesWithTime.sort((a, b) => a.kickoffMs - b.kickoffMs);
     const now = Date.now();
-    const diffMs = kickoffTime - now;
+    const diffMs = earliestKickoffMs !== Infinity ? earliestKickoffMs - now : 0;
     const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
     const diffMins = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
     const timeStr = (diffHours > 0 ? `${diffHours} שעות ו-` : '') + `${diffMins} דקות`;
@@ -1643,7 +1659,7 @@ const runRoundReminderLogic = async (force = false) => {
         const aName = teams.find(t => t.id === m.a)?.name || m.a;
         return `• *${hName}* 🆚 *${aName}*`;
     }).join('\n');
-    const realLines = roundMatches.slice(0, 5).map((m) => `• *${m.homeTeam}* 🆚 *${m.awayTeam}* (${m.date} בשעה ${m.time}${m.tvChannel ? ` | ${m.tvChannel}` : ''})`).join('\n');
+    const realLines = matchesWithTime.slice(0, 5).map((m) => `• *${m.homeTeam}* 🆚 *${m.awayTeam}* (${m.date} בשעה ${m.time}${m.tvChannel ? ` | ${m.tvChannel}` : ''})`).join('\n');
     const fullMessage = `⏰ *תזכורת חמה: נותרו כ-${timeStr} לשריקת הפתיחה של מחזור ${round}!* ⏳⚽\n\n` +
         `🚨 *אל תשכחו להכניס ולעדכן הרכבים פותחים באפליקציה לפני המשחק הראשון!*\n\n` +
         `⚔️ *המפגשים בינינו במחזור ${round} בפנטזי:*\n` +
