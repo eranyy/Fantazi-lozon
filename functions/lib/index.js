@@ -2259,17 +2259,16 @@ const runLiveScraperLogic = async () => {
             return { success: true, count: 0, message: 'No active match right now according to calendar' };
         }
         console.log(`[LiveScraper] 🔥 Game is LIVE NOW! (${activeMatchInfo}) Scanning Sport5 & IFA...`);
-        const usersSnap = await db.collection('users').get();
-        const allDraftedPlayers = [];
-        usersSnap.docs.forEach(d => {
-            const u = d.data();
-            const squad = u.squad || u.lineup || [];
-            if (Array.isArray(squad)) {
-                squad.forEach((pl) => {
-                    allDraftedPlayers.push({
-                        name: pl.name,
-                        realTeam: pl.realTeam || pl.team || ''
-                    });
+        // Fetch ALL tracked Premier League players (both drafted AND free agents)
+        const realPlayersSnap = await db.collection('real_league_players_scoring').get();
+        const allTrackedPlayers = [];
+        realPlayersSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data.name) {
+                allTrackedPlayers.push({
+                    name: data.name,
+                    realTeam: data.realTeam || data.team || '',
+                    isDrafted: Boolean(data.isDrafted)
                 });
             }
         });
@@ -2303,7 +2302,7 @@ const runLiveScraperLogic = async () => {
             const $ = cheerio.load(sport5Res.data);
             const tickerText = $('.ticker, .live-matches, .game-item, .match-ticker').text() || $('body').text();
             const tickerNorm = norm(tickerText);
-            for (const pl of allDraftedPlayers) {
+            for (const pl of allTrackedPlayers) {
                 const plNorm = norm(pl.name);
                 if (plNorm.length >= 4 && tickerNorm.includes(plNorm)) {
                     await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ספורט 5', `⚽ שער! ${pl.name} (${pl.realTeam})`);
@@ -2319,7 +2318,7 @@ const runLiveScraperLogic = async () => {
             const $ = cheerio.load(oneRes.data);
             const oneText = $('.live-scores, .ticker, .matches-list').text() || $('body').text();
             const oneNorm = norm(oneText);
-            for (const pl of allDraftedPlayers) {
+            for (const pl of allTrackedPlayers) {
                 const plNorm = norm(pl.name);
                 if (plNorm.length >= 4 && oneNorm.includes(plNorm)) {
                     await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ONE', `⚽ שער! ${pl.name} (${pl.realTeam})`);
@@ -2335,7 +2334,7 @@ const runLiveScraperLogic = async () => {
             const $ = cheerio.load(ifaRes.data);
             const ifaText = $('body').text();
             const ifaNorm = norm(ifaText);
-            for (const pl of allDraftedPlayers) {
+            for (const pl of allTrackedPlayers) {
                 const plNorm = norm(pl.name);
                 if (plNorm.length >= 4 && ifaNorm.includes(plNorm)) {
                     if (ifaNorm.includes(plNorm + 'צהוב') || ifaNorm.includes('צהוב' + plNorm)) {
