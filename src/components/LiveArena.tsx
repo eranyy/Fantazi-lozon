@@ -553,22 +553,53 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
   const calculatePointsFromStats = (statsObj: any, pos: string) => {
       let p = 0; if (!statsObj) return 0; 
+
+      const isGk = ['GK', 'שוער'].includes(pos); 
+      const isDef = ['DEF', 'הגנה', 'בלם', 'מגן'].includes(pos);
+
+      // 🔴 חוק מיוחד שוערים: שוער שלא משחק (ב-16 או מחוץ ל-16) מקבל 1- נק' חובה 🔴
+      if (isGk && !statsObj.started && !statsObj.played60 && (statsObj.notInSquad || statsObj.notPlayedIn16)) {
+          return -1;
+      }
+
       if (statsObj.notInSquad) return -1; 
       if (statsObj.notPlayedIn16) return 0; 
 
-      const isGk = ['GK', 'שוער'].includes(pos); const isDef = ['DEF', 'הגנה', 'בלם', 'מגן'].includes(pos);
-      
+      // 1. ניקוד כללי שחקני שדה
       if (statsObj.started) p += 1; 
       if (statsObj.played60) p += 1; 
       if (statsObj.won) p += 2;
       
-      if (isGk) p += (statsObj.goals || 0) * 10; else if (isDef) p += (statsObj.goals || 0) * 8; else p += (statsObj.goals || 0) * 5;
-      if (isGk) p += (statsObj.assists || 0) * 6; else if (isDef) p += (statsObj.assists || 0) * 4; else p += (statsObj.assists || 0) * 3;
-      if (statsObj.cleanSheet && (isGk || isDef)) p += isGk ? 5 : 4;
+      // 2. שערים לפי עמדה (שוער +10 | הגנה +8 | קשר/חלוץ +5)
+      if (isGk) p += (statsObj.goals || 0) * 10; 
+      else if (isDef) p += (statsObj.goals || 0) * 8; 
+      else p += (statsObj.goals || 0) * 5;
+
+      // 3. בישולים לפי עמדה (שוער +6 | הגנה +4 | קשר/חלוץ +3)
+      if (isGk) p += (statsObj.assists || 0) * 6; 
+      else if (isDef) p += (statsObj.assists || 0) * 4; 
+      else p += (statsObj.assists || 0) * 3;
+
+      // 4. רשת נקייה (רק מעל 60 דק': שוער +5 | הגנה +4)
+      if (statsObj.cleanSheet && (isGk || isDef) && statsObj.played60) {
+          p += isGk ? 5 : 4;
+      }
+
+      // 5. ספיגות שערים (1- לכל שער שספגו שוער/הגנה בעת שהיו על המגרש)
       if (isGk || isDef) p -= (statsObj.conceded || 0);
-      p += (statsObj.penaltyWon || 0) * 2; p -= (statsObj.penaltyMissed || 0) * 3; if (isGk) p += (statsObj.penaltySaved || 0) * 3;
-      p -= (statsObj.ownGoals || 0) * 3; p += (statsObj.assistOwnGoal || 0) * 2;
-      if (statsObj.yellow) p -= 2; if (statsObj.secondYellow) p -= 2; if (statsObj.red) p -= 5;
+
+      // 6. פנדלים ואירועים מיוחדים
+      p += (statsObj.penaltyWon || 0) * 2; 
+      p -= (statsObj.penaltyMissed || 0) * 3; 
+      if (isGk) p += (statsObj.penaltySaved || 0) * 3;
+      p -= (statsObj.ownGoals || 0) * 3; 
+      p += (statsObj.assistOwnGoal || 0) * 2;
+
+      // 7. כרטיסים (צהוב 2- | צהוב שני 2- | אדום ישיר 5-)
+      if (statsObj.yellow) p -= 2; 
+      if (statsObj.secondYellow) p -= 2; 
+      if (statsObj.red) p -= 5;
+
       return p;
   };
 

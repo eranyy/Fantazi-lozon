@@ -678,7 +678,15 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
               <div className="bg-zinc-950/80 rounded-3xl border border-zinc-800 overflow-hidden shadow-lg">
                 <div className="bg-blue-900/10 px-5 py-3 border-b border-blue-900/30 text-blue-400 font-black text-sm flex items-center justify-between"><span className="flex items-center gap-2"><ShieldAlert className="w-4 h-4"/> שוערים ושחקני הגנה</span></div>
                 <div className="divide-y divide-zinc-800/50 px-5">
-                  {[{ label: 'שוער כובש', points: '+10', color: 'text-green-400' }, { label: 'שחקן הגנה כובש', points: '+8', color: 'text-green-400' }, { label: 'שוער מבשל', points: '+6', color: 'text-green-400' }, { label: 'שוער (מעל 60 דק\') ולא ספג', points: '+5', color: 'text-green-400' }, { label: 'שחקן הגנה מבשל', points: '+4', color: 'text-green-400' }, { label: 'הגנה (מעל 60 דק\') ולא ספג', points: '+4', color: 'text-green-400' }, { label: 'שוער שעצר פנדל (החטיאו מולו)', points: '+3', color: 'text-green-400' }, { label: 'הגנה/שוער לא ספגו (מתחת ל-60 דק\')', points: '0', color: 'text-zinc-500' }, { label: 'ספיגת שער (בעת שהייה במגרש)', points: '-1', color: 'text-red-400' }, { label: 'שוער לא משחק (ב-16 או לא)', points: '-1', color: 'text-red-400' }].map((rule, idx) => (
+                  {[{ label: 'שוער כובש', points: '+10', color: 'text-green-400' }, { label: 'שחקן הגנה כובש', points: '+8', color: 'text-green-400' }, { label: 'שוער מבשל', points: '+6', color: 'text-green-400' }, { label: 'שוער (מעל 60 דק\') ולא ספג', points: '+5', color: 'text-green-400' }, { label: 'שחקן הגנה מבשל', points: '+4', color: 'text-green-400' }, { label: 'הגנה (מעל 60 דק\') ולא ספג', points: '+4', color: 'text-green-400' }, { label: 'שוער שעצר פנדל (החטיאו מולו)', points: '+3', color: 'text-green-400' }, { label: 'הגנה/שוער לא ספגו (מתחת ל-60 דק\')', points: '0', color: 'text-zinc-500' }, { label: 'ספיגת שער (בעת שהייה במגרש)', points: '-1 על כל שער', color: 'text-red-400' }, { label: 'שוער לא משחק (ב-16 או לא)', points: '-1', color: 'text-red-400' }].map((rule, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-2.5"><span className="text-zinc-400 text-sm font-bold">{rule.label}</span><span className={`font-black text-base tabular-nums ${rule.color}`}>{rule.points}</span></div>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-zinc-950/80 rounded-3xl border border-zinc-800 overflow-hidden shadow-lg">
+                <div className="bg-emerald-900/10 px-5 py-3 border-b border-emerald-900/30 text-emerald-400 font-black text-sm flex items-center justify-between"><span className="flex items-center gap-2">⚽ קשרים וחלוצים</span></div>
+                <div className="divide-y divide-zinc-800/50 px-5">
+                  {[{ label: 'קשר / חלוץ כובש', points: '+5', color: 'text-green-400' }, { label: 'קשר / חלוץ מבשל', points: '+3', color: 'text-green-400' }].map((rule, idx) => (
                     <div key={idx} className="flex justify-between items-center py-2.5"><span className="text-zinc-400 text-sm font-bold">{rule.label}</span><span className={`font-black text-base tabular-nums ${rule.color}`}>{rule.points}</span></div>
                   ))}
                 </div>
