@@ -686,12 +686,12 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
         }
 
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
-        const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1'];
-        const rejectKeywords = ['דחה', 'דחייה', 'תתעלם', 'התעלם', 'אל תעדכן', 'לא מאשר'];
+        const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1', 'לוזון מאשר', 'לוזון אישור'];
+        const rejectKeywords = ['דחה', 'דחייה', 'תתעלם', 'התעלם', 'אל תעדכן', 'לא מאשר', 'לוזון דחה'];
 
         const cleanP = p.trim();
-        const isApprove = approveKeywords.some(kw => cleanP === kw || cleanP.startsWith(kw + ' ') || cleanP.endsWith(' ' + kw));
-        const isReject = rejectKeywords.some(kw => cleanP === kw || cleanP.startsWith(kw + ' ') || cleanP.endsWith(' ' + kw));
+        const isApprove = approveKeywords.some(kw => cleanP === kw || cleanP.includes(kw));
+        const isReject = rejectKeywords.some(kw => cleanP === kw || cleanP.includes(kw));
 
         if (isApprove || isReject) {
             const pendingSnap = await db.collection('live_pending_events')
