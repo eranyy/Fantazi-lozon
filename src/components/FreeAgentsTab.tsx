@@ -25,12 +25,84 @@ const POS_BADGES: Record<string, { bg: string; text: string; label: string }> = 
   FWD: { bg: 'bg-red-500/20 border-red-500/40 text-red-400', text: 'text-red-400', label: 'התקפה' }
 };
 
-export const FreeAgentsTab: React.FC<{ users?: any[] }> = ({ users = [] }) => {
+export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ users = [], isAdmin = true }) => {
   const [players, setPlayers] = useState<FreeAgentPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPos, setSelectedPos] = useState<'ALL' | 'GK' | 'DEF' | 'MID' | 'FWD'>('ALL');
   const [filterMode, setFilterMode] = useState<'FREE_ONLY' | 'ALL' | 'DRAFTED'>('FREE_ONLY');
+  const [editingPlayer, setEditingPlayer] = useState<FreeAgentPlayer | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const availableFantasyTeams = [
+    { id: 'FREE', name: '🆓 שחקן חופשי (ללא קבוצה)' },
+    { id: 'tumali', name: 'תומאלי (אלי ותום)' },
+    { id: 'hamsili', name: 'חמסילי (ערן ואסף)' },
+    { id: 'harale', name: 'חראלה (גיא)' },
+    { id: 'holonia', name: 'חולוניה (ארז)' },
+    { id: 'pichichi', name: 'פיצ\'יצי (שלומי)' },
+    { id: 'tampa', name: 'טמפה (יינון)' }
+  ];
+
+  const handleSavePlayerAssignment = async (targetTeamId: string) => {
+    if (!editingPlayer) return;
+    setSavingEdit(true);
+    try {
+      const { doc, setDoc, updateDoc } = await import('firebase/firestore');
+
+      if (targetTeamId === 'FREE') {
+        // Mark as free in real_league_players_scoring
+        await setDoc(doc(db, 'real_league_players_scoring', editingPlayer.id), {
+          isDrafted: false,
+          ownerTeam: null,
+          ownerManager: null
+        }, { merge: true });
+      } else {
+        // Find target user in Firestore and assign player
+        const targetTeam = availableFantasyTeams.find(t => t.id === targetTeamId);
+        const targetUserDoc = users.find(u => 
+          u.id === targetTeamId || 
+          String(u.teamName || '').toLowerCase().includes(targetTeamId) ||
+          String(u.name || '').toLowerCase().includes(targetTeamId)
+        );
+
+        if (targetUserDoc) {
+          const newPlayerObj = {
+            id: editingPlayer.id,
+            name: editingPlayer.name,
+            team: editingPlayer.realTeam,
+            position: editingPlayer.position,
+            points: editingPlayer.points,
+            isStarting: false
+          };
+
+          const currentLineup = targetUserDoc.published_lineup || targetUserDoc.lineup || [];
+          const exists = currentLineup.some((p: any) => p.name === editingPlayer.name || p.id === editingPlayer.id);
+
+          if (!exists) {
+            const updatedLineup = [...currentLineup, newPlayerObj];
+            await updateDoc(doc(db, 'users', targetUserDoc.id), {
+              lineup: updatedLineup,
+              published_lineup: updatedLineup
+            });
+          }
+        }
+
+        // Also update real_league_players_scoring
+        await setDoc(doc(db, 'real_league_players_scoring', editingPlayer.id), {
+          isDrafted: true,
+          ownerTeam: targetTeam?.name || targetTeamId,
+          ownerManager: targetUserDoc?.manager || ''
+        }, { merge: true });
+      }
+
+      setEditingPlayer(null);
+    } catch (err) {
+      console.error('Error updating player assignment:', err);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   useEffect(() => {
     // 1. Listen to real_league_players_scoring from Firestore
@@ -242,16 +314,66 @@ export const FreeAgentsTab: React.FC<{ users?: any[] }> = ({ users = [] }) => {
                   </div>
                 </div>
 
-                {/* Draft Status Indicator */}
-                {pl.isDrafted && pl.ownerTeam && (
-                  <div className="mt-2.5 pt-2 border-t border-zinc-800/40 text-[11px] text-amber-400/90 flex items-center gap-1">
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>שייך ל-<strong>{pl.ownerTeam}</strong> ({pl.ownerManager})</span>
-                  </div>
-                )}
+                {/* Draft Status Indicator & Quick Edit Button */}
+                <div className="mt-2.5 pt-2 border-t border-zinc-800/40 flex items-center justify-between text-[11px]">
+                  {pl.isDrafted && pl.ownerTeam ? (
+                    <div className="text-amber-400/90 flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>שייך ל-<strong>{pl.ownerTeam}</strong> ({pl.ownerManager})</span>
+                    </div>
+                  ) : (
+                    <span className="text-zinc-500">שחקן חופשי בליגה</span>
+                  )}
+
+                  {isAdmin && (
+                    <button
+                      onClick={() => setEditingPlayer(pl)}
+                      className="bg-zinc-800 hover:bg-emerald-600 text-zinc-300 hover:text-white px-2 py-1 rounded text-[10px] font-semibold transition-all border border-zinc-700"
+                    >
+                      ✏️ ערוך שיוך
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Admin Quick Edit Modal */}
+      {editingPlayer && (
+        <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border-2 border-emerald-500/50 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right dir-rtl">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              ✏️ עריכת שיוך קבוצה: <span className="text-emerald-400">{editingPlayer.name}</span>
+            </h3>
+            <p className="text-xs text-zinc-400">
+              בחר לאיזו קבוצת פנטזי השחקן שייך, או סמן אותו כ"שחקן חופשי":
+            </p>
+
+            <div className="space-y-2">
+              {availableFantasyTeams.map(t => (
+                <button
+                  key={t.id}
+                  disabled={savingEdit}
+                  onClick={() => handleSavePlayerAssignment(t.id)}
+                  className="w-full text-right p-3 rounded-xl bg-zinc-800/80 hover:bg-emerald-600/30 border border-zinc-700 hover:border-emerald-500 font-semibold text-sm text-white transition-all flex items-center justify-between"
+                >
+                  <span>{t.name}</span>
+                  <span className="text-xs text-zinc-400">בחר ➡️</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setEditingPlayer(null)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
