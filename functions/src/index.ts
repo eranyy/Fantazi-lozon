@@ -2568,7 +2568,30 @@ const runLiveScraperLogic = async () => {
             }
         }
 
-        // 3. Scrape IFA / Israeli Football Association (Cards & Yellows/Reds)
+        // 3. Scrape Walla! Sports (Tertiary Goals & Assists)
+        const wallaRes = await axios.get('https://sports.walla.co.il/', {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 5000
+        }).catch(() => null);
+
+        if (wallaRes && wallaRes.data) {
+            const $ = cheerio.load(wallaRes.data);
+            const wallaText = $('body').text();
+            const wallaNorm = norm(wallaText);
+
+            for (const pl of allTrackedPlayers) {
+                const plNorm = norm(pl.name);
+                if (plNorm.length >= 4 && wallaNorm.includes(plNorm)) {
+                    if (wallaNorm.includes(plNorm + 'בישל') || wallaNorm.includes('בישול' + plNorm) || wallaNorm.includes(plNorm + 'מסר')) {
+                        await checkAndCreatePending(pl.name, pl.realTeam, 'assist', 'וואלה! ספורט', `👟 בישול! ${pl.name} (${pl.realTeam})`);
+                    } else {
+                        await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'וואלה! ספורט', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+                    }
+                }
+            }
+        }
+
+        // 4. Scrape IFA / Israeli Football Association (Cards & Yellows/Reds)
         const ifaRes = await axios.get('https://www.football.org.il/', {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             timeout: 5000
