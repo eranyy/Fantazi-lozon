@@ -622,10 +622,10 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
         }
 
         // 🧠 AI League Memory & Witty Sports Commentator Engine 🧠
-        const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב') || p.includes('בינגו') || p.includes('אופטימלי');
+        const isStructuredAiQuery = p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב') || p.includes('בינגו') || p.includes('אופטימלי');
         const isControlCmd = p.includes('סורק') || p.includes('מאשר') || p.includes('אישור') || p.includes('דחה') || p.includes('ביטול');
 
-        if (isAiQuery && !isControlCmd) {
+        if (isStructuredAiQuery && !isControlCmd) {
             const [settingsSnap, _fantasyFixturesSnap, usersSnap, fanProfilesSnap, realFixturesSnap] = await Promise.all([
                 db.doc('leagueData/settings').get(),
                 db.doc('leagueData/fixtures').get(),
@@ -750,8 +750,6 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                 msg += `💬 *לוזון AI:* בידקו את הרכב הבינגו שלכם באפליקציה! 🚀`;
                 return msg;
             }
-
-            return `⚽ *שלום ${managerName}! לוזון AI בוט לשירותך!* 🤖\nאני עוקב אחרי כל הנתונים, ההרכבים והניקוד בזירה בזמן אמת.\nרשום בקבוצה: *"לוזון טבלה"*, *"לוזון בינגו"*, *"לוזון תחזית"* או *"לוזון מי מוביל"* ותקבל ניתוח מקצועי ושנון! 🔥`;
         }
 
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
@@ -1021,10 +1019,28 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                     'ששמו', 'בשם', 'קוראים', 'מי', 'כל', 'כמו', 'לפי', 'רק', 'אבל', 'כי', 'כדי', 'לא'
                 ];
 
+                const aliasMap: Record<string, string> = {
+                    'אסנייה': 'סאנייה',
+                    'אסניה': 'סאנייה',
+                    'סניה': 'סאנייה',
+                    'סאניה': 'סאנייה',
+                    'אמאדו': 'סאנייה',
+                    'בןדוד': 'שי בן דוד',
+                    'בנדוד': 'שי בן דוד',
+                    'קימבודי': 'קמבודי',
+                    'לייבו': 'ליבוביץ'
+                };
+
                 const smartNorm = (s: string) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '').replace(/יי/g, 'י').replace(/וו/g, 'ו');
                 const stripPrefix = (w: string) => (w.length >= 4 ? w.replace(/^[בלמכשו]/, '') : w);
                 const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w)).map(w => stripPrefix(w)).filter(w => w.length >= 3);
                 
+                // Apply alias replacement
+                for (let i = 0; i < rawWords.length; i++) {
+                    const w = rawWords[i];
+                    if (aliasMap[w]) rawWords[i] = aliasMap[w];
+                }
+
                 let matchedPlayer: any = null;
                 let matchedDocId: string | null = null;
                 let matchedUserData: any = null;

@@ -565,9 +565,9 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             return best || { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
         }
         // 🧠 AI League Memory & Witty Sports Commentator Engine 🧠
-        const isAiQuery = p.includes('לוזון') || p.includes('בוט') || p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב') || p.includes('בינגו') || p.includes('אופטימלי');
+        const isStructuredAiQuery = p.includes('מי מוביל') || p.includes('טבלה') || p.includes('תחזית') || p.includes('ניתוח') || p.includes('מי הכי טוב') || p.includes('בינגו') || p.includes('אופטימלי');
         const isControlCmd = p.includes('סורק') || p.includes('מאשר') || p.includes('אישור') || p.includes('דחה') || p.includes('ביטול');
-        if (isAiQuery && !isControlCmd) {
+        if (isStructuredAiQuery && !isControlCmd) {
             const [settingsSnap, _fantasyFixturesSnap, usersSnap, fanProfilesSnap, realFixturesSnap] = await Promise.all([
                 db.doc('leagueData/settings').get(),
                 db.doc('leagueData/fixtures').get(),
@@ -679,7 +679,6 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                 msg += `💬 *לוזון AI:* בידקו את הרכב הבינגו שלכם באפליקציה! 🚀`;
                 return msg;
             }
-            return `⚽ *שלום ${managerName}! לוזון AI בוט לשירותך!* 🤖\nאני עוקב אחרי כל הנתונים, ההרכבים והניקוד בזירה בזמן אמת.\nרשום בקבוצה: *"לוזון טבלה"*, *"לוזון בינגו"*, *"לוזון תחזית"* או *"לוזון מי מוביל"* ותקבל ניתוח מקצועי ושנון! 🔥`;
         }
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
         const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1', 'לוזון מאשר', 'לוזון אישור'];
