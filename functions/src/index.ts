@@ -1044,8 +1044,8 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                 let matchedPlayer: any = null;
                 let matchedDocId: string | null = null;
                 let matchedUserData: any = null;
-                let bestDist = 999;
 
+                // 🟢 PASS 1: Exact Substring / Alias Match (100% Priority) 🟢
                 for (const d of usersSnap.docs) {
                     const u = d.data();
                     const squad = u.squad || [];
@@ -1056,15 +1056,32 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                             const wNorm = smartNorm(w);
                             if (wNorm.length >= 3 && plNameNorm.length >= 3) {
                                 if (plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm)) {
-                                    if (bestDist > 0) {
-                                        bestDist = 0;
-                                        matchedPlayer = pl;
-                                        matchedDocId = d.id;
-                                        matchedUserData = u;
-                                    }
-                                } else {
+                                    matchedPlayer = pl;
+                                    matchedDocId = d.id;
+                                    matchedUserData = u;
+                                    break;
+                                }
+                            }
+                        }
+                        if (matchedPlayer) break;
+                    }
+                    if (matchedPlayer) break;
+                }
+
+                // 🟡 PASS 2: Fuzzy Levenshtein Match (ONLY if Pass 1 found no exact match) 🟡
+                if (!matchedPlayer) {
+                    let bestDist = 999;
+                    for (const d of usersSnap.docs) {
+                        const u = d.data();
+                        const squad = u.squad || [];
+
+                        for (const pl of squad) {
+                            const plNameNorm = smartNorm(pl.name);
+                            for (const w of rawWords) {
+                                const wNorm = smartNorm(w);
+                                if (wNorm.length >= 3 && plNameNorm.length >= 3) {
                                     const dist = levenshtein(plNameNorm, wNorm);
-                                    const maxAllowedDist = wNorm.length >= 5 ? 3 : 1;
+                                    const maxAllowedDist = wNorm.length >= 5 ? 2 : 1;
                                     if (dist <= maxAllowedDist && dist < bestDist) {
                                         bestDist = dist;
                                         matchedPlayer = pl;
