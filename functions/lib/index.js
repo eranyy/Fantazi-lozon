@@ -1107,6 +1107,26 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                                 published_lineup: updatedLineup
                             }, { merge: true });
                             console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId}`);
+                            // Sync verified scoring to real_league_players_scoring
+                            const playerNormKey = norm(matchedPlayer.name);
+                            const realPlayerRef = db.collection('real_league_players_scoring').doc(playerNormKey);
+                            const realPlayerSnap = await realPlayerRef.get();
+                            const currentRealData = realPlayerSnap.exists ? realPlayerSnap.data() || {} : {};
+                            await realPlayerRef.set({
+                                id: matchedPlayer.id || playerNormKey,
+                                name: matchedPlayer.name,
+                                realTeam: matchedPlayer.realTeam || matchedPlayer.team || 'ליגת WINNER',
+                                position: matchedPlayer.position || matchedPlayer.pos || 'MID',
+                                points: Math.max(0, (Number(currentRealData.points) || 0) + ptsAdd),
+                                goals: Math.max(0, (Number(currentRealData.goals) || 0) + (isGoal ? (isCancel ? -1 : 1) : 0)),
+                                assists: Math.max(0, (Number(currentRealData.assists) || 0) + (isAssist ? (isCancel ? -1 : 1) : 0)),
+                                yellowCards: Math.max(0, (Number(currentRealData.yellowCards) || 0) + (isYellow ? (isCancel ? -1 : 1) : 0)),
+                                redCards: Math.max(0, (Number(currentRealData.redCards) || 0) + (isRed ? (isCancel ? -1 : 1) : 0)),
+                                isDrafted: true,
+                                ownerTeam: u.teamName || u.name,
+                                ownerManager: u.manager || u.assistantName || '',
+                                updatedAt: new Date().toISOString()
+                            }, { merge: true });
                         }
                     }
                     const eventType = isCancel ? '🔄❌ *ביטול אירוע בזירה (VAR / שגיאה)*' : isGoal ? '⚽🔥 *שעררר!*' : isAssist ? '🎯 *בישוללל!*' : isYellow ? '🟨 *כרטיס צהוב!*' : isRed ? '🟥 *כרטיס אדום!*' : isPenWon ? '🎯 *פנדל נסחט / יצר פנדל!*' : isPenConceded ? '⚠️ *גרם לפנדל!*' : isPenSaved ? '🧤 *עצירת פנדל ענקית!*' : isPenMissed ? '❌ *החמצת פנדל!*' : isOwnGoal ? '🤦 *שער עצמי!*' : '⚽ *אירוע לייב!*';
