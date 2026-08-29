@@ -548,12 +548,25 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
   useEffect(() => {
     if (editingPlayer) {
-      setStats(editingPlayer.player.stats || {
-        started: false, played60: false, notInSquad: false, notPlayedIn16: false, won: false, 
-        goals: 0, assists: 0, cleanSheet: false, conceded: 0, 
-        yellow: false, secondYellow: false, red: false, 
-        penaltyWon: 0, penaltyMissed: 0, penaltySaved: 0, 
-        ownGoals: 0, assistOwnGoal: 0 
+      const st = editingPlayer.player.stats || {};
+      setStats({
+        started: Boolean(st.started),
+        played60: Boolean(st.played60),
+        notInSquad: Boolean(st.notInSquad),
+        notPlayedIn16: Boolean(st.notPlayedIn16),
+        won: Boolean(st.won), 
+        goals: Number(st.goals) || 0,
+        assists: Number(st.assists) || 0,
+        cleanSheet: Boolean(st.cleanSheet),
+        conceded: Number(st.conceded) || 0, 
+        yellow: Boolean(st.yellow),
+        secondYellow: Boolean(st.secondYellow),
+        red: Boolean(st.red), 
+        penaltyWon: Number(st.penaltyWon) || 0,
+        penaltyMissed: Number(st.penaltyMissed) || 0,
+        penaltySaved: Number(st.penaltySaved) || 0, 
+        ownGoals: Number(st.ownGoals) || 0,
+        assistOwnGoal: Number(st.assistOwnGoal) || 0 
       });
     }
   }, [editingPlayer]);
@@ -1491,19 +1504,22 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                   { id: 'penaltyMissed', label: 'החמצת פנדל', icon: '⚠️', color: 'text-orange-400' },
                   { id: 'penaltySaved', label: 'עצירת פנדל', icon: '🧤', color: 'text-yellow-400' },
                   { id: 'ownGoals', label: 'גול עצמי', icon: '🤦', color: 'text-red-600' }
-                ].map(item => (
-                  <div key={item.id} className="flex items-center justify-between bg-slate-800/40 p-3 rounded-2xl border border-transparent hover:border-slate-700 transition-colors">
-                    <div className="flex items-center gap-4 pl-2">
-                      <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-xl shadow-inner border border-slate-800">{item.icon}</div>
-                      <span className={`text-sm font-black ${item.color}`}>{item.label}</span>
+                ].map(item => {
+                  const currentVal = Number(stats[item.id as keyof typeof stats]) || 0;
+                  return (
+                    <div key={item.id} className="flex items-center justify-between bg-slate-800/40 p-3 rounded-2xl border border-transparent hover:border-slate-700 transition-colors">
+                      <div className="flex items-center gap-4 pl-2">
+                        <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-xl shadow-inner border border-slate-800">{item.icon}</div>
+                        <span className={`text-sm font-black ${item.color}`}>{item.label}</span>
+                      </div>
+                      <div className="flex items-center gap-3 pr-2">
+                        <button onClick={() => updateStat(item.id, Math.max(0, currentVal - 1))} className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-xl font-black text-white transition-colors active:scale-90">-</button>
+                        <span className="text-xl font-black text-white w-8 text-center tabular-nums">{currentVal}</span>
+                        <button onClick={() => updateStat(item.id, currentVal + 1)} className="w-10 h-10 rounded-xl bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-xl font-black text-white transition-colors active:scale-90">+</button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 pr-2">
-                      <button onClick={() => updateStat(item.id, Math.max(0, stats[item.id as keyof typeof stats] as number - 1))} className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-xl font-black text-white transition-colors active:scale-90">-</button>
-                      <span className="text-xl font-black text-white w-8 text-center tabular-nums">{stats[item.id as keyof typeof stats]}</span>
-                      <button onClick={() => updateStat(item.id, (stats[item.id as keyof typeof stats] as number) + 1)} className="w-10 h-10 rounded-xl bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-xl font-black text-white transition-colors active:scale-90">+</button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => updateStat('yellow', !stats.yellow)} className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all active:scale-95 ${stats.yellow ? 'bg-yellow-500/10 border-yellow-500/50 text-yellow-400' : 'bg-slate-800/30 border-transparent text-slate-500'}`}>
