@@ -1572,7 +1572,20 @@ export const whatsappWebhook = onRequest(
                 const body = req.body;
                 console.log('Incoming WhatsApp Webhook Body:', JSON.stringify(body));
 
-                // A. Green API Payload Handler (Group & Private Chats)
+                // A1. Green API Outgoing Message Event Handler (Store ID for delete command)
+                if (body?.typeWebhook === 'outgoingAPIMessageReceived' || body?.typeWebhook === 'outgoingMessageReceived') {
+                    if (body?.idMessage) {
+                        await db.collection('whatsapp_bot_sent_messages').add({
+                            idMessage: body.idMessage,
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        console.log(`[GreenAPI Outgoing] Tracked bot message ID: ${body.idMessage}`);
+                    }
+                    res.status(200).json({ status: 'tracked_outgoing' });
+                    return;
+                }
+
+                // A2. Green API Incoming Payload Handler (Group & Private Chats)
                 if (body?.typeWebhook === 'incomingMessageReceived' || body?.messageData) {
                     const chatId = body?.senderData?.chatId || body?.chatId;
                     const senderPhone = (body?.senderData?.sender || chatId || '').split('@')[0].split(':')[0];
@@ -1585,6 +1598,7 @@ export const whatsappWebhook = onRequest(
                         await db.collection('whatsapp_group_history').add({
                             chatId: chatId || 'group',
                             senderPhone,
+                            idMessage: body?.idMessage || '',
                             managerName: getManagerNameByPhone(senderPhone),
                             messageText,
                             timestamp: Date.now()
@@ -1625,10 +1639,17 @@ export const whatsappWebhook = onRequest(
                         const greenId = '710722713612';
                         const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
 
-                        await axios.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+                        const sendRes = await axios.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
                             chatId: chatId,
                             message: aiReply
                         });
+
+                        if (sendRes.data?.idMessage) {
+                            await db.collection('whatsapp_bot_sent_messages').add({
+                                idMessage: sendRes.data.idMessage,
+                                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
 
                         console.log(`Green API reply sent successfully to ${chatId}!`);
                         res.status(200).json({ status: 'success_green_api' });
@@ -2636,7 +2657,7 @@ const runLiveScraperLogic = async () => {
                         `• מקור המידע: *${source}*\n\n` +
                         `האם לאשר ולעדכן את הניקוד בזירה?`;
 
-                    await axios.post(`${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`, {
+                    const pollRes = await axios.post(`${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`, {
                         chatId: groupChatId,
                         message: pollQuestion,
                         options: [
@@ -2644,6 +2665,14 @@ const runLiveScraperLogic = async () => {
                             { optionName: `❌ דחה אירוע` }
                         ]
                     });
+
+                    if (pollRes.data?.idMessage) {
+                        await db.collection('whatsapp_bot_sent_messages').add({
+                            idMessage: pollRes.data.idMessage,
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+
                     console.log(`[LiveScraper Notification] Sent WhatsApp Poll for ${plName} to group!`);
                 } catch (waErr: any) {
                     console.error(`[LiveScraper Notification] Error sending WA poll:`, waErr?.message);
