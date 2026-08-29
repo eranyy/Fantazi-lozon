@@ -127,7 +127,20 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
       snap.docs.forEach(docSnap => {
         const data = docSnap.data();
         const normName = String(data.name || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
-        const draftInfo = draftedSet.get(normName);
+        
+        let draftInfo = draftedSet.get(normName);
+        if (!draftInfo) {
+          for (const [k, v] of draftedSet.entries()) {
+            if (k.length >= 3 && (normName.includes(k) || k.includes(normName))) {
+              draftInfo = v;
+              break;
+            }
+          }
+        }
+
+        const isDrafted = Boolean(data.isDrafted || draftInfo);
+        const ownerTeam = data.ownerTeam || draftInfo?.team;
+        const ownerManager = data.ownerManager || draftInfo?.manager;
 
         list.push({
           id: docSnap.id,
@@ -139,9 +152,9 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
           assists: Number(data.assists) || 0,
           yellowCards: Number(data.yellowCards) || 0,
           redCards: Number(data.redCards) || 0,
-          isDrafted: Boolean(draftInfo),
-          ownerTeam: draftInfo?.team,
-          ownerManager: draftInfo?.manager
+          isDrafted,
+          ownerTeam,
+          ownerManager
         });
       });
 
