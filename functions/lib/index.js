@@ -1575,11 +1575,40 @@ exports.broadcastRoundCloseToWhatsApp = (0, https_1.onCall)({ region: 'us-west1'
         catch (aiErr) {
             console.error('Error reading AI Analyst summary:', aiErr);
         }
+        // 3.5 Fetch Predictor Poll Results & Season Standings for the round
+        let predictorText = '';
+        try {
+            const pollSnap = await db.collection('whatsapp_polls')
+                .where('round', '==', round)
+                .limit(1)
+                .get();
+            const predStandingsSnap = await db.collection('leagueData').doc('predictor_standings').get();
+            const standings = predStandingsSnap.exists ? (predStandingsSnap.data()?.standings || []) : [];
+            let standingsSummary = '';
+            if (standings.length > 0) {
+                const top3 = standings.slice(0, 3).map((s, i) => `${['🥇', '🥈', '🥉'][i]} *${s.name}* (${s.points || 0} נק')`).join(' | ');
+                standingsSummary = `🏆 *מובילי טבלת הנביאים העונתית:* ${top3}`;
+            }
+            if (!pollSnap.empty) {
+                const pollData = pollSnap.docs[0].data();
+                const totalVotes = Object.keys(pollData.votes || {}).length;
+                predictorText = `\n🔮 *חכמת ההמונים VS המציאות (סקר מחזור ${round}):*\n` +
+                    `• ${totalVotes > 0 ? `${totalVotes} מנג'רים הצביעו בסקר!` : 'סקר המחזור נסגר.'}\n` +
+                    `${standingsSummary ? `${standingsSummary}\n` : ''}`;
+            }
+            else if (standingsSummary) {
+                predictorText = `\n🔮 *טבלת נביאי הליגה העונתית:*\n${standingsSummary}\n`;
+            }
+        }
+        catch (predErr) {
+            console.error('Error fetching predictor text:', predErr);
+        }
         // 4. Construct Final WhatsApp Message
         const fullMessage = `⚽ *פנטזי לוזון 14 - סיכום מחזור ${round}* ⚽\n\n` +
             `${standingsText}` +
             `${nextMatchesText}` +
-            `${analystText}\n` +
+            `${analystText}` +
+            `${predictorText}\n` +
             `📱 לצפייה בניקוד המלא והרכבי המחזור הבא:\nhttps://fantasy-luzon.web.app`;
         // 5. Send via Green API to Group Chat (120363412136780106@g.us)
         const groupChatId = '120363412136780106@g.us';
