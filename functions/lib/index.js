@@ -2347,25 +2347,28 @@ const runLiveScraperLogic = async () => {
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 });
                 createdEvents.push(`${source} ${eventType}: ${plName}`);
-                // 🟢 Send WhatsApp Live Notification to Group Chat 🟢
+                // 🟢 Send WhatsApp Live Poll to Group Chat 🟢
                 try {
                     const groupChatId = '120363412136780106@g.us';
                     const greenHost = 'https://7107.api.greenapi.com';
                     const greenId = '710722713612';
                     const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
-                    const eventMsg = `🤖 *סוכן הלייב זיהה אירוע חדש במגרשים!* 🏟️⚽\n\n` +
+                    const pollQuestion = `🤖 *סוכן הלייב זיהה אירוע במגרשים!* 🏟️⚽\n\n` +
                         `• ${desc}\n` +
                         `• מקור המידע: *${source}*\n\n` +
-                        `⚡ *האירוע נרשם במערכת ומוכן לאישור/עדכון בזירה!* 📱\n` +
-                        `https://fantasy-luzon.web.app`;
-                    await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+                        `האם לאשר ולעדכן את הניקוד בזירה?`;
+                    await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`, {
                         chatId: groupChatId,
-                        message: eventMsg
+                        message: pollQuestion,
+                        options: [
+                            { optionName: `✅ מאשר לעדכן (${plName})` },
+                            { optionName: `❌ דחה אירוע` }
+                        ]
                     });
-                    console.log(`[LiveScraper Notification] Broadcasted new pending event for ${plName} to WhatsApp group!`);
+                    console.log(`[LiveScraper Notification] Sent WhatsApp Poll for ${plName} to group!`);
                 }
                 catch (waErr) {
-                    console.error(`[LiveScraper Notification] Error sending WA message:`, waErr?.message);
+                    console.error(`[LiveScraper Notification] Error sending WA poll:`, waErr?.message);
                 }
                 return true;
             }
