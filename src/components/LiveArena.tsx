@@ -1083,11 +1083,11 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         </div>
                       </div>
 
-                      {expandedTeamObj && applySubstitutionsToLineup(expandedTeamObj).length === 0 && (
+                      {expandedTeamObj && applySubstitutionsToLineup(expandedTeamObj).length < 11 && (
                         <div className="mb-4 bg-slate-900/90 border border-slate-700 p-6 rounded-2xl flex flex-col items-center justify-center text-center shadow-xl">
                           <div className="w-14 h-14 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-2xl">📋</div>
-                          <h4 className="text-base font-black text-white mb-1">טרם הוגש הרכב למחזור {selectedRound}</h4>
-                          <p className="text-xs font-bold text-slate-400">המנג'ר עדיין לא פרסם את הרכב הקבוצה למחזור זה. השדה נשאר נקי עד לשמירת ההרכב.</p>
+                          <h4 className="text-base font-black text-white mb-1">המגרש ריק - טרם הוגש הרכב למחזור {selectedRound}</h4>
+                          <p className="text-xs font-bold text-slate-400">המנג'ר עדיין לא פרסם את הרכב הקבוצה למחזור זה. השדה נשאר נקי וריק לחלוטין עד לשמירת הרכב מלא.</p>
                         </div>
                       )}
 
@@ -1105,7 +1105,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                         <div className="absolute top-1/2 w-full border-t-[2px] border-white/30 pointer-events-none"></div>
 
                         <div className="flex flex-col justify-around h-full gap-8 relative z-10 py-4">
-                          {['GK', 'DEF', 'MID', 'FWD'].map(pos => {
+                          {applySubstitutionsToLineup(expandedTeamObj).length < 11 ? (
+                            <div className="flex flex-col items-center justify-center h-full my-auto text-slate-400 gap-2 py-20">
+                              <span className="text-4xl animate-pulse">🏟️</span>
+                              <span className="font-black text-sm text-slate-300">המגרש ריק - טרם הוגש הרכב למחזור {selectedRound}</span>
+                            </div>
+                          ) : (
+                            ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
                             const currentLineup = applySubstitutionsToLineup(expandedTeamObj);
                             const posPlayers = currentLineup.filter((p: any) => isPosMatch(p.position, pos));
                             if (posPlayers.length === 0) return <div key={pos} className="min-h-[50px]"></div>;
@@ -1151,7 +1157,8 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                                 })}
                               </div>
                             );
-                          })}
+                          })
+                        )}
                         </div>
                       </div>
 
