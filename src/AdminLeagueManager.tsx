@@ -71,6 +71,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
   const [historySeasons, setHistorySeasons] = useState<any[]>(DEFAULT_SEASONS);
   const [topPlayers, setTopPlayers] = useState<any[]>([]); 
   const [allPlayersDB, setAllPlayersDB] = useState<any[]>([]); 
+  const [kingsFilter, setKingsFilter] = useState<'points' | 'goals' | 'assists'>('points');
 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
@@ -105,17 +106,63 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
     });
 
     const unsubTopPlayers = onSnapshot(doc(db, "leagueData", "top_players"), (docSnap) => {
-        if (docSnap.exists()) {
-            setTopPlayers(docSnap.data().players || []);
+        if (docSnap.exists() && Array.isArray(docSnap.data()?.players) && docSnap.data().players.length > 0) {
+            setTopPlayers(docSnap.data().players);
         }
+    });
+
+    const unsubScoring = onSnapshot(collection(db, "real_league_players_scoring"), (snap) => {
+        const list: any[] = [];
+        snap.docs.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data.name) {
+                list.push({
+                    name: data.name,
+                    team: data.realTeam || data.team || '',
+                    fantasyTeamName: data.ownerTeam || (data.isDrafted ? 'בסגל מנג\'ר' : ''),
+                    position: data.position || 'MID',
+                    points: Number(data.points) || 0,
+                    goals: Number(data.goals) || 0,
+                    assists: Number(data.assists) || 0
+                });
+            }
+        });
+        
+        // Also merge squad players from active fantasy teams
+        teams.forEach(team => {
+            if (team.teamName && !team.teamName.toUpperCase().includes('ADMIN')) {
+                const squad = team.squad || team.players || [];
+                squad.forEach((p: any) => {
+                    if (p && p.name) {
+                        const existing = list.find(l => cleanStr(l.name) === cleanStr(p.name));
+                        if (existing) {
+                            if (!existing.fantasyTeamName) existing.fantasyTeamName = team.teamName;
+                        } else {
+                            list.push({
+                                name: p.name,
+                                team: p.realTeam || p.team || '',
+                                fantasyTeamName: team.teamName,
+                                position: p.position || 'MID',
+                                points: Number(p.points) || 0,
+                                goals: Number(p.goals) || 0,
+                                assists: Number(p.assists) || 0
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+        list.sort((a, b) => b.points - a.points || b.goals - a.goals);
+        setTopPlayers(list);
     });
 
     const unsubPlayersDB = onSnapshot(collection(db, "players"), (snapshot) => {
         setAllPlayersDB(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubPlayersDB(); };
-  }, []);
+    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubScoring(); unsubPlayersDB(); };
+  }, [teams]);
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'success') => { 
       setToast({msg, type}); 
@@ -289,20 +336,46 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
 
       {activeSubTab === 'top_players' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 pt-4">
-          <div className="text-center mb-8 md:mb-12">
+          <div className="text-center mb-6 md:mb-10">
             <h2 className="text-4xl md:text-6xl font-black text-white italic tracking-tight drop-shadow-lg flex items-center justify-center gap-3">
               Fantasy Kings <Star className="w-10 h-10 md:w-12 md:h-12 text-yellow-400 fill-current drop-shadow-[0_0_15px_rgba(250,204,21,0.5)]" />
             </h2>
-            <p className="text-emerald-400 font-black uppercase tracking-[0.2em] md:tracking-widest text-xs md:text-sm mt-3">השחקנים הלוהטים של העונה</p>
+            <p className="text-emerald-400 font-black uppercase tracking-[0.2em] md:tracking-widest text-xs md:text-sm mt-3">דירוג השחקנים הלוהטים והמאומתים של העונה (סנכרון בלייב)</p>
+          </div>
+
+          {/* 🟢 מסנני מלכים 🟢 */}
+          <div className="flex items-center justify-center gap-2 mb-6 max-w-md mx-auto px-2">
+            <button
+              onClick={() => setKingsFilter('points')}
+              className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${kingsFilter === 'points' ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-black border border-yellow-400/50' : 'bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white'}`}
+            >
+              👑 מלך הניקוד
+            </button>
+            <button
+              onClick={() => setKingsFilter('goals')}
+              className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${kingsFilter === 'goals' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black border border-emerald-400/50' : 'bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white'}`}
+            >
+              ⚽ מלך השערים
+            </button>
+            <button
+              onClick={() => setKingsFilter('assists')}
+              className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${kingsFilter === 'assists' ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-black border border-blue-400/50' : 'bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white'}`}
+            >
+              🎯 מלך הבישולים
+            </button>
           </div>
 
           <div className="max-w-4xl mx-auto grid grid-cols-1 gap-3 px-2">
             {topPlayers.length === 0 ? (
                 <div className="text-center bg-slate-900/50 rounded-3xl p-10 border border-slate-800">
-                    <p className="text-slate-400 font-bold">הנתונים טרם סונכרנו.<br/>(מנהל המערכת צריך להזין את קובץ הסיכום בהגדרות).</p>
+                    <p className="text-slate-400 font-bold">הנתונים טרם סונכרנו מתחילת המשחקים.</p>
                 </div>
             ) : (
-                topPlayers.map((player, idx) => {
+                [...topPlayers].sort((a, b) => {
+                  if (kingsFilter === 'goals') return (b.goals || 0) - (a.goals || 0) || (b.points || 0) - (a.points || 0);
+                  if (kingsFilter === 'assists') return (b.assists || 0) - (a.assists || 0) || (b.points || 0) - (a.points || 0);
+                  return (b.points || 0) - (a.points || 0) || (b.goals || 0) - (a.goals || 0);
+                }).map((player, idx) => {
                   const isTop1 = idx === 0;
                   const isTop2 = idx === 1;
                   const isTop3 = idx === 2;
