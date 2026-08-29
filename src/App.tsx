@@ -11,13 +11,14 @@ import LineupManager from './components/LineupManager';
 import LoginScreen from './components/LoginScreen';
 import SocialFeed from './components/SocialFeed'; 
 import CupTab from './components/CupTab';
-import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell } from 'lucide-react'; // 🟢 הוספנו את Bell
+import FreeAgentsTab from './components/FreeAgentsTab';
+import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell, Search } from 'lucide-react'; // 🟢 הוספנו את Bell ו-Search
 import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion, writeBatch } from 'firebase/firestore'; 
 import { getToken, onMessage } from 'firebase/messaging'; 
 
 const App: React.FC = () => {
   const [loggedInUser, setLoggedInUser] = useState<User | null>(() => authService.getSession());
-  const [activeTab, setActiveTab] = useState<'home' | 'live' | 'lineup' | 'table' | 'fixtures' | 'settings' | 'cup'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'live' | 'lineup' | 'table' | 'fixtures' | 'settings' | 'cup' | 'free_agents'>('home');
   const [teams, setTeams] = useState<Team[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   
@@ -338,6 +339,7 @@ const App: React.FC = () => {
       {id: 'home', icon: <Home className="w-6 h-6" />, label: 'ראשי'},
       {id: 'lineup', icon: <Users className="w-6 h-6" />, label: 'הרכב'},
       {id: 'live', icon: <Zap className="w-6 h-6" />, label: 'זירה'}, 
+      {id: 'free_agents', icon: <Search className="w-6 h-6" />, label: 'חופשיים'}, 
       {id: 'table', icon: <BarChart3 className="w-6 h-6" />, label: 'טבלה'}, 
       {id: 'fixtures', icon: <Calendar className="w-6 h-6" />, label: 'משחקים'},
       {id: 'cup', icon: <Trophy className="w-6 h-6" />, label: 'גביע'}, 
@@ -430,6 +432,7 @@ const App: React.FC = () => {
         {activeTab === 'table' && <div className="max-w-4xl mx-auto"><AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" /></div>}
         {activeTab === 'settings' && <AdminSettings onClose={() => setActiveTab('home')} isAdmin={isEran} />}
         {activeTab === 'cup' && <CupTab />}
+        {activeTab === 'free_agents' && <FreeAgentsTab users={teams} />}
       </main>
 
       {/* 🟢 התפריט התחתון המעודכן לטובת המובייל 🟢 */}
