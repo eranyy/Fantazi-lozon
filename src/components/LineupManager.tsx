@@ -321,15 +321,19 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                 benchPlayers = safeSquad.filter(p => !p.isStarting);
             }
         } else {
-            if (team.lineupsByRound && team.lineupsByRound[currentRound] && Array.isArray(team.lineupsByRound[currentRound].lineup) && team.lineupsByRound[currentRound].lineup.length > 0) {
-              startingPlayers = team.lineupsByRound[currentRound].lineup.map((p: any) => ({ ...p, isStarting: true }));
-              benchPlayers = (team.lineupsByRound[currentRound].subsOut || []).map((p: any) => ({ ...p, isStarting: false }));
-            } else if (currentRound === 1 && (team.published_lineup?.length || team.lineup?.length)) {
-              startingPlayers = (team.published_lineup || team.lineup || []).map((p: any) => ({ ...p, isStarting: true }));
-              benchPlayers = (team.published_subs_out || []).map((p: any) => ({ ...p, isStarting: false }));
+            const savedRoundLineup = team.lineupsByRound?.[currentRound]?.lineup;
+            if (Array.isArray(savedRoundLineup) && savedRoundLineup.length === 11) {
+              startingPlayers = savedRoundLineup.map((p: any) => ({ ...p, isStarting: true }));
+              benchPlayers = (team.lineupsByRound?.[currentRound]?.subsOut || []).map((p: any) => ({ ...p, isStarting: false }));
+            } else if (team.published_lineup && team.published_lineup.length === 11) {
+              startingPlayers = team.published_lineup.map((p: any) => ({ ...p, isStarting: true }));
+              const startingIds = new Set(startingPlayers.map(p => p.id));
+              benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
             } else {
-              startingPlayers = [];
-              benchPlayers = safeSquad.map((p: any) => ({ ...p, isStarting: false }));
+              startingPlayers = safeSquad.filter(p => p.isStarting === true);
+              if (startingPlayers.length < 11) startingPlayers = safeSquad.slice(0, 11).map(p => ({ ...p, isStarting: true }));
+              const startingIds = new Set(startingPlayers.map(p => p.id));
+              benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
             }
         }
 
