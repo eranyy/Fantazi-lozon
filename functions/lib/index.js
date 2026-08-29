@@ -924,7 +924,8 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     'על', 'מה', 'עם', 'אם', 'גם', 'הוא', 'היא', 'שזה', 'שהוא', 'שהיא', 'שלו', 'שלה',
                     'ששמו', 'בשם', 'קוראים', 'מי', 'כל', 'כמו', 'לפי', 'רק', 'אבל', 'כי', 'כדי', 'לא'
                 ];
-                const stripPrefix = (w) => w.replace(/^[לבשמכ]/, '');
+                const smartNorm = (s) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '').replace(/יי/g, 'י').replace(/וו/g, 'ו');
+                const stripPrefix = (w) => (w.length >= 4 ? w.replace(/^[בלמכשו]/, '') : w);
                 const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w)).map(w => stripPrefix(w)).filter(w => w.length >= 3);
                 let matchedPlayer = null;
                 let matchedDocId = null;
@@ -934,9 +935,9 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     const u = d.data();
                     const squad = u.squad || [];
                     for (const pl of squad) {
-                        const plNameNorm = norm(pl.name);
+                        const plNameNorm = smartNorm(pl.name);
                         for (const w of rawWords) {
-                            const wNorm = norm(w);
+                            const wNorm = smartNorm(w);
                             if (wNorm.length >= 3 && plNameNorm.length >= 3) {
                                 if (plNameNorm.includes(wNorm) || wNorm.includes(plNameNorm)) {
                                     if (bestDist > 0) {
@@ -1337,8 +1338,16 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
             return `🔮 *טבלת נביאי הליגה (עונה 14):*\n\nהסקרים למחזור 1 יצאו לדרך! תצביעו בסקרים בקבוצה והניקוד המצטבר יעודכן כאן בסיום המחזור! 🏆`;
         }
         const cleanPrompt = userPrompt.replace(/^(לוזון|היי לוזון|שלום לוזון|אהלן לוזון|luzon|hi luzon|!לוזון|לוזון:)/i, '').trim();
-        return `⚽ *פנטזי לוזון 14:*
-אהלן ${managerName}! ⚽ שמעתי אותך לגבי "${cleanPrompt || userPrompt}"! העדכונים נרשמים בזירה! 🏆`;
+        if (p.includes('אפס') || p.includes('למה אני') || p.includes('גרוע') || p.includes('חלש')) {
+            return `⚽ *לוזון Bot:*
+${managerName} אחי, כולנו קצת אפסים לפעמים... 😉 אבל העונה עוד ארוכה! תעמיד הרכב אש למחזור 2 ותראה לכולם מאיפה משתין הדג! ⚽🔥`;
+        }
+        if (p.includes('לא מרגיש טוב') || p.includes('חולה') || p.includes('קשה')) {
+            return `⚽ *לוזון Bot:*
+אהלן ${managerName}! 💚 אל תדאג, ניצחון במחזור 2 או ניקוד גבוה בזירה זה התרופה הכי טובה שיש! תרגיש טוב 🏆`;
+        }
+        return `⚽ *לוזון Bot:*
+אהלן ${managerName}! ⚽ שמעתי אותך לגבי "${cleanPrompt || userPrompt}"! הכל מתועד ומתעדכן בזירה בלייב! תן בראש! 🏆🔥`;
     }
 };
 // 🟢 WhatsApp AI Webhook Endpoint (Meta WhatsApp Cloud API / Twilio) 🟢
