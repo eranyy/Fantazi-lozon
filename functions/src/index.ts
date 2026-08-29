@@ -561,7 +561,7 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
         }
 
         function calculateOptimalLineupServer(squad: any[]) {
-            if (!Array.isArray(squad) || squad.length === 0) return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: [] };
+            if (!Array.isArray(squad) || squad.length === 0) return { optimalPoints: 0, formation: '4-4-2', lineup: [] };
 
             const getPos = (pStr: string) => {
                 const p = String(pStr || '').toUpperCase().trim();
@@ -589,7 +589,7 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
             gks.sort(sortByPts); defs.sort(sortByPts); mids.sort(sortByPts); fwds.sort(sortByPts);
 
             const bestGK = gks[0] || null;
-            if (!bestGK) return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
+            if (!bestGK) return { optimalPoints: 0, formation: '4-4-2', lineup: squad.slice(0, 11) };
 
             const FORMATIONS = [
                 { d: 5, m: 3, f: 2, name: '5-3-2' },
@@ -607,20 +607,12 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                 if (defs.length < form.d || mids.length < form.m || fwds.length < form.f) continue;
                 const selected11 = [bestGK, ...defs.slice(0, form.d), ...mids.slice(0, form.m), ...fwds.slice(0, form.f)];
 
-                let capt: any = null;
-                let maxP = -999;
-                selected11.forEach(pl => {
-                    const pts = Number(pl.points) || 0;
-                    if (pts > maxP) { maxP = pts; capt = pl; }
-                });
-
-                const totalPts = selected11.reduce((sum, pl) => sum + (pl === capt ? (Number(pl.points) || 0) * 2 : (Number(pl.points) || 0)), 0);
+                const totalPts = selected11.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
 
                 if (!best || totalPts > best.optimalPoints) {
                     best = {
                         optimalPoints: totalPts,
                         formation: form.name,
-                        captain: capt,
                         lineup: selected11
                     };
                 }

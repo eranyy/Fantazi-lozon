@@ -5,7 +5,6 @@ export interface OptimalLineupResult {
   optimalBench: Player[];
   optimalFormation: string; // e.g. '4-3-3'
   optimalPoints: number;
-  captain: Player | null;
   actualPoints: number;
   potentialGain: number; // optimalPoints - actualPoints
 }
@@ -36,27 +35,20 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
       optimalBench: [],
       optimalFormation: '4-4-2',
       optimalPoints: 0,
-      captain: null,
       actualPoints: 0,
       potentialGain: 0
     };
   }
 
-  // Calculate actual points if actualLineup provided
+  // Calculate actual points if actualLineup provided (NO captain multiplier in Fantasy Luzon 14)
   let actualPoints = 0;
   if (Array.isArray(actualLineup) && actualLineup.length > 0) {
-    actualPoints = actualLineup.reduce((sum, pl) => {
-      const pts = Number(pl.points) || 0;
-      const isCapt = (pl as any).isCaptain || (pl as any).captain;
-      return sum + (isCapt ? pts * 2 : pts);
-    }, 0);
+    actualPoints = actualLineup.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
   } else {
     // If no actualLineup given, calculate from starting players in squad
     actualPoints = squad.reduce((sum, pl) => {
       if (pl.isStarting) {
-        const pts = Number(pl.points) || 0;
-        const isCapt = (pl as any).isCaptain || (pl as any).captain;
-        return sum + (isCapt ? pts * 2 : pts);
+        return sum + (Number(pl.points) || 0);
       }
       return sum;
     }, 0);
@@ -88,19 +80,16 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
     bench: Player[];
     formation: string;
     totalPoints: number;
-    captain: Player | null;
   } | null = null;
 
   // Best GK is top GK
   const bestGK = gks[0] || null;
   if (!bestGK) {
-    // Fallback if no GK found
     return {
       optimalLineup: squad.slice(0, 11),
       optimalBench: squad.slice(11),
       optimalFormation: '4-4-2',
       optimalPoints: actualPoints,
-      captain: null,
       actualPoints,
       potentialGain: 0
     };
@@ -109,7 +98,7 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   // Test all 7 legal formations
   for (const form of ALLOWED_FORMATIONS) {
     if (defs.length < form.def || mids.length < form.mid || fwds.length < form.fwd) {
-      continue; // Squad doesn't have enough players for this formation
+      continue;
     }
 
     const selectedDefs = defs.slice(0, form.def);
@@ -118,25 +107,10 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
 
     const starting11 = [bestGK, ...selectedDefs, ...selectedMids, ...selectedFwds];
 
-    // Find captain in starting 11 (highest points player gets doubled)
-    let capt: Player | null = null;
-    let maxPts = -999;
-    starting11.forEach(pl => {
-      const pts = Number(pl.points) || 0;
-      if (pts > maxPts) {
-        maxPts = pts;
-        capt = pl;
-      }
-    });
-
-    // Calculate total points for starting 11 (with doubled captain)
-    const totalPts = starting11.reduce((sum, pl) => {
-      const pts = Number(pl.points) || 0;
-      return sum + (pl === capt ? pts * 2 : pts);
-    }, 0);
+    // Total points for starting 11 (1x points each, no captain multiplier)
+    const totalPts = starting11.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
 
     if (!bestResult || totalPts > bestResult.totalPoints) {
-      // Find bench players (all remaining players in squad not selected in starting 11)
       const startingIds = new Set(starting11.map(p => p.id || p.name));
       const bench = squad.filter(p => !startingIds.has(p.id || p.name));
 
@@ -144,8 +118,7 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
         lineup: starting11,
         bench,
         formation: form.name,
-        totalPoints: totalPts,
-        captain: capt
+        totalPoints: totalPts
       };
     }
   }
@@ -156,7 +129,6 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
       optimalBench: squad.slice(11),
       optimalFormation: '4-4-2',
       optimalPoints: actualPoints,
-      captain: null,
       actualPoints,
       potentialGain: 0
     };
@@ -167,7 +139,6 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
     optimalBench: bestResult.bench,
     optimalFormation: bestResult.formation,
     optimalPoints: bestResult.totalPoints,
-    captain: bestResult.captain,
     actualPoints,
     potentialGain: Math.max(0, bestResult.totalPoints - actualPoints)
   };

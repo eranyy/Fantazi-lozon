@@ -503,7 +503,7 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         }
         function calculateOptimalLineupServer(squad) {
             if (!Array.isArray(squad) || squad.length === 0)
-                return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: [] };
+                return { optimalPoints: 0, formation: '4-4-2', lineup: [] };
             const getPos = (pStr) => {
                 const p = String(pStr || '').toUpperCase().trim();
                 if (p.includes('GK') || p.includes('שוער'))
@@ -538,7 +538,7 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             fwds.sort(sortByPts);
             const bestGK = gks[0] || null;
             if (!bestGK)
-                return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
+                return { optimalPoints: 0, formation: '4-4-2', lineup: squad.slice(0, 11) };
             const FORMATIONS = [
                 { d: 5, m: 3, f: 2, name: '5-3-2' },
                 { d: 5, m: 4, f: 1, name: '5-4-1' },
@@ -553,21 +553,11 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                 if (defs.length < form.d || mids.length < form.m || fwds.length < form.f)
                     continue;
                 const selected11 = [bestGK, ...defs.slice(0, form.d), ...mids.slice(0, form.m), ...fwds.slice(0, form.f)];
-                let capt = null;
-                let maxP = -999;
-                selected11.forEach(pl => {
-                    const pts = Number(pl.points) || 0;
-                    if (pts > maxP) {
-                        maxP = pts;
-                        capt = pl;
-                    }
-                });
-                const totalPts = selected11.reduce((sum, pl) => sum + (pl === capt ? (Number(pl.points) || 0) * 2 : (Number(pl.points) || 0)), 0);
+                const totalPts = selected11.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
                 if (!best || totalPts > best.optimalPoints) {
                     best = {
                         optimalPoints: totalPts,
                         formation: form.name,
-                        captain: capt,
                         lineup: selected11
                     };
                 }

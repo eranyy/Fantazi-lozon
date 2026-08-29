@@ -3,7 +3,7 @@ admin.initializeApp({ projectId: 'fantasy-luzon' });
 const db = admin.firestore();
 
 function calculateOptimalLineupServer(squad) {
-    if (!Array.isArray(squad) || squad.length === 0) return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: [] };
+    if (!Array.isArray(squad) || squad.length === 0) return { optimalPoints: 0, formation: '4-4-2', lineup: [] };
 
     const getPos = (pStr) => {
         const p = String(pStr || '').toUpperCase().trim();
@@ -31,7 +31,7 @@ function calculateOptimalLineupServer(squad) {
     gks.sort(sortByPts); defs.sort(sortByPts); mids.sort(sortByPts); fwds.sort(sortByPts);
 
     const bestGK = gks[0] || null;
-    if (!bestGK) return { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
+    if (!bestGK) return { optimalPoints: 0, formation: '4-4-2', lineup: squad.slice(0, 11) };
 
     const FORMATIONS = [
         { d: 5, m: 3, f: 2, name: '5-3-2' },
@@ -49,30 +49,22 @@ function calculateOptimalLineupServer(squad) {
         if (defs.length < form.d || mids.length < form.m || fwds.length < form.f) continue;
         const selected11 = [bestGK, ...defs.slice(0, form.d), ...mids.slice(0, form.m), ...fwds.slice(0, form.f)];
 
-        let capt = null;
-        let maxP = -999;
-        selected11.forEach(pl => {
-            const pts = Number(pl.points) || 0;
-            if (pts > maxP) { maxP = pts; capt = pl; }
-        });
-
-        const totalPts = selected11.reduce((sum, pl) => sum + (pl === capt ? (Number(pl.points) || 0) * 2 : (Number(pl.points) || 0)), 0);
+        const totalPts = selected11.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
 
         if (!best || totalPts > best.optimalPoints) {
             best = {
                 optimalPoints: totalPts,
                 formation: form.name,
-                captain: capt,
                 lineup: selected11
             };
         }
     }
 
-    return best || { optimalPoints: 0, formation: '4-4-2', captain: null, lineup: squad.slice(0, 11) };
+    return best || { optimalPoints: 0, formation: '4-4-2', lineup: squad.slice(0, 11) };
 }
 
 async function testOptimalLineups() {
-    console.log('=== TESTING OPTIMAL (BINGO) LINEUPS FOR ALL TEAMS ===');
+    console.log('=== RE-TESTING OPTIMAL (BINGO) LINEUPS WITHOUT CAPTAIN MULTIPLIER ===');
     const usersSnap = await db.collection('users').get();
     
     usersSnap.docs.forEach(d => {
@@ -80,17 +72,12 @@ async function testOptimalLineups() {
         if (u.teamName === 'ADMIN' || u.name === 'ADMIN') return;
         const squad = u.published_lineup || u.lineup || [];
         const opt = calculateOptimalLineupServer(squad);
-        const actualPts = squad.reduce((acc, pl) => {
-            const pts = Number(pl.points) || 0;
-            const isCapt = pl.isCaptain || pl.captain;
-            return acc + (isCapt ? pts * 2 : pts);
-        }, 0);
+        const actualPts = squad.reduce((acc, pl) => acc + (Number(pl.points) || 0), 0);
         const diff = Math.max(0, opt.optimalPoints - actualPts);
 
         console.log(`\nManager: ${u.teamName} (${u.manager})`);
         console.log(`  Actual Points: ${actualPts} pts`);
         console.log(`  Optimal (Bingo) Points: ${opt.optimalPoints} pts (Formation ${opt.formation})`);
-        console.log(`  Captain: ${opt.captain ? opt.captain.name + ' (' + opt.captain.points + ' pts)' : 'None'}`);
         console.log(`  Potential Gain: +${diff} pts`);
     });
 
