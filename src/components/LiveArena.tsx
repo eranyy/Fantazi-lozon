@@ -646,24 +646,69 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       const teamSnap = await getDoc(teamRef);
       if (!teamSnap.exists()) return;
       const freshTeam = teamSnap.data();
-      const finalPoints = calculatePointsFromStats(stats, editingPlayer.player.position);
+
+      // Clean stats to ensure NO NaN values exist
+      const cleanStats = {
+        started: Boolean(stats.started),
+        played60: Boolean(stats.played60),
+        notInSquad: Boolean(stats.notInSquad),
+        notPlayedIn16: Boolean(stats.notPlayedIn16),
+        won: Boolean(stats.won),
+        goals: Number(stats.goals) || 0,
+        assists: Number(stats.assists) || 0,
+        cleanSheet: Boolean(stats.cleanSheet),
+        conceded: Number(stats.conceded) || 0,
+        yellow: Boolean(stats.yellow),
+        secondYellow: Boolean(stats.secondYellow),
+        red: Boolean(stats.red),
+        penaltyWon: Number(stats.penaltyWon) || 0,
+        penaltyMissed: Number(stats.penaltyMissed) || 0,
+        penaltySaved: Number(stats.penaltySaved) || 0,
+        ownGoals: Number(stats.ownGoals) || 0,
+        assistOwnGoal: Number(stats.assistOwnGoal) || 0
+      };
+
+      const finalPoints = calculatePointsFromStats(cleanStats, editingPlayer.player.position);
       
       const updatePlayerInList = (list: any[]) => (list || []).map((p: any) => 
-        (p.id === editingPlayer.player.id || p.name === editingPlayer.player.name) ? { ...p, points: finalPoints, stats: stats } : p
+        (p.id === editingPlayer.player.id || p.name === editingPlayer.player.name) ? { ...p, points: finalPoints, stats: cleanStats } : p
       );
       
       const updatedLineup = updatePlayerInList(freshTeam.published_lineup || []);
       const updatedSubsOut = updatePlayerInList(freshTeam.published_subs_out || []);
       const updatedSquad = updatePlayerInList(freshTeam.squad || []);
 
+      // Also update lineupsByRound[selectedRound]
+      const currentLineupsByRound = freshTeam.lineupsByRound || {};
+      const currentRData = currentLineupsByRound[selectedRound] || {};
+      const updatedRLineup = updatePlayerInList(currentRData.lineup || freshTeam.published_lineup || []);
+      const updatedRSubsOut = updatePlayerInList(currentRData.subsOut || freshTeam.published_subs_out || []);
+
+      const updatedLineupsByRound = {
+        ...currentLineupsByRound,
+        [selectedRound]: {
+          ...currentRData,
+          lineup: updatedRLineup,
+          subsOut: updatedRSubsOut
+        }
+      };
+
       const editLog = {
-          id: `var_${Date.now()}`, type: 'VAR_POINTS_UPDATE', round: currentRound, playerIn: editingPlayer.player.name, playerOut: `${finalPoints} נק'`, actionBy: loggedInUser?.name || 'מנהל', timestamp: new Date().toISOString()
+          id: `var_${Date.now()}`, type: 'VAR_POINTS_UPDATE', round: selectedRound, playerIn: editingPlayer.player.name, playerOut: `${finalPoints} נק'`, actionBy: loggedInUser?.name || 'מנהל', timestamp: new Date().toISOString()
       };
       
-      await updateDoc(teamRef, { published_lineup: updatedLineup, published_subs_out: updatedSubsOut, squad: updatedSquad, lineup: updatedLineup, players: updatedSquad, transfers: arrayUnion(editLog) });
+      await updateDoc(teamRef, {
+        published_lineup: updatedLineup,
+        published_subs_out: updatedSubsOut,
+        squad: updatedSquad,
+        lineup: updatedLineup,
+        players: updatedSquad,
+        lineupsByRound: updatedLineupsByRound,
+        transfers: arrayUnion(editLog)
+      });
       setEditingPlayer(null);
       showToast('ניקוד נשמר ודוח ה-VAR עודכן!', 'success');
-    } catch (e) { setAppAlert({title:'שגיאה', msg: 'שגיאה בעדכון נקודות', type: 'error'}); }
+    } catch (e: any) { setAppAlert({title:'שגיאה', msg: 'שגיאה בעדכון נקודות: ' + (e?.message || e), type: 'error'}); }
   };
 
   const executeCloseRound = async () => {
