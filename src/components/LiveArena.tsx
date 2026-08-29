@@ -225,18 +225,48 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
   const getRoundLineup = (team: any, rNum: number = selectedRound) => {
     if (!team) return [];
+    let baseLineup: any[] = [];
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].lineup) && team.lineupsByRound[rNum].lineup.length > 0) {
-      return team.lineupsByRound[rNum].lineup;
+      baseLineup = team.lineupsByRound[rNum].lineup;
+    } else {
+      baseLineup = team.published_lineup || team.lineup || (Array.isArray(team.squad) ? team.squad.slice(0, 11) : []);
     }
-    return team.published_lineup || team.lineup || (Array.isArray(team.squad) ? team.squad.slice(0, 11) : []);
+
+    const livePool = [...(team.published_lineup || []), ...(team.lineup || []), ...(team.squad || [])];
+    return baseLineup.map((p: any) => {
+      const liveP = livePool.find((lp: any) => lp.id === p.id || lp.name === p.name);
+      if (liveP && liveP.stats && Object.keys(liveP.stats).length > 0) {
+        return {
+          ...p,
+          points: liveP.points || p.points,
+          stats: { ...(p.stats || {}), ...liveP.stats }
+        };
+      }
+      return p;
+    });
   };
 
   const getRoundBench = (team: any, rNum: number = selectedRound) => {
     if (!team) return [];
+    let baseBench: any[] = [];
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].subsOut)) {
-      return team.lineupsByRound[rNum].subsOut;
+      baseBench = team.lineupsByRound[rNum].subsOut;
+    } else {
+      baseBench = team.published_subs_out || (Array.isArray(team.squad) ? team.squad.slice(11) : []);
     }
-    return team.published_subs_out || (Array.isArray(team.squad) ? team.squad.slice(11) : []);
+
+    const livePool = [...(team.published_lineup || []), ...(team.lineup || []), ...(team.squad || [])];
+    return baseBench.map((p: any) => {
+      const liveP = livePool.find((lp: any) => lp.id === p.id || lp.name === p.name);
+      if (liveP && liveP.stats && Object.keys(liveP.stats).length > 0) {
+        return {
+          ...p,
+          points: liveP.points || p.points,
+          stats: { ...(p.stats || {}), ...liveP.stats }
+        };
+      }
+      return p;
+    });
   };
 
   const applySubstitutionsToLineup = (team: any) => {

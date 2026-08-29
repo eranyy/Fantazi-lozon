@@ -789,6 +789,8 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
         if (eventKeywords.some(kw => p.includes(kw))) {
             try {
                 const usersSnap = await db.collection('users').get();
+                const settingsSnap = await db.doc('leagueData/settings').get();
+                const currentRound = settingsSnap.exists ? (settingsSnap.data()?.currentRound || 2) : 2;
                 // ⏱️ Check for 60 Minutes Real-Team Batch Update (e.g. לוזון 60 דקות מכבי חיפה) ⏱️
                 const isSixtyBatch = (p.includes('60') || p.includes('שישים')) && (p.includes('דק') || p.includes('דקות'));
                 let batchRealTeam = null;
@@ -1135,11 +1137,21 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                             return pl;
                         });
                         if (isInLineup) {
+                            const currentLineupsByRound = u.lineupsByRound || {};
+                            const currentR2 = currentLineupsByRound[currentRound] || {};
+                            const updatedLineupsByRound = {
+                                ...currentLineupsByRound,
+                                [currentRound]: {
+                                    ...currentR2,
+                                    lineup: updatedLineup
+                                }
+                            };
                             await db.collection('users').doc(dId).set({
                                 lineup: updatedLineup,
-                                published_lineup: updatedLineup
+                                published_lineup: updatedLineup,
+                                lineupsByRound: updatedLineupsByRound
                             }, { merge: true });
-                            console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId}`);
+                            console.log(`[WhatsApp Event] Updated ${matchedPlayer.name} (${ptsAdd > 0 ? '+' : ''}${ptsAdd} pts) in team ${dId} (including lineupsByRound[${currentRound}])`);
                             // Sync verified scoring to real_league_players_scoring
                             const playerNormKey = norm(matchedPlayer.name);
                             const realPlayerRef = db.collection('real_league_players_scoring').doc(playerNormKey);
