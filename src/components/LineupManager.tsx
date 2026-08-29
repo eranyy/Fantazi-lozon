@@ -785,8 +785,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           updateData.lastLineupUpdate = new Date().toISOString();
           if (currentRound) {
             updateData[`lineupsByRound.${currentRound}`] = {
-              lineup: activeLineup,
-              subsOut: activeBench,
+              lineup: activeLineup.map(p => ({ ...p, points: 0, stats: {} })),
+              subsOut: activeBench.map(p => ({ ...p, points: 0, stats: {} })),
               savedAt: new Date().toISOString()
             };
           }

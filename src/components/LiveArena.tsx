@@ -212,40 +212,32 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const getPlayerPointsForRound = (player: any, team: any, rNum: number) => {
     if (!player) return 0;
     
-    // Round 1 (initial/legacy round) - restore exact stats & points where we stopped
-    if (rNum === 1) {
+    const fixtureRound = fixtures.find(f => f.round === rNum);
+    const isRoundPlayed = Boolean(fixtureRound && fixtureRound.isPlayed);
+
+    // If viewing an active / unplayed round (e.g. Round 2 before matches finish)
+    if (!isRoundPlayed) {
       if (player.stats && Object.keys(player.stats).length > 0) {
         const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
         if (hasActiveStats) {
           return calculatePointsFromStats(player.stats, player.position);
         }
       }
-      return Number(player.points) || 0;
+      return 0; // Unplayed rounds start with 0 points per player
     }
 
-    // Rounds > 1
-    const fixtureRound = fixtures.find(f => f.round === rNum);
-    const isRoundPlayed = Boolean(fixtureRound && fixtureRound.isPlayed);
-
-    if (!isRoundPlayed) {
-      if (team?.lineupsByRound && team.lineupsByRound[rNum]) {
-        if (player.stats && Object.keys(player.stats).length > 0) {
-          const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
-          if (hasActiveStats) {
-            return calculatePointsFromStats(player.stats, player.position);
-          }
-        }
-      }
-      return 0;
-    }
-
+    // If viewing a completed round (historical played round)
     if (player.stats && Object.keys(player.stats).length > 0) {
       const hasActiveStats = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
       if (hasActiveStats) {
         return calculatePointsFromStats(player.stats, player.position);
       }
     }
-    return Number(player.points) || 0;
+
+    if (rNum === 1) {
+      return Number(player.points) || 0;
+    }
+    return 0;
   };
 
   const getRoundLineup = (team: any, rNum: number = selectedRound) => {
