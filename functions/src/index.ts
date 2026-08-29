@@ -752,11 +752,44 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
             }
         }
 
+        // 🧹 Command to delete recent bot messages for everyone in WhatsApp 🧹
+        const clearKeywords = ['נקה', 'תמחק', 'מחק', 'לוזון נקה', 'לוזון תמחק', 'לוזון מחק', 'ניקוי'];
+        const cleanP = p.trim();
+
+        if (clearKeywords.some(kw => cleanP === kw || cleanP.includes(kw))) {
+            const recentBotMsgsSnap = await db.collection('whatsapp_bot_sent_messages')
+                .orderBy('createdAt', 'desc')
+                .limit(30)
+                .get();
+
+            let deletedCount = 0;
+            const greenHost = 'https://7107.api.greenapi.com';
+            const greenId = '710722713612';
+            const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+            const groupChatId = '120363412136780106@g.us';
+
+            for (const doc of recentBotMsgsSnap.docs) {
+                const data = doc.data();
+                if (data.idMessage) {
+                    try {
+                        await axios.post(`${greenHost}/waInstance${greenId}/deleteMessage/${greenToken}`, {
+                            chatId: groupChatId,
+                            idMessage: data.idMessage
+                        });
+                        await doc.ref.delete();
+                        deletedCount++;
+                    } catch (err) {
+                        // ignore if already deleted
+                    }
+                }
+            }
+            return `🧹 *ניקוי הודעות בוט בוצע בהצלחה!* נמחקו ${deletedCount} הודעות בוט אחרונות לכולם בקבוצה. 👍`;
+        }
+
         // 🤖 Check for Web Scraper Pending Event Approval/Rejection in WhatsApp 🤖
         const approveKeywords = ['מאשר', 'אישור', 'מאשרת', 'מאשרים', 'מאשר 1', 'אשר', '1', 'לוזון מאשר', 'לוזון אישור'];
         const rejectKeywords = ['דחה', 'דחייה', 'תתעלם', 'התעלם', 'אל תעדכן', 'לא מאשר', 'לוזון דחה'];
 
-        const cleanP = p.trim();
         const isApprove = approveKeywords.some(kw => cleanP === kw || cleanP.includes(kw));
         const isReject = rejectKeywords.some(kw => cleanP === kw || cleanP.includes(kw));
 
