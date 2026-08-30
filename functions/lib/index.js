@@ -2307,7 +2307,18 @@ const runSheetSyncLogic = async () => {
         const competition = cols[6] || ''; // ליגת WINNER / גביע המדינה
         const stadium = cols[7] || ''; // אצטדיון סמי עופר
         const tvChannel = cols[8] || ''; // ספורט 1 / ספורט 2
-        const status = cols[9] || ''; // עתידי / נדחה
+        let status = cols[9] || 'עתידי'; // עתידי / נדחה / הסתיים
+        let homeScore = undefined;
+        let awayScore = undefined;
+        if (cols[10] !== undefined && cols[10] !== '' && !isNaN(Number(cols[10]))) {
+            homeScore = Number(cols[10]);
+        }
+        if (cols[11] !== undefined && cols[11] !== '' && !isNaN(Number(cols[11]))) {
+            awayScore = Number(cols[11]);
+        }
+        if (homeScore !== undefined && awayScore !== undefined) {
+            status = 'הסתיים';
+        }
         const roundNum = parseInt(cols[0].replace(/[^\d]/g, ''), 10) || 1;
         const matchItem = {
             round: roundNum,
@@ -2322,6 +2333,10 @@ const runSheetSyncLogic = async () => {
             tvChannel,
             status
         };
+        if (homeScore !== undefined)
+            matchItem.homeScore = homeScore;
+        if (awayScore !== undefined)
+            matchItem.awayScore = awayScore;
         if (competition.includes('גביע')) {
             cupMatches.push(matchItem);
         }
@@ -2329,8 +2344,25 @@ const runSheetSyncLogic = async () => {
             matches.push(matchItem);
         }
     }
+    // Preserve existing finished match scores so sheet sync doesn't overwrite completed games
+    const existingSnap = await db.doc('leagueData/real_fixtures').get();
+    const existingMatches = existingSnap.exists ? (existingSnap.data()?.matches || []) : [];
+    const mergedMatches = matches.map(m => {
+        const existing = existingMatches.find((em) => em.round === m.round &&
+            String(em.homeTeam || '').trim() === String(m.homeTeam || '').trim() &&
+            String(em.awayTeam || '').trim() === String(m.awayTeam || '').trim());
+        if (existing && existing.status === 'הסתיים' && existing.homeScore !== undefined) {
+            return {
+                ...m,
+                status: 'הסתיים',
+                homeScore: existing.homeScore,
+                awayScore: existing.awayScore
+            };
+        }
+        return m;
+    });
     await db.doc('leagueData/real_fixtures').set({
-        matches,
+        matches: mergedMatches,
         cupMatches,
         lastUpdated: new Date().toISOString(),
         updatedBy: 'Google Sheet Sync'
