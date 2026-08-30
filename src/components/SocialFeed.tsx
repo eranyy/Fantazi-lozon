@@ -4,7 +4,7 @@ import { UserRole } from '../types';
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { Heart, MessageCircle, Share2, Trash2, Image as ImageIcon, Send, Trophy, Shield, Goal, CalendarDays, BarChart2, Plus, X, ChevronRight, ChevronLeft, MapPin, Tv, Clock, RefreshCw, Edit2, Users } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { sortMatchesChronologically } from '../utils/dateUtils';
+import { sortMatchesChronologically, formatMatchDateDisplay } from '../utils/dateUtils';
 
 interface SocialFeedProps { teams: any[]; currentRound: number; loggedInUser: any; onNavigate?: (tab: string) => void; }
 
@@ -817,7 +817,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
                   {/* התחתון: פרטי המשחק (תאריך, אצטדיון, וכו') */}
                   <div className="bg-zinc-900/40 px-3 py-2.5 flex justify-center items-center">
                      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[10px] md:text-xs font-bold text-zinc-400 w-full text-center">
-                        <span className="flex items-center gap-1.5"><CalendarDays className="w-3.5 h-3.5 opacity-70"/> {m.date}</span>
+                        <span className="flex items-center gap-1.5"><CalendarDays className="w-3.5 h-3.5 opacity-70"/> {formatMatchDateDisplay(m.date)}</span>
                         <span className="flex items-center gap-1.5 text-white font-black"><Clock className="w-3.5 h-3.5 text-blue-400"/> {m.time}</span>
                         
                         {m.timeUS && (

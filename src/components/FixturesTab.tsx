@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { CalendarDays, Flame, CheckCircle2, Clock, ChevronRight, ChevronLeft, MapPin, Tv } from 'lucide-react';
-import { sortMatchesChronologically } from '../utils/dateUtils';
+import { sortMatchesChronologically, formatMatchDateDisplay } from '../utils/dateUtils';
 
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
@@ -171,7 +171,7 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
                 <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-black text-yellow-400 bg-yellow-500/10 px-3 py-1 rounded-xl border border-yellow-500/20">{m.competition || 'ליגת WINNER'}</span>
-                    <span className="text-xs font-bold text-zinc-400">{m.date} ({m.day})</span>
+                    <span className="text-xs font-bold text-zinc-400">{formatMatchDateDisplay(m.date)} ({m.day})</span>
                   </div>
                   <span className={`text-xs font-black px-3 py-1 rounded-xl ${m.status?.includes('נדחה') ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-green-500/10 text-green-400 border border-green-500/20'}`}>
                     {m.status || 'עתידי'}
