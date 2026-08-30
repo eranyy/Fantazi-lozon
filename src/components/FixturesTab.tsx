@@ -184,9 +184,20 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
                   </div>
                   
                   <div className="px-4 shrink-0 flex flex-col items-center justify-center">
-                    <div className="bg-zinc-950 border border-zinc-700/80 px-4 py-2 rounded-2xl shadow-inner text-center">
-                      <div className="text-lg font-black text-yellow-400 font-mono tracking-tight">{formatMatchTime(m.time)}</div>
+                    <div className="bg-zinc-950 border border-zinc-700/80 px-4 py-2.5 rounded-2xl shadow-inner text-center min-w-[90px]">
+                      {m.homeScore !== undefined && m.awayScore !== undefined ? (
+                        <div className="text-2xl font-black text-yellow-400 font-mono tracking-tight flex items-center justify-center gap-2">
+                          <span>{m.homeScore}</span>
+                          <span className="text-zinc-500 text-base">-</span>
+                          <span>{m.awayScore}</span>
+                        </div>
+                      ) : (
+                        <div className="text-lg font-black text-yellow-400 font-mono tracking-tight">{formatMatchTime(m.time)}</div>
+                      )}
                     </div>
+                    {m.homeScore !== undefined && m.awayScore !== undefined ? (
+                      <div className="text-[10px] font-black text-emerald-400 mt-1.5 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">סיום המשחק 🏁</div>
+                    ) : null}
                   </div>
 
                   <div className="flex-1 text-left">
