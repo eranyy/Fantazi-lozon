@@ -775,12 +775,16 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
             )}
 
             {viewedRealMatches.map((m: any, i: number) => {
+              const homeScore = m.homeScore ?? m.hs;
+              const awayScore = m.awayScore ?? m.as;
+              const hasScore = homeScore !== undefined && homeScore !== null && awayScore !== undefined && awayScore !== null;
+
               let hTextClass = "text-zinc-100";
               let aTextClass = "text-zinc-100";
               
-              if (m.hs !== undefined && m.hs !== null && m.as !== undefined && m.as !== null) {
-                if (m.hs > m.as) { hTextClass = "text-white"; aTextClass = "text-zinc-500"; }
-                else if (m.as > m.hs) { hTextClass = "text-zinc-500"; aTextClass = "text-white"; }
+              if (hasScore) {
+                if (homeScore > awayScore) { hTextClass = "text-white font-black"; aTextClass = "text-zinc-500"; }
+                else if (awayScore > homeScore) { hTextClass = "text-zinc-500"; aTextClass = "text-white font-black"; }
                 else { hTextClass = "text-zinc-400"; aTextClass = "text-zinc-400"; }
               }
 
@@ -796,11 +800,11 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
                       onClick={(e) => openScoreModal(e, m)}
                       title="לחץ לעדכון תוצאה"
                     >
-                      {(m.hs !== null && m.hs !== undefined && m.as !== null && m.as !== undefined) ? (
+                      {hasScore ? (
                         <div className="bg-black px-3 py-1.5 rounded-[10px] border border-zinc-800 shadow-inner flex items-center gap-1.5">
-                           <span className={`font-black text-sm md:text-base tabular-nums ${m.hs > m.as ? 'text-green-400' : 'text-zinc-300'}`}>{m.hs}</span>
+                           <span className={`font-black text-sm md:text-base tabular-nums ${homeScore > awayScore ? 'text-green-400' : 'text-zinc-300'}`}>{homeScore}</span>
                            <span className="text-zinc-600 font-black text-xs md:text-sm">:</span>
-                           <span className={`font-black text-sm md:text-base tabular-nums ${m.as > m.hs ? 'text-green-400' : 'text-zinc-300'}`}>{m.as}</span>
+                           <span className={`font-black text-sm md:text-base tabular-nums ${awayScore > homeScore ? 'text-green-400' : 'text-zinc-300'}`}>{awayScore}</span>
                         </div>
                       ) : (
                         <span className="bg-slate-800 text-slate-400 text-[10px] md:text-xs font-black px-2.5 py-1 rounded-md border border-slate-700 shadow-sm">VS</span>
