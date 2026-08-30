@@ -2307,17 +2307,26 @@ const runSheetSyncLogic = async () => {
         const competition = cols[6] || ''; // ליגת WINNER / גביע המדינה
         const stadium = cols[7] || ''; // אצטדיון סמי עופר
         const tvChannel = cols[8] || ''; // ספורט 1 / ספורט 2
-        let status = cols[9] || 'עתידי'; // עתידי / נדחה / הסתיים
+        const statusRaw = cols[9] || 'עתידי'; // עתידי / נדחה / הסתיים (1-2)
+        let status = statusRaw;
         let homeScore = undefined;
         let awayScore = undefined;
-        if (cols[10] !== undefined && cols[10] !== '' && !isNaN(Number(cols[10]))) {
-            homeScore = Number(cols[10]);
-        }
-        if (cols[11] !== undefined && cols[11] !== '' && !isNaN(Number(cols[11]))) {
-            awayScore = Number(cols[11]);
-        }
-        if (homeScore !== undefined && awayScore !== undefined) {
+        const scoreMatch = statusRaw.match(/\((\d+)\s*[-\u2013]\s*(\d+)\)/) || statusRaw.match(/(\d+)\s*[-\u2013]\s*(\d+)/);
+        if (scoreMatch) {
+            homeScore = parseInt(scoreMatch[1], 10);
+            awayScore = parseInt(scoreMatch[2], 10);
             status = 'הסתיים';
+        }
+        else {
+            if (cols[10] !== undefined && cols[10] !== '' && !isNaN(Number(cols[10]))) {
+                homeScore = Number(cols[10]);
+            }
+            if (cols[11] !== undefined && cols[11] !== '' && !isNaN(Number(cols[11]))) {
+                awayScore = Number(cols[11]);
+            }
+            if (homeScore !== undefined && awayScore !== undefined) {
+                status = 'הסתיים';
+            }
         }
         const roundNum = parseInt(cols[0].replace(/[^\d]/g, ''), 10) || 1;
         const matchItem = {
@@ -2333,10 +2342,12 @@ const runSheetSyncLogic = async () => {
             tvChannel,
             status
         };
-        if (homeScore !== undefined)
+        if (homeScore !== undefined && awayScore !== undefined) {
             matchItem.homeScore = homeScore;
-        if (awayScore !== undefined)
             matchItem.awayScore = awayScore;
+            matchItem.hs = homeScore;
+            matchItem.as = awayScore;
+        }
         if (competition.includes('גביע')) {
             cupMatches.push(matchItem);
         }
