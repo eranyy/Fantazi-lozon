@@ -33,6 +33,14 @@ const translateTeam = (enName: string) => {
   return enName;
 };
 
+const sanitizeInputText = (str: string): string => {
+  if (!str) return '';
+  return str
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .trim();
+};
+
 const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUser, onNavigate }) => {
   const [posts, setPosts] = useState<any[]>([]);
   const [newPostText, setNewPostText] = useState('');
@@ -215,7 +223,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
         teamId: loggedInUser.teamId, 
         isVerified: true, 
         type: postType, 
-        content: newPostText, 
+        content: sanitizeInputText(newPostText), 
         pollOptions: finalPollOptions,
         likes: 0, 
         likedBy: [], 
@@ -238,7 +246,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
   const handleEditPostSave = async (postId: string) => {
     if (!editedPostContent.trim()) return;
     try {
-        await updateDoc(doc(db, 'social_posts', postId), { content: editedPostContent });
+        await updateDoc(doc(db, 'social_posts', postId), { content: sanitizeInputText(editedPostContent) });
         setEditingPostId(null);
     } catch(e) { console.error('שגיאה בעריכת הפוסט', e); }
   };
@@ -287,7 +295,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
     const postRef = doc(db, 'social_posts', postId);
     try {
       await updateDoc(postRef, {
-        comments: [...(existingComments || []), { id: Date.now().toString(), author: loggedInUser.name, text: commentText, timestamp: new Date().toISOString() }]
+        comments: [...(existingComments || []), { id: Date.now().toString(), author: loggedInUser.name, text: sanitizeInputText(commentText), timestamp: new Date().toISOString() }]
       });
       setCommentText('');
     } catch (e) { console.error('שגיאה בשליחת התגובה', e); }

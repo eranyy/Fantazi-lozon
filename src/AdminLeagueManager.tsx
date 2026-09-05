@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebaseConfig';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
-import { Trophy, ScrollText, Medal, Flame, Crown, Star, ShieldAlert, TrendingUp, Info, X, LayoutTemplate, UserCheck, Image as ImageIcon } from 'lucide-react';
+import { Trophy, ScrollText, Medal, Flame, Crown, Star, ShieldAlert, TrendingUp, Info, X, LayoutTemplate, UserCheck, Image as ImageIcon, Sparkles, Target } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 const ALLOWED_FORMATIONS = ['5-3-2', '5-4-1', '4-5-1', '4-4-2', '4-3-3', '3-5-2', '3-4-3'];
@@ -66,12 +66,15 @@ const Jersey = ({ primary, secondary, textColor, text }: { primary: string, seco
 };
 
 const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'table' | 'rules' | 'hof' | 'records' | 'power' | 'top_players'>(initialSubTab || 'table');
+  const [activeSubTab, setActiveSubTab] = useState<'table' | 'rules' | 'hof' | 'records' | 'power' | 'top_players' | 'predictor'>(initialSubTab || 'table');
   const [teams, setTeams] = useState<any[]>([]);
   const [historySeasons, setHistorySeasons] = useState<any[]>(DEFAULT_SEASONS);
   const [topPlayers, setTopPlayers] = useState<any[]>([]); 
   const [allPlayersDB, setAllPlayersDB] = useState<any[]>([]); 
   const [kingsFilter, setKingsFilter] = useState<'points' | 'goals' | 'assists'>('points');
+  const [predictorStandings, setPredictorStandings] = useState<any[]>([]);
+  const [whatsappPolls, setWhatsappPolls] = useState<any[]>([]);
+  const [selectedPredictorRound, setSelectedPredictorRound] = useState<number>(2);
 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
@@ -111,6 +114,16 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
         }
     });
 
+    const unsubPredictor = onSnapshot(doc(db, "leagueData", "predictor_standings"), (docSnap) => {
+        if (docSnap.exists() && Array.isArray(docSnap.data()?.standings)) {
+            setPredictorStandings(docSnap.data().standings);
+        }
+    });
+
+    const unsubPolls = onSnapshot(collection(db, "whatsapp_polls"), (snap) => {
+        setWhatsappPolls(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
     const unsubScoring = onSnapshot(collection(db, "real_league_players_scoring"), (snap) => {
         const list: any[] = [];
         snap.docs.forEach(docSnap => {
@@ -128,19 +141,35 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
             }
         });
         
-        // Also merge squad players from active fantasy teams
+        // Helper to check if two players are the exact same (handling duplicate names like Owusu)
+        const isSamePlayer = (aName: string, aTeam: string, bName: string, bTeam: string) => {
+            if (cleanStr(aName) !== cleanStr(bName)) return false;
+            if (!aTeam || !bTeam) return true;
+            const cA = cleanStr(aTeam);
+            const cB = cleanStr(bTeam);
+            return cA === cB || cA.includes(cB) || cB.includes(cA);
+        };
+
+        // Also merge squad players & historical round players from fantasy teams (so cut players like Cortez are never lost!)
         teams.forEach(team => {
             if (team.teamName && !team.teamName.toUpperCase().includes('ADMIN')) {
-                const squad = team.squad || team.players || [];
-                squad.forEach((p: any) => {
+                const squadPool: any[] = [...(team.squad || team.players || [])];
+                const lineupsByRound = team.lineupsByRound || {};
+                Object.keys(lineupsByRound).forEach(r => {
+                    if (Array.isArray(lineupsByRound[r]?.lineup)) squadPool.push(...lineupsByRound[r].lineup);
+                    if (Array.isArray(lineupsByRound[r]?.subsOut)) squadPool.push(...lineupsByRound[r].subsOut);
+                });
+
+                squadPool.forEach((p: any) => {
                     if (p && p.name) {
-                        const existing = list.find(l => cleanStr(l.name) === cleanStr(p.name));
+                        const pTeam = p.realTeam || p.team || '';
+                        const existing = list.find(l => isSamePlayer(l.name, l.team, p.name, pTeam));
                         if (existing) {
                             if (!existing.fantasyTeamName) existing.fantasyTeamName = team.teamName;
                         } else {
                             list.push({
                                 name: p.name,
-                                team: p.realTeam || p.team || '',
+                                team: pTeam,
                                 fantasyTeamName: team.teamName,
                                 position: p.position || 'MID',
                                 points: Number(p.points) || 0,
@@ -154,7 +183,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
         });
 
         list.sort((a, b) => b.points - a.points || b.goals - a.goals);
-        setTopPlayers(list);
+        if (list.length > 0) setTopPlayers(list);
     });
 
     const unsubPlayersDB = onSnapshot(collection(db, "players"), (snapshot) => {
@@ -328,6 +357,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
       <div className="bg-black/40 backdrop-blur-xl p-1.5 rounded-2xl border border-white/5 flex max-w-4xl mx-auto shadow-inner overflow-x-auto custom-scrollbar relative z-30">
         <button onClick={() => setActiveSubTab('table')} className={`flex-1 min-w-[70px] md:min-w-[90px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'table' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg border border-blue-500/50' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}><Trophy className="w-3 h-3 md:w-4 md:h-4" /> טבלה</button>
         <button onClick={() => setActiveSubTab('top_players')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'top_players' ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-lg border border-emerald-500/50' : 'text-zinc-500 hover:text-emerald-400/70 hover:bg-white/5'}`}><Star className="w-3 h-3 md:w-4 md:h-4" /> מלכים</button>
+        <button onClick={() => setActiveSubTab('predictor')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'predictor' ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg border border-violet-500/50' : 'text-zinc-500 hover:text-violet-400/70 hover:bg-white/5'}`}><Sparkles className="w-3 h-3 md:w-4 md:h-4" /> נביאים</button>
         <button onClick={() => setActiveSubTab('power')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'power' ? 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg border border-purple-500/50' : 'text-zinc-500 hover:text-purple-400/70 hover:bg-white/5'}`}><TrendingUp className="w-3 h-3 md:w-4 md:h-4" /> עוצמה</button>
         <button onClick={() => setActiveSubTab('rules')} className={`flex-1 min-w-[70px] md:min-w-[90px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'rules' ? 'bg-zinc-800 text-white shadow-lg border border-zinc-700' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}><ScrollText className="w-3 h-3 md:w-4 md:h-4" /> תקנון</button>
         <button onClick={() => setActiveSubTab('hof')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'hof' ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 text-black shadow-lg border border-yellow-400' : 'text-zinc-500 hover:text-yellow-500/70 hover:bg-white/5'}`}><Medal className="w-3 h-3 md:w-4 md:h-4" /> תהילה</button>
@@ -366,16 +396,54 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
           </div>
 
           <div className="max-w-4xl mx-auto grid grid-cols-1 gap-3 px-2">
-            {topPlayers.length === 0 ? (
-                <div className="text-center bg-slate-900/50 rounded-3xl p-10 border border-slate-800">
+            {(() => {
+              const effectiveTopPlayers = topPlayers.length > 0 ? topPlayers : (() => {
+                const playerMap: Record<string, any> = {};
+                teams.forEach(user => {
+                  if (user.id === 'admin' || user.id === 'system') return;
+                  const teamName = user.teamName || user.id;
+                  const lineupsByRound = user.lineupsByRound || {};
+                  Object.keys(lineupsByRound).forEach(rNum => {
+                    const rData = lineupsByRound[rNum];
+                    if (rData && Array.isArray(rData.lineup)) {
+                      rData.lineup.forEach((p: any) => {
+                        if (!p.name) return;
+                        const key = p.name.trim();
+                        if (!playerMap[key]) {
+                          playerMap[key] = {
+                            name: p.name,
+                            team: p.team || p.realTeam || '',
+                            fantasyTeamName: teamName,
+                            points: 0,
+                            goals: 0,
+                            assists: 0
+                          };
+                        }
+                        playerMap[key].points += Number(p.points || 0);
+                        if (p.stats) {
+                          playerMap[key].goals += Number(p.stats.goals || 0);
+                          playerMap[key].assists += Number(p.stats.assists || 0);
+                        }
+                      });
+                    }
+                  });
+                });
+                return Object.values(playerMap).sort((a, b) => b.points - a.points);
+              })();
+
+              if (effectiveTopPlayers.length === 0) {
+                return (
+                  <div className="text-center bg-slate-900/50 rounded-3xl p-10 border border-slate-800">
                     <p className="text-slate-400 font-bold">הנתונים טרם סונכרנו מתחילת המשחקים.</p>
-                </div>
-            ) : (
-                [...topPlayers].sort((a, b) => {
-                  if (kingsFilter === 'goals') return (b.goals || 0) - (a.goals || 0) || (b.points || 0) - (a.points || 0);
-                  if (kingsFilter === 'assists') return (b.assists || 0) - (a.assists || 0) || (b.points || 0) - (a.points || 0);
-                  return (b.points || 0) - (a.points || 0) || (b.goals || 0) - (a.goals || 0);
-                }).map((player, idx) => {
+                  </div>
+                );
+              }
+
+              return [...effectiveTopPlayers].sort((a, b) => {
+                if (kingsFilter === 'goals') return (b.goals || 0) - (a.goals || 0) || (b.points || 0) - (a.points || 0);
+                if (kingsFilter === 'assists') return (b.assists || 0) - (a.assists || 0) || (b.points || 0) - (a.points || 0);
+                return (b.points || 0) - (a.points || 0) || (b.goals || 0) - (a.goals || 0);
+              }).map((player, idx) => {
                   const isTop1 = idx === 0;
                   const isTop2 = idx === 1;
                   const isTop3 = idx === 2;
@@ -448,7 +516,120 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
                     </div>
                   );
                 })
-            )}
+            })()}
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'predictor' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 pt-4">
+          <div className="text-center mb-6 md:mb-10">
+            <h2 className="text-4xl md:text-6xl font-black text-white italic tracking-tight drop-shadow-lg flex items-center justify-center gap-3">
+              טבלת הנביאים <Sparkles className="w-10 h-10 md:w-12 md:h-12 text-violet-400 fill-current drop-shadow-[0_0_15px_rgba(167,139,250,0.5)]" />
+            </h2>
+            <p className="text-violet-400 font-black uppercase tracking-[0.2em] md:tracking-widest text-xs md:text-sm mt-3">
+              תוצאות סקרי הניחושים, חכמת ההמונים ודירוג הנביאים העונתי (סנכרון בלייב)
+            </p>
+          </div>
+
+          <div className="max-w-4xl mx-auto px-2 space-y-8">
+            {/* 🏆 טבלת הנביאים העונתית */}
+            <div className="bg-slate-900/80 rounded-3xl border border-violet-500/30 p-5 md:p-8 shadow-2xl backdrop-blur-md">
+              <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+                <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                  <Trophy className="w-6 h-6 text-yellow-400" />
+                  <span>טבלת נביאי הליגה העונתית</span>
+                </h3>
+                <span className="text-xs text-violet-400 font-bold bg-violet-950/60 px-3 py-1 rounded-full border border-violet-800/50">
+                  {predictorStandings.length} מנג'רים בדירוג
+                </span>
+              </div>
+
+              {predictorStandings.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 font-bold bg-slate-950/50 rounded-2xl border border-slate-800">
+                  <Sparkles className="w-10 h-10 text-violet-400 mx-auto mb-3 opacity-60 animate-pulse" />
+                  <p className="text-lg text-white font-black">טבלת הנביאים מוכנה לקראת המחזורים הבאים!</p>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto mt-2 leading-relaxed">
+                    עם סגירת סקר הניחושים בווצאפ וקבלת תוצאות המשחקים, המנג'רים שקלעו בול ידורגו כאן בטבלה עונתית מרהיבה.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {predictorStandings.map((pUser: any, idx: number) => {
+                    const isTop1 = idx === 0;
+                    const isTop2 = idx === 1;
+                    const isTop3 = idx === 2;
+                    return (
+                      <div key={idx} className={`p-4 md:p-5 rounded-2xl border transition-all flex items-center justify-between ${isTop1 ? 'bg-gradient-to-r from-yellow-950/40 via-slate-900 to-slate-900 border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.2)]' : isTop2 ? 'bg-gradient-to-r from-zinc-800/40 via-slate-900 to-slate-900 border-zinc-400/40' : isTop3 ? 'bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border-amber-600/40' : 'bg-slate-950/60 border-slate-800/80 hover:border-violet-500/40'}`}>
+                        <div className="flex items-center gap-3 md:gap-4">
+                          <span className="text-xl md:text-2xl font-black w-8 text-center tabular-nums">
+                            {isTop1 ? '🥇' : isTop2 ? '🥈' : isTop3 ? '🥉' : `#${idx + 1}`}
+                          </span>
+                          <div>
+                            <span className="text-base md:text-xl font-black text-white block">{pUser.name || pUser.teamName}</span>
+                            <span className="text-xs text-slate-400 font-bold">פגיעות מדויקות: <span className="text-violet-300 font-black">{pUser.hits || 0}</span></span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                          <div className="text-center bg-slate-900 px-4 py-2 rounded-xl border border-slate-700">
+                            <span className="text-xl md:text-2xl font-black text-green-400 block leading-none">{pUser.points || 0}</span>
+                            <span className="text-[9px] text-slate-500 font-bold uppercase mt-1 block">נקודות</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 📊 פירוט תוצאות סקרי הניחושים לפי מחזור */}
+            <div className="bg-slate-900/80 rounded-3xl border border-purple-500/30 p-5 md:p-8 shadow-2xl backdrop-blur-md">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 border-b border-slate-800 pb-4">
+                <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                  <Target className="w-6 h-6 text-violet-400" />
+                  <span>חכמת ההמונים ופגיעות הניחוס לפי מחזור</span>
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-bold">מחזור:</span>
+                  <select
+                    value={selectedPredictorRound}
+                    onChange={(e) => setSelectedPredictorRound(Number(e.target.value))}
+                    className="bg-slate-950 text-white font-black text-xs px-3 py-1.5 rounded-xl border border-violet-500/40 outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(r => (
+                      <option key={r} value={r}>מחזור {r}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {(() => {
+                const roundPoll = whatsappPolls.find((p: any) => p.round === selectedPredictorRound);
+                if (!roundPoll || !roundPoll.votes || Object.keys(roundPoll.votes).length === 0) {
+                  return (
+                    <div className="text-center py-8 text-slate-400 font-bold bg-slate-950/40 rounded-2xl border border-slate-800">
+                      <Target className="w-8 h-8 text-purple-400 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm text-slate-300 font-bold">טרם התקבלו הצבעות סקר עבור מחזור {selectedPredictorRound}.</p>
+                      <p className="text-xs text-slate-500 mt-1">הסקר שנשלח ע"י הבוט לקבוצה בווצאפ ישתקף כאן עם הפירוט המלא של הצבעות המנג'רים!</p>
+                    </div>
+                  );
+                }
+
+                const votesObj = roundPoll.votes || {};
+                const totalVoters = Object.keys(votesObj).length;
+
+                return (
+                  <div className="space-y-4">
+                    <div className="bg-purple-950/40 p-4 rounded-2xl border border-purple-800/40 flex items-center justify-between">
+                      <span className="text-sm text-purple-300 font-black">סה"כ מנג'רים שהשתתפו בסקר מחזור {selectedPredictorRound}:</span>
+                      <span className="text-xl font-black text-white bg-purple-900/60 px-3 py-1 rounded-xl border border-purple-500/40">{totalVoters} מנג'רים</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}

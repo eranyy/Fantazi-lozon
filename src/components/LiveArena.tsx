@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3 } from 'lucide-react';
+import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3, Lock, Unlock } from 'lucide-react';
 import { db, functions } from '../firebaseConfig';
 import { doc, onSnapshot, updateDoc, addDoc, collection, getDoc, setDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -98,6 +98,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       setSelectedRound(currentRound);
     }
   }, [currentRound]);
+  const [adminUnlockedRounds, setAdminUnlockedRounds] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [h2hModal, setH2hModal] = useState<{hId: string, aId: string} | null>(null);
@@ -107,6 +108,20 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const [untouchedModal, setUntouchedModal] = useState<{teamId: string, teamName: string} | null>(null);
   const [isProcessingRound, setIsProcessingRound] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<{teamId: string, player: any} | null>(null);
+
+  const isArenaManagerOrAdmin = Boolean(
+    isAdmin || 
+    isModerator || 
+    loggedInUser?.role === UserRole.ARENA_MANAGER || 
+    loggedInUser?.role === UserRole.ADMIN || 
+    loggedInUser?.role === UserRole.SUPER_ADMIN || 
+    loggedInUser?.role === UserRole.OWNER ||
+    loggedInUser?.role === 'ARENA_MANAGER'
+  );
+
+  const selectedRoundFixture = fixtures.find((r: any) => r.round === selectedRound);
+  const isSelectedRoundClosed = Boolean(selectedRoundFixture?.isPlayed) || (selectedRound < currentRound);
+  const isUnlockedByAdmin = Boolean(adminUnlockedRounds[selectedRound]);
   
   const [stats, setStats] = useState({ 
     started: false, played60: false, notInSquad: false, notPlayedIn16: false, won: false, 
@@ -212,72 +227,71 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const getPlayerPointsForRound = (player: any, _team: any, _rNum: number) => {
     if (!player) return 0;
     
-    // Calculate live points directly from stats if stats object exists
-    if (player.stats && Object.keys(player.stats).length > 0) {
-      const computedPts = calculatePointsFromStats(player.stats, player.position || player.pos || '');
-      if (computedPts !== 0) return computedPts;
-      const hasAnyStatField = Object.values(player.stats).some(v => v === true || (typeof v === 'number' && v > 0));
-      if (hasAnyStatField) return computedPts;
+    // Prioritize explicit player.points (from manual edit, excel import, or approval)
+    if (typeof player.points === 'number' && !isNaN(player.points)) {
+      return player.points;
     }
 
-    return Number(player.points) || 0;
+    // Calculate live points directly from stats if stats object exists and is non-zero
+    if (player.stats && Object.keys(player.stats).length > 0) {
+      return calculatePointsFromStats(player.stats, player.position || player.pos || '');
+    }
+
+    return 0;
+  };
+
+  const isSamePlayer = (a: any, b: any) => {
+    if (!a || !b) return false;
+    if (a.id && b.id && a.id === b.id) return true;
+    const cA = cleanStr(a.name);
+    const cB = cleanStr(b.name);
+    if (!cA || !cB) return false;
+    const nameMatch = cA === cB || cA.includes(cB) || cB.includes(cA);
+    if (!nameMatch) return false;
+
+    const aTeam = cleanStr(a.realTeam || a.team || '');
+    const bTeam = cleanStr(b.realTeam || b.team || '');
+    if (aTeam && bTeam && aTeam.length > 2 && bTeam.length > 2) {
+      return aTeam === bTeam || aTeam.includes(bTeam) || bTeam.includes(aTeam);
+    }
+    return true;
   };
 
   const getRoundLineup = (team: any, rNum: number = selectedRound) => {
     if (!team) return [];
-    let baseLineup: any[] = [];
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].lineup) && team.lineupsByRound[rNum].lineup.length > 0) {
-      baseLineup = team.lineupsByRound[rNum].lineup;
-    } else {
-      baseLineup = team.published_lineup || team.lineup || (Array.isArray(team.squad) ? team.squad.slice(0, 11) : []);
+      return team.lineupsByRound[rNum].lineup;
     }
-
-    const livePool = [...(team.published_lineup || []), ...(team.lineup || []), ...(team.squad || [])];
-    return baseLineup.map((p: any) => {
-      const liveP = livePool.find((lp: any) => lp.id === p.id || lp.name === p.name);
-      if (liveP && liveP.stats && Object.keys(liveP.stats).length > 0) {
-        return {
-          ...p,
-          points: liveP.points || p.points,
-          stats: { ...(p.stats || {}), ...liveP.stats }
-        };
-      }
-      return p;
-    });
+    return team.published_lineup || team.lineup || (Array.isArray(team.squad) ? team.squad.slice(0, 11) : []);
   };
 
   const getRoundBench = (team: any, rNum: number = selectedRound) => {
     if (!team) return [];
-    let baseBench: any[] = [];
     if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].subsOut)) {
-      baseBench = team.lineupsByRound[rNum].subsOut;
-    } else {
-      baseBench = team.published_subs_out || (Array.isArray(team.squad) ? team.squad.slice(11) : []);
+      return team.lineupsByRound[rNum].subsOut;
     }
-
-    const livePool = [...(team.published_lineup || []), ...(team.lineup || []), ...(team.squad || [])];
-    return baseBench.map((p: any) => {
-      const liveP = livePool.find((lp: any) => lp.id === p.id || lp.name === p.name);
-      if (liveP && liveP.stats && Object.keys(liveP.stats).length > 0) {
-        return {
-          ...p,
-          points: liveP.points || p.points,
-          stats: { ...(p.stats || {}), ...liveP.stats }
-        };
-      }
-      return p;
-    });
+    return team.published_subs_out || (Array.isArray(team.squad) ? team.squad.slice(11) : []);
   };
 
   const applySubstitutionsToLineup = (team: any) => {
     if (!team) return [];
     let currentLineup = [...getRoundLineup(team, selectedRound)];
     const bench = getRoundBench(team, selectedRound);
+    const allPool = [...bench, ...(team.squad || []), ...(team.players || [])];
+
     const roundSubs = (team.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === selectedRound && t.status !== 'CANCELLED');
     const sortedSubs = roundSubs.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     sortedSubs.forEach((sub: any) => {
-      const outIndex = currentLineup.findIndex(p => p.name === sub.playerOut);
-      const inPlayer = bench.find((p: any) => p.name === sub.playerIn);
+      const outIndex = currentLineup.findIndex(p => isSamePlayer(p, { name: sub.playerOut }));
+      let inPlayer = allPool.find((p: any) => isSamePlayer(p, { name: sub.playerIn }));
+      if (!inPlayer) {
+        inPlayer = {
+          name: sub.playerIn,
+          team: sub.playerInTeam || 'Unknown',
+          position: sub.playerInPos || 'MID',
+          points: 0
+        };
+      }
       if (outIndex !== -1 && inPlayer) { currentLineup[outIndex] = inPlayer; }
     });
     return currentLineup;
@@ -671,7 +685,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       const finalPoints = calculatePointsFromStats(cleanStats, editingPlayer.player.position);
       
       const updatePlayerInList = (list: any[]) => (list || []).map((p: any) => 
-        (p.id === editingPlayer.player.id || p.name === editingPlayer.player.name) ? { ...p, points: finalPoints, stats: cleanStats } : p
+        isSamePlayer(p, editingPlayer.player) ? { ...p, points: finalPoints, stats: cleanStats } : p
       );
       
       const updatedLineup = updatePlayerInList(freshTeam.published_lineup || []);
@@ -1056,23 +1070,42 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                   <span className="text-slate-300 font-bold uppercase tracking-[0.2em] text-[10px] md:text-xs">Matchday {selectedRound}</span>
                 </div>
                 {fixtures && fixtures.length > 0 && (
-                  <div className="flex items-center gap-2 mt-2" data-html2canvas-ignore="true">
-                    <div className="relative inline-block text-right">
-                      <select
-                        value={selectedRound}
-                        onChange={(e) => setSelectedRound(Number(e.target.value))}
-                        className="bg-slate-900/90 hover:bg-slate-800 text-white font-black text-xs md:text-sm px-4 py-1.5 rounded-xl border border-blue-500/40 shadow-lg cursor-pointer outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none pl-8 pr-3"
-                      >
-                        {fixtures.map((r: any) => (
-                          <option key={r.round} value={r.round} className="bg-slate-900 text-white font-bold py-1">
-                            מחזור {r.round} {r.round === currentRound ? '🟢 (פעיל כעת)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-blue-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <div className="flex flex-col sm:flex-row items-center gap-2 mt-2" data-html2canvas-ignore="true">
+                    <div className="flex items-center gap-2">
+                      <div className="relative inline-block text-right">
+                        <select
+                          value={selectedRound}
+                          onChange={(e) => setSelectedRound(Number(e.target.value))}
+                          className="bg-slate-900/90 hover:bg-slate-800 text-white font-black text-xs md:text-sm px-4 py-1.5 rounded-xl border border-blue-500/40 shadow-lg cursor-pointer outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none pl-8 pr-3"
+                        >
+                          {fixtures.map((r: any) => (
+                            <option key={r.round} value={r.round} className="bg-slate-900 text-white font-bold py-1">
+                              מחזור {r.round} {r.round === currentRound ? '🟢 (פעיל כעת)' : r.isPlayed ? '🔒 (סגור)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-blue-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+
+                      {isSelectedRoundClosed && !isUnlockedByAdmin ? (
+                        <div className="inline-flex items-center gap-1.5 bg-red-950/60 border border-red-800/60 text-red-400 px-3 py-1 rounded-xl text-xs font-black shadow-md">
+                          <Lock className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                          <span>מחזור {selectedRound} סגור ונעול</span>
+                        </div>
+                      ) : isSelectedRoundClosed && isUnlockedByAdmin ? (
+                        <div className="inline-flex items-center gap-1.5 bg-amber-950/60 border border-amber-500/60 text-amber-300 px-3 py-1 rounded-xl text-xs font-black shadow-md">
+                          <Unlock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>פתוח לעריכת מנהל</span>
+                        </div>
+                      ) : selectedRound === currentRound ? (
+                        <div className="inline-flex items-center gap-1.5 bg-green-950/60 border border-green-800/60 text-green-400 px-3 py-1 rounded-xl text-xs font-black shadow-md">
+                          <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span></span>
+                          <span>מחזור פעיל בלייב</span>
+                        </div>
+                      ) : null}
                     </div>
 
-                    {(isAdmin || isModerator) && selectedRound !== currentRound && (
+                    {(isAdmin || isModerator) && selectedRound !== currentRound && !isSelectedRoundClosed && (
                       <button
                         onClick={async () => {
                           if (window.confirm(`האם להגדיר את מחזור ${selectedRound} כמחזור הליגה הפעיל?`)) {
@@ -1092,10 +1125,42 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
               </div>
 
               <div className="w-full md:w-auto order-2 md:order-3 flex justify-center md:justify-end" data-html2canvas-ignore="true">
-                {(isAdmin || isModerator) ? (
-                  <button onClick={() => setConfirmCloseModalOpen(true)} title="סגירת מחזור" disabled={isProcessingRound} className="w-full md:w-auto bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white font-black py-3 md:py-3.5 px-6 rounded-2xl border border-red-500/50 transition-all active:scale-95 text-sm shadow-lg flex items-center justify-center gap-2 group relative">
-                    {isProcessingRound ? <span className="animate-pulse">מעבד...</span> : <>סגור מחזור <Flame className="w-4 h-4" /></>}
-                  </button>
+                {isArenaManagerOrAdmin ? (
+                  isSelectedRoundClosed && !isUnlockedByAdmin ? (
+                    <button
+                      onClick={async () => {
+                        if (window.confirm(`האם אתה בטוח שברצונך לפתוח מחדש את מחזור ${selectedRound}? פעולה זו תאפשר עריכה מנהלית למחזור זה.`)) {
+                          const updatedRounds = fixtures.map(r => r.round === selectedRound ? { ...r, isPlayed: false } : r);
+                          await setDoc(doc(db, 'leagueData', 'fixtures'), { rounds: updatedRounds }, { merge: true });
+                          setAdminUnlockedRounds(prev => ({ ...prev, [selectedRound]: true }));
+                          showToast(`מחזור ${selectedRound} נפתח מחדש לעריכה מנהלית!`, 'success');
+                        }
+                      }}
+                      title="פתיחה מחדש לעריכת מנהל"
+                      className="w-full md:w-auto bg-amber-500/20 hover:bg-amber-600 text-amber-300 hover:text-white font-black py-3 md:py-3.5 px-6 rounded-2xl border border-amber-500/50 transition-all active:scale-95 text-sm shadow-lg flex items-center justify-center gap-2 group relative"
+                    >
+                      <Unlock className="w-4 h-4 text-amber-400" />
+                      <span>פתיחה מחדש (הרשאת מנהל)</span>
+                    </button>
+                  ) : isSelectedRoundClosed && isUnlockedByAdmin ? (
+                    <button
+                      onClick={async () => {
+                        const updatedRounds = fixtures.map(r => r.round === selectedRound ? { ...r, isPlayed: true } : r);
+                        await setDoc(doc(db, 'leagueData', 'fixtures'), { rounds: updatedRounds }, { merge: true });
+                        setAdminUnlockedRounds(prev => ({ ...prev, [selectedRound]: false }));
+                        showToast(`מחזור ${selectedRound} ננעל מחדש!`, 'info');
+                      }}
+                      title="נעילה מחדש של המחזור"
+                      className="w-full md:w-auto bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white font-black py-3 md:py-3.5 px-6 rounded-2xl border border-purple-500/50 transition-all active:scale-95 text-sm shadow-lg flex items-center justify-center gap-2 group relative"
+                    >
+                      <Lock className="w-4 h-4 text-purple-300" />
+                      <span>נעילה מחדש</span>
+                    </button>
+                  ) : (
+                    <button onClick={() => setConfirmCloseModalOpen(true)} title="סגירת מחזור" disabled={isProcessingRound} className="w-full md:w-auto bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white font-black py-3 md:py-3.5 px-6 rounded-2xl border border-red-500/50 transition-all active:scale-95 text-sm shadow-lg flex items-center justify-center gap-2 group relative">
+                      {isProcessingRound ? <span className="animate-pulse">מעבד...</span> : <>סגור מחזור <Flame className="w-4 h-4" /></>}
+                    </button>
+                  )
                 ) : <div className="hidden md:block w-[180px]"></div>}
               </div>
           </div>
@@ -1111,7 +1176,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
             
             const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
             const expandedTeamObj = isExpanded ? teams.find(t => t.id === expandedTeamId) : null;
-            const isEditable = isAdmin || isModerator || (loggedInUser && expandedTeamObj && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(expandedTeamObj.teamName));
+            const isEditable = (isAdmin || isModerator || (loggedInUser && expandedTeamObj && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(expandedTeamObj.teamName))) && (!isSelectedRoundClosed || isUnlockedByAdmin);
             
             return (
               <div key={idx} className={`bg-slate-900/60 backdrop-blur-md rounded-[32px] border transition-all duration-300 overflow-hidden flex flex-col ${isExpanded ? 'border-slate-500 shadow-[0_0_30px_rgba(255,255,255,0.05)]' : 'border-slate-800 shadow-xl hover:border-slate-700'}`}>
@@ -1222,6 +1287,12 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                                   const hasPlayed = (p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0))) || (playerPoints !== 0);
                                   const isUntouched = !hasPlayed && playerPoints === 0;
 
+                                  const isReleased = (expandedTeamObj?.squad || []).length > 0 && !(expandedTeamObj.squad || []).some((sp: any) => {
+                                    const cA = cleanStr(sp.name);
+                                    const cB = cleanStr(p.name);
+                                    return cA && cB && (cA === cB || cA.includes(cB) || cB.includes(cA));
+                                  });
+
                                   return (
                                     <div key={p.id} onClick={() => { if(isEditable) setEditingPlayer({teamId: expandedTeamId!, player: p}); }} className={`flex flex-col items-center gap-0.5 group active:scale-95 transition-transform w-[48px] sm:w-[64px] md:w-[76px] relative ${isEditable ? 'cursor-pointer' : ''}`}>
                                       <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 relative transition-all duration-300 group-hover:-translate-y-2 group-hover:scale-110 z-20">
@@ -1243,10 +1314,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                                         )}
                                       </div>
                                       <div className="w-6 sm:w-8 h-1 sm:h-1.5 bg-black/40 rounded-[100%] blur-[2px] transition-all duration-300 group-hover:w-4 sm:group-hover:w-6 group-hover:bg-black/20 group-hover:translate-y-1"></div>
-                                      <div className="relative z-30 -mt-1 flex justify-center w-full">
+                                      <div className="relative z-30 -mt-1 flex flex-col items-center justify-center w-full">
                                         <div className="bg-black/80 px-1.5 py-1 rounded-md border border-white/10 min-w-[56px] max-w-[65px] flex items-center justify-center shadow-lg group-hover:bg-black transition-colors">
                                            <span className="text-[10.5px] sm:text-[11px] md:text-xs font-black text-white leading-tight break-words text-center drop-shadow-md">{lastName}</span>
                                         </div>
+                                        {isReleased && (
+                                          <span className="text-[7.5px] font-black bg-amber-500/20 text-amber-400 px-1 py-0.5 rounded mt-0.5 border border-amber-500/40 whitespace-nowrap shadow-sm">עזב את הסגל</span>
+                                        )}
                                       </div>
                                     </div>
                                   );

@@ -58,7 +58,7 @@ export const analyzeMatchImage = async (base64Data: string, mimeType: string, hi
   }
 };
 
-export const generateAISummary = async (fixtures: any[], teams: any[], apiKey?: string) => {
+export const generateAISummary = async (fixtures: any[], teams: any[], pollData?: any, apiKey?: string) => {
     const activeKey = getApiKey(apiKey);
     const ai = new GoogleGenAI({ apiKey: activeKey });
 
@@ -69,14 +69,43 @@ export const generateAISummary = async (fixtures: any[], teams: any[], apiKey?: 
     });
 
     const leagueStandingsText = sortedTeams.map((t, index) => 
-        `מקום ${index + 1}: ${t.teamName} (מנג\\'ר: ${t.name || t.manager}) | נקודות בטבלה: ${t.points || 0}`
-    ).join('\\\\n');
+        `מקום ${index + 1}: ${t.teamName} (מנג'ר: ${t.name || t.manager}) | נקודות בטבלה: ${t.points || 0} | שערים: ${t.gf || 0} זכות, ${t.ga || 0} חובה (הפרש: ${(t.gf || 0) - (t.ga || 0)})`
+    ).join('\n');
 
-    const fixturesText = fixtures.map((m, index) => 
-        `משחק ${index + 1}: ${m.homeTeam || m.h} נגד ${m.awayTeam || m.a}`
-    ).join('\\\\n');
+    const fixturesText = fixtures.map((m, index) => {
+        const hScore = Number(m.hs || 0);
+        const aScore = Number(m.as || 0);
+        const diff = Math.abs(hScore - aScore);
+        const winner = hScore > aScore ? (m.homeTeam || m.h) : aScore > hScore ? (m.awayTeam || m.a) : 'תיקו';
+        const earnedPts = diff >= 20 ? 3 : 2;
+        return `משחק ${index + 1}: ${m.homeTeam || m.h} (${hScore}) נגד ${m.awayTeam || m.a} (${aScore}) | מנצחת: ${winner} (הפרש ${diff} נק' -> ${earnedPts} נק' ליגה לפנטזי)`;
+    }).join('\n');
 
-    const prompt = `אתה פרשן כדורגל ישראלי בכיר (בסגנון רז זהבי או אבי מלר). \\nכתוב סיכום מחזור מרגש, מקצועי ומשעשע עבור ליגת הפנטזי \\"לוזון 14\\".\\n\\n🚨 חוקי ברזל חובה (קריטי!) 🚨\\n1. התבסס אך ורק על העובדות הבאות. אסור לך בשום אופן להמציא נתונים!\\n2. מיקומי הקבוצות בטבלה קבועים מראש - אל תשנה אותם או תגיד שקבוצה במקום ראשון אם היא לא!\\n\\n--- טבלת הליגה המדויקת (נכון לעכשיו) ---\\n${leagueStandingsText}\\n\\n--- משחקי המחזור שהיו ---\\n${fixturesText}\\n\\nהסיכום צריך לכלול כותרת מפוצצת, התייחסות למובילת הטבלה, וסלנג כדורגל ישראלי. החזר בפורמט Markdown.`;
+    let pollText = 'אין נתוני סקר ניחושים למחזור זה.';
+    if (pollData && pollData.votes) {
+        const totalVotes = Object.keys(pollData.votes || {}).length;
+        pollText = `נתוני סקר הניחושים (חכמת ההמונים): הצביעו ${totalVotes} מנג'רים.`;
+    }
+
+    const prompt = `אתה פרשן כדורגל ישראלי בכיר (בסגנון רז זהבי או אבי מלר).
+כתוב סיכום מחזור מרגש, מקצועי, מדויק ומשעשע עבור ליגת הפנטזי "לוזון 14".
+
+🚨 חוקי ברזל חובה (קריטי!) 🚨:
+1. התבסס אך ורק עובדתית על הנתונים הבאים! אסור לך בשום אופן להמציא נתונים או להניח רצף ניצחונות שלא צוין.
+2. ניקוד הליגה נקבע לפי הכללים: ניצחון בהפרש 20 נקודות ומעלה = 3 נקודות ליגה. ניצחון בהפרש קטן מ-20 = 2 נקודות ליגה. תיקו = 1 נקודות.
+3. מיקומי הקבוצות והפרשי השערים קבועים מראש - ציין אותם בדיוק כפי שהם!
+4. כלול התייחסות לחכמת ההמונים (סקר הניחושים) מול התוצאות בפועל.
+
+--- טבלת הליגה המדויקת ---
+${leagueStandingsText}
+
+--- תוצאות משחקי המחזור שהיו ---
+${fixturesText}
+
+--- נתוני סקר ניחושים ---
+${pollText}
+
+הסיכום צריך לכלול כותרת מרשימה, ניתוח קצר ומדוייק לכל משחק, התייחסות לטבלה ולשחקנים הבולטים, וסלנג כדורגל ישראלי קליל. החזר בפורמט Markdown בלבד.`;
 
     try {
         const requestPromise = ai.models.generateContent({ model: "gemini-1.5-flash-latest", contents: prompt });

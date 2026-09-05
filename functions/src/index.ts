@@ -560,7 +560,7 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
             return `🤖 *סטטוס סורק פנטזי לוזון:* \nמצב: ${isEnabled ? '🟢 *פעיל*' : '🔴 *מופסק (כבוי)*'}\nסריקות פעילות: *ספורט 5 (שערים/בישולים) + ההתאחדות (כרטיסים)*\nניהול מרחוק: רשום *לוזון עצור סורק* או *לוזון הפעל סורק*. 📱`;
         }
 
-        function calculateOptimalLineupServer(squad: any[]) {
+        const calculateOptimalLineupServer = (squad: any[]) => {
             if (!Array.isArray(squad) || squad.length === 0) return { optimalPoints: 0, formation: '4-4-2', lineup: [] };
 
             const getPos = (pStr: string) => {
@@ -1106,10 +1106,12 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                     'בןדוד': 'שי בן דוד',
                     'בנדוד': 'שי בן דוד',
                     'קימבודי': 'קמבודי',
-                    'לייבו': 'ליבוביץ'
+                    'לייבו': 'ליבוביץ',
+                    'אלטמן': 'עומרי אלטמן',
+                    'עמרי אלטמן': 'עומרי אלטמן'
                 };
 
-                const smartNorm = (s: string) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '').replace(/יי/g, 'י').replace(/וו/g, 'ו');
+                const smartNorm = (s: string) => String(s || '').toLowerCase().replace(/[^\u0590-\u05FFa-zA-Z0-9]/g, '').replace(/יי/g, 'י').replace(/וו/g, 'ו');
                 const stripPrefix = (w: string) => (w.length >= 4 ? w.replace(/^[בלמכשו]/, '') : w);
                 const rawWords = p.split(/[\s,]+/).filter(w => w.length >= 3 && !fillerWords.includes(w) && !eventKeywords.includes(w)).map(w => stripPrefix(w)).filter(w => w.length >= 3);
                 
@@ -1159,7 +1161,8 @@ const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', 
                                 const wNorm = smartNorm(w);
                                 if (wNorm.length >= 3 && plNameNorm.length >= 3) {
                                     const dist = levenshtein(plNameNorm, wNorm);
-                                    const maxAllowedDist = wNorm.length >= 5 ? 2 : 1;
+                                    // Strictly allow distance 2 ONLY for longer names (6+ characters). Short 4-5 char names require distance 1.
+                                    const maxAllowedDist = wNorm.length >= 6 ? 2 : 1;
                                     if (dist <= maxAllowedDist && dist < bestDist) {
                                         bestDist = dist;
                                         matchedPlayer = pl;
@@ -1870,19 +1873,34 @@ export const broadcastRoundCloseToWhatsApp = onCall({ region: 'us-west1' }, asyn
             console.error('Error reading next round fixtures:', fErr);
         }
 
-        // 3. Fetch recent AI Analyst post for round
+        // 2.5 Fetch Next Round Kickoff Time from real_fixtures
+        let kickoffText = '';
+        try {
+            const realSnap = await db.doc('leagueData/real_fixtures').get();
+            if (realSnap.exists) {
+                const realMatches = realSnap.data()?.matches || [];
+                const nextRealMatches = realMatches.filter((m: any) => m.round === nextRound);
+                if (nextRealMatches.length > 0 && nextRealMatches[0].date) {
+                    kickoffText = `\n📅 *מועד פתיחת מחזור ${nextRound}:* ${nextRealMatches[0].date}${nextRealMatches[0].time ? ` בשעה ${nextRealMatches[0].time}` : ''}\n`;
+                }
+            }
+        } catch (kErr) {
+            console.error('Error fetching next round kickoff time:', kErr);
+        }
+
+        // 3. Fetch recent AI Analyst post for round (in-memory sort to avoid index requirement)
         let analystText = '';
         try {
             const postsSnap = await db.collection('social_posts')
                 .where('authorName', '==', 'האנליסט AI 🤖')
-                .orderBy('timestamp', 'desc')
-                .limit(1)
                 .get();
 
             if (!postsSnap.empty) {
-                const post = postsSnap.docs[0].data();
-                if (post.content) {
-                    analystText = `\n🎙️ *סיכום המחזור מפי הפרשן (האנליסט AI):*\n${post.content}\n`;
+                const posts = postsSnap.docs.map(d => d.data());
+                posts.sort((a: any, b: any) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+                const latestPost = posts[0];
+                if (latestPost && latestPost.content) {
+                    analystText = `\n🎙️ *סיכום מחזור ${round} מפי הפרשן (האנליסט AI):*\n${latestPost.content}\n`;
                 }
             }
         } catch (aiErr) {
@@ -1894,7 +1912,6 @@ export const broadcastRoundCloseToWhatsApp = onCall({ region: 'us-west1' }, asyn
         try {
             const pollSnap = await db.collection('whatsapp_polls')
                 .where('round', '==', round)
-                .limit(1)
                 .get();
 
             const predStandingsSnap = await db.collection('leagueData').doc('predictor_standings').get();
@@ -1919,10 +1936,53 @@ export const broadcastRoundCloseToWhatsApp = onCall({ region: 'us-west1' }, asyn
             console.error('Error fetching predictor text:', predErr);
         }
 
+        // 3.8 Auto-update Top Players (לשונית מלאכים) in Firestore
+        try {
+            const playerMap: Record<string, { name: string, team: string, fantasyTeamName: string, points: number }> = {};
+            usersSnap.forEach(docSnap => {
+                const u = docSnap.data();
+                if (docSnap.id === 'admin' || docSnap.id === 'system') return;
+                const teamName = u.teamName || docSnap.id;
+                const lineupsByRound = u.lineupsByRound || {};
+
+                Object.keys(lineupsByRound).forEach(rNum => {
+                    const rData = lineupsByRound[rNum];
+                    if (rData && Array.isArray(rData.lineup)) {
+                        rData.lineup.forEach((p: any) => {
+                            if (!p.name) return;
+                            const key = p.name.trim();
+                            if (!playerMap[key]) {
+                                playerMap[key] = {
+                                    name: p.name,
+                                    team: p.team || p.realTeam || '',
+                                    fantasyTeamName: teamName,
+                                    points: 0
+                                };
+                            }
+                            playerMap[key].points += Number(p.points || 0);
+                        });
+                    }
+                });
+            });
+
+            const sortedTop = Object.values(playerMap)
+                .filter(p => p.points > 0)
+                .sort((a, b) => b.points - a.points);
+
+            await db.doc('leagueData/top_players').set({
+                players: sortedTop,
+                lastUpdated: new Date().toISOString()
+            });
+            console.log('[broadcastRoundCloseToWhatsApp] Auto-updated leagueData/top_players (לשונית מלאכים)!');
+        } catch (topErr) {
+            console.error('Error updating top_players tab:', topErr);
+        }
+
         // 4. Construct Final WhatsApp Message
         const fullMessage = `⚽ *פנטזי לוזון 14 - סיכום מחזור ${round}* ⚽\n\n` +
             `${standingsText}` +
             `${nextMatchesText}` +
+            `${kickoffText}` +
             `${analystText}` +
             `${predictorText}\n` +
             `📱 לצפייה בניקוד המלא והרכבי המחזור הבא:\nhttps://fantasy-luzon.web.app`;
@@ -2128,6 +2188,65 @@ export const syncMatchToExcel = onCall({ region: 'us-west1' }, async (request) =
             fixtures: h2hArchive,
             lastUpdated: new Date().toISOString()
         }, { merge: true });
+
+        // 3. Post automatically to Google Sheets Webhook
+        const webhookUrl = 'https://script.google.com/macros/s/AKfycbxl5IFlmuqfk_CZ4fMBuPDLMQ7GHTp8dwPxNmTJYqSzDho2_qFz-K0lnjB1Vy-6GlTl/exec';
+        if (rows && rows.length > 0) {
+            try {
+                const sheetRows = rows.map((r: any) => [
+                    `R${roundNum}_${r.userId || r.fantasyTeamName}_${r.name}`,
+                    new Date().toISOString().split('T')[0],
+                    roundNum,
+                    r.fantasyTeamName || r.userId,
+                    r.name,
+                    Number(r.points || 0)
+                ]);
+                await axios.post(webhookUrl, JSON.stringify({
+                    sheetName: 'ארכיון ניקוד מחזורים',
+                    headers: ['מזהה סנכרון', 'תאריך', 'מחזור', 'קבוצת פנטזי', 'שם שחקן', 'ניקוד'],
+                    rows: sheetRows
+                }), { headers: { 'Content-Type': 'text/plain;charset=utf-8' }, maxRedirects: 10, timeout: 30000 });
+
+                // Send H2H rows for closed round
+                const roundH2H = h2hArchive.filter((m: any) => m.round === roundNum).map((m: any) => {
+                    const hs = Number(m.homeScore);
+                    const as = Number(m.awayScore);
+                    const diff = Math.abs(hs - as);
+                    let winnerText = '🤝 תיקו';
+                    let ptsAwarded = '1 נק\' לכל קבוצה';
+                    if (hs > as) {
+                        winnerText = `🏆 ניצחון ל-${m.homeTeam}`;
+                        ptsAwarded = diff >= 20 ? `3 נק' (${m.homeTeam})` : `2 נק' (${m.homeTeam})`;
+                    } else if (as > hs) {
+                        winnerText = `🏆 ניצחון ל-${m.awayTeam}`;
+                        ptsAwarded = diff >= 20 ? `3 נק' (${m.awayTeam})` : `2 נק' (${m.awayTeam})`;
+                    }
+                    return [
+                        `מחזור ${roundNum}`,
+                        m.homeTeam,
+                        hs,
+                        `${hs} : ${as}`,
+                        as,
+                        m.awayTeam,
+                        diff > 0 ? `+${diff}` : '0',
+                        winnerText,
+                        ptsAwarded
+                    ];
+                });
+
+                if (roundH2H.length > 0) {
+                    await axios.post(webhookUrl, JSON.stringify({
+                        sheetName: 'תוצאות מפגשי פנטזי',
+                        headers: ['מחזור', 'קבוצת בית', 'ניקוד בית', 'תוצאת המפגש', 'ניקוד חוץ', 'קבוצת חוץ', 'הפרש', 'מנצחת / סטטוס', 'נקודות ליגה שהוענקו'],
+                        rows: roundH2H
+                    }), { headers: { 'Content-Type': 'text/plain;charset=utf-8' }, maxRedirects: 10, timeout: 30000 });
+                }
+
+                console.log(`[syncMatchToExcel] Successfully posted player scores and H2H results to Google Sheet Webhook for round ${roundNum}!`);
+            } catch (wErr: any) {
+                console.error('[syncMatchToExcel] Webhook Error:', wErr?.message || wErr);
+            }
+        }
 
         return { success: true, count: rows?.length || 0, message: `Round ${roundNum} data & H2H schedule archived successfully!` };
     } catch (err: any) {
@@ -2388,7 +2507,7 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
     // 2. Real Matches & First Kickoff Time / Deadline (Sorted Chronologically)
     const parseDate = (dStr: string, tStr: string) => {
         if (!dStr) return new Date(9999, 0, 1).getTime();
-        const parts = dStr.split(/[\/\.]/);
+        const parts = dStr.split(/[/.]/);
         if (parts.length < 3) return new Date(9999, 0, 1).getTime();
         const day = parseInt(parts[0], 10);
         const month = parseInt(parts[1], 10) - 1;
@@ -2475,20 +2594,36 @@ export const scheduledCalendarSync = onSchedule('every 6 hours', async () => {
 
 // 🟢 סנכרון אוטומטי מתוך קובץ Google Sheets של משחקי ליגת העל והגביע 🟢
 const runSheetSyncLogic = async () => {
-    const primaryUrl = 'https://docs.google.com/spreadsheets/d/14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s/gviz/tq?tqx=out:csv';
-    const fallbackUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQu3dsWYrZmhp_LvcWSisQODusa0aETCYEHLlJGbKeqOpLBJFhwHCFML5HlpHnbSdeUEycx2K3KhZLt/pub?output=csv';
-    
+    const tabNames = ['📅 משחקי ליגת העל', 'משחקי ליגת העל', 'גיליון1'];
     let csvData = '';
-    try {
-        const res = await axios.get(primaryUrl);
-        csvData = res.data;
-    } catch (e) {
-        console.warn('Primary sheet URL failed, trying fallback URL:', (e as any)?.message);
+
+    for (const tName of tabNames) {
         try {
-            const res = await axios.get(fallbackUrl);
+            const url = `https://docs.google.com/spreadsheets/d/14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tName)}`;
+            const res = await axios.get(url);
+            if (res.data && String(res.data).trim().length > 30) {
+                csvData = res.data;
+                console.log(`[runSheetSyncLogic] Successfully fetched fixtures from sheet tab '${tName}'!`);
+                break;
+            }
+        } catch (e) {
+            // try next tab name
+        }
+    }
+
+    if (!csvData) {
+        const primaryUrl = 'https://docs.google.com/spreadsheets/d/14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s/gviz/tq?tqx=out:csv';
+        const fallbackUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQu3dsWYrZmhp_LvcWSisQODusa0aETCYEHLlJGbKeqOpLBJFhwHCFML5HlpHnbSdeUEycx2K3KhZLt/pub?output=csv';
+        try {
+            const res = await axios.get(primaryUrl);
             csvData = res.data;
-        } catch (err) {
-            console.error('All sheet URLs failed:', (err as any)?.message);
+        } catch (e) {
+            try {
+                const res = await axios.get(fallbackUrl);
+                csvData = res.data;
+            } catch (err) {
+                console.error('[runSheetSyncLogic] All sheet URLs failed:', (err as any)?.message);
+            }
         }
     }
 
@@ -2527,6 +2662,8 @@ const runSheetSyncLogic = async () => {
     for (let i = 1; i < lines.length; i++) {
         const cols = parseCsvLine(lines[i]);
         if (cols.length < 6) continue;
+        if (cols[0].includes('=') || cols[0].includes('תצוגה') || cols[0].includes('בחר') || cols[0].includes('ארכיון') || cols[0].includes('═')) continue;
+        if (!cols[0].includes('מחזור') && !cols[0].includes('גמר') && !cols[0].includes('חצי') && !cols[0].includes('רבע')) continue;
 
         const roundStage = cols[0]; // מחזור 1
         const dateStr = cols[1];    // 22/08/2026
@@ -2648,7 +2785,8 @@ const runLiveScraperLogic = async () => {
 
         // 0. Check if scraper is globally enabled/disabled in settings/scraper
         const settingsSnap = await db.doc('settings/scraper').get();
-        if (settingsSnap.exists && settingsSnap.data()?.enabled === false) {
+        const scraperSettings = settingsSnap.exists ? settingsSnap.data() : {};
+        if (scraperSettings?.enabled === false) {
             console.log('[LiveScraper] Scraper is currently PAUSED via settings/scraper. Standing by...');
             return { success: true, count: 0, message: 'Scraper is currently paused via remote command' };
         }
@@ -2659,34 +2797,39 @@ const runLiveScraperLogic = async () => {
         let activeMatchInfo = '';
 
         if (fixturesSnap.exists) {
-            const matches = fixturesSnap.data()?.matches || [];
+            const matches = [...(fixturesSnap.data()?.matches || []), ...(fixturesSnap.data()?.cupMatches || [])];
             const now = new Date();
             
-            const jerusalemDateStr = now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' }); // "29.8.2026"
-            const parts = jerusalemDateStr.split('.');
-            const dStr = (parts[0] || '').padStart(2, '0');
-            const mStr = (parts[1] || '').padStart(2, '0');
-            const yStr = parts[2] || '2026';
+            // Reliable Jerusalem Date & Time
+            const jerusalemDateStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now); // "30/08/2026"
+            const [dStr, mStr, yStr] = jerusalemDateStr.split('/');
+            const todayPadded = `${dStr}/${mStr}/${yStr}`; // "30/08/2026"
+            const todayRaw = `${parseInt(dStr, 10)}/${parseInt(mStr, 10)}/${yStr}`; // "30/8/2026"
 
-            const todayPadded = `${dStr}/${mStr}/${yStr}`; // "29/08/2026"
-            const todayRaw = `${parts[0]}/${parts[1]}/${yStr}`; // "29/8/2026"
+            const jerusalemTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(now); // "20:15"
+            const [nowH, nowM] = jerusalemTimeStr.split(':').map(n => parseInt(n, 10));
+            const nowTotalMins = (nowH || 0) * 60 + (nowM || 0);
 
             for (const m of matches) {
+                const mStatus = String(m.status || '').trim();
+                // 🛑 STRICT GUARD: Skip matches that are already finished, cancelled or postponed
+                if (mStatus.includes('הסתיים') || mStatus.includes('בוטל') || mStatus.includes('דחוי')) {
+                    continue;
+                }
+
                 const mDateNorm = String(m.date || '').replace(/\./g, '/').trim();
 
                 if (mDateNorm === todayPadded || mDateNorm === todayRaw || mDateNorm.includes(todayPadded) || mDateNorm.includes(todayRaw)) {
                     const [hourStr, minStr] = String(m.time || '20:00').split(':');
                     const matchHour = parseInt(hourStr || '20', 10);
                     const matchMin = parseInt(minStr || '0', 10);
-                    
-                    const nowHour = parseInt(now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', hour12: false }), 10);
-                    const nowMin = parseInt(now.toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', minute: '2-digit' }), 10);
-                    
-                    const nowTotalMins = nowHour * 60 + nowMin;
                     const matchTotalMins = matchHour * 60 + matchMin;
 
-                    // Active if within window: 15 mins before match until 210 mins after match
-                    if (nowTotalMins >= (matchTotalMins - 15) && nowTotalMins <= (matchTotalMins + 210)) {
+                    // Match is active strictly within window: 5 mins before kickoff up to 110 mins after kickoff, OR if status is explicitly live
+                    const isWithinTimeWindow = (nowTotalMins >= (matchTotalMins - 5) && nowTotalMins <= (matchTotalMins + 110));
+                    const isExplicitLiveStatus = mStatus.includes('לייב') || mStatus.includes('פעיל');
+
+                    if (isWithinTimeWindow || isExplicitLiveStatus) {
                         isGameLiveNow = true;
                         activeMatchInfo = `${m.homeTeam} נגד ${m.awayTeam} (${m.time})`;
                         break;
@@ -2700,7 +2843,7 @@ const runLiveScraperLogic = async () => {
             return { success: true, count: 0, message: 'No active match right now according to calendar' };
         }
 
-        console.log(`[LiveScraper] 🔥 Game is LIVE NOW! (${activeMatchInfo}) Scanning Sport5 & IFA...`);
+        console.log(`[LiveScraper] 🔥 Game is LIVE NOW! (${activeMatchInfo}) Scanning Sport5, ONE, IFA...`);
 
         // Fetch ALL tracked Premier League players (both drafted AND free agents)
         const realPlayersSnap = await db.collection('real_league_players_scoring').get();
@@ -2737,42 +2880,46 @@ const runLiveScraperLogic = async () => {
                 });
                 createdEvents.push(`${source} ${eventType}: ${plName}`);
 
-                // 🟢 Send WhatsApp Live Poll to Group Chat 🟢
-                try {
-                    const groupChatId = '120363412136780106@g.us';
-                    const greenHost = 'https://7107.api.greenapi.com';
-                    const greenId = '710722713612';
-                    const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+                // 🟢 Send WhatsApp Live Poll to Group Chat (Only if sendWhatsappPolls is enabled) 🟢
+                if (scraperSettings?.sendWhatsappPolls !== false) {
+                    try {
+                        const groupChatId = '120363412136780106@g.us';
+                        const greenHost = 'https://7107.api.greenapi.com';
+                        const greenId = '710722713612';
+                        const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
 
-                    const pollQuestion = `🤖 *סוכן הלייב זיהה אירוע במגרשים!* 🏟️⚽\n\n` +
-                        `• ${desc}\n` +
-                        `• מקור המידע: *${source}*\n\n` +
-                        `האם לאשר ולעדכן את הניקוד בזירה?`;
+                        const pollQuestion = `🤖 *סוכן הלייב זיהה אירוע במגרשים!* 🏟️⚽\n\n` +
+                            `• ${desc}\n` +
+                            `• מקור המידע: *${source}*\n\n` +
+                            `האם לאשר ולעדכן את הניקוד בזירה?`;
 
-                    const pollRes = await axios.post(`${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`, {
-                        chatId: groupChatId,
-                        message: pollQuestion,
-                        options: [
-                            { optionName: `✅ מאשר לעדכן (${plName})` },
-                            { optionName: `❌ דחה אירוע` }
-                        ]
-                    });
-
-                    if (pollRes.data?.idMessage) {
-                        await db.collection('whatsapp_bot_sent_messages').add({
-                            idMessage: pollRes.data.idMessage,
-                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        const pollRes = await axios.post(`${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`, {
+                            chatId: groupChatId,
+                            message: pollQuestion,
+                            options: [
+                                { optionName: `✅ מאשר לעדכן (${plName})` },
+                                { optionName: `❌ דחה אירוע` }
+                            ]
                         });
-                    }
 
-                    console.log(`[LiveScraper Notification] Sent WhatsApp Poll for ${plName} to group!`);
-                } catch (waErr: any) {
-                    console.error(`[LiveScraper Notification] Error sending WA poll:`, waErr?.message);
+                        if (pollRes.data?.idMessage) {
+                            await db.collection('whatsapp_bot_sent_messages').add({
+                                idMessage: pollRes.data.idMessage,
+                                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+
+                        console.log(`[LiveScraper Notification] Sent WhatsApp Poll for ${plName} to group!`);
+                    } catch (waErr: any) {
+                        console.error(`[LiveScraper Notification] Error sending WA poll:`, waErr?.message);
+                    }
+                } else {
+                    console.log(`[LiveScraper] Event saved as pending in Firestore for ${plName} (WhatsApp polls muted in settings).`);
                 }
 
                 return true;
             } else {
-                // 🟢 מניעת כפילויות ואיחוד מקורות מוצלבים 🟢
+                // 🟢 Deduplication & merging sources 🟢
                 const eventDoc = existingSnap.docs[0];
                 const data = eventDoc.data();
                 const currentSource = String(data.source || '');
@@ -2789,7 +2936,16 @@ const runLiveScraperLogic = async () => {
             return false;
         };
 
-        // 1. Scrape Sport5 Ticker (Official Goals & Assists)
+        // Helper to extract text strictly from live score containers
+        const extractLiveTickerSnippet = ($: any, selectors: string): string => {
+            const container = $(selectors);
+            if (container.length > 0) {
+                return container.text();
+            }
+            return ''; // DO NOT fall back to $('body').text() to prevent false positives from news articles!
+        };
+
+        // 1. Scrape Sport5 Live Ticker
         const sport5Res = await axios.get('https://www.sport5.co.il/', {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             timeout: 5000
@@ -2797,18 +2953,25 @@ const runLiveScraperLogic = async () => {
 
         if (sport5Res && sport5Res.data) {
             const $ = cheerio.load(sport5Res.data);
-            const tickerText = $('.ticker, .live-matches, .game-item, .match-ticker').text() || $('body').text();
+            const tickerText = extractLiveTickerSnippet($, '.ticker, .live-matches, .game-item.live, .match-ticker, .ticker-wrap, .score-strip, #live-ticker');
             const tickerNorm = norm(tickerText);
 
-            for (const pl of allTrackedPlayers) {
-                const plNorm = norm(pl.name);
-                if (plNorm.length >= 4 && tickerNorm.includes(plNorm)) {
-                    await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ספורט 5', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+            if (tickerNorm.length > 0) {
+                for (const pl of allTrackedPlayers) {
+                    const plNorm = norm(pl.name);
+                    // Require player name AND explicit goal indicator in live ticker text
+                    if (plNorm.length >= 4 && tickerNorm.includes(plNorm)) {
+                        if (tickerNorm.includes(plNorm + 'שער') || tickerNorm.includes('שער' + plNorm) || tickerNorm.includes(plNorm + 'גול') || tickerNorm.includes('גול' + plNorm) || tickerNorm.includes('כובש' + plNorm)) {
+                            await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ספורט 5', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+                        } else if (tickerNorm.includes(plNorm + 'בישל') || tickerNorm.includes('בישול' + plNorm) || tickerNorm.includes('מבשל' + plNorm)) {
+                            await checkAndCreatePending(pl.name, pl.realTeam, 'assist', 'ספורט 5', `👟 בישול! ${pl.name} (${pl.realTeam})`);
+                        }
+                    }
                 }
             }
         }
 
-        // 2. Scrape ONE Ticker (Secondary Goals & Assists)
+        // 2. Scrape ONE Live Ticker
         const oneRes = await axios.get('https://www.one.co.il/', {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             timeout: 5000
@@ -2816,41 +2979,24 @@ const runLiveScraperLogic = async () => {
 
         if (oneRes && oneRes.data) {
             const $ = cheerio.load(oneRes.data);
-            const oneText = $('.live-scores, .ticker, .matches-list').text() || $('body').text();
+            const oneText = extractLiveTickerSnippet($, '.live-scores, .live-match-box, .matches-list-live, .live-ticker');
             const oneNorm = norm(oneText);
 
-            for (const pl of allTrackedPlayers) {
-                const plNorm = norm(pl.name);
-                if (plNorm.length >= 4 && oneNorm.includes(plNorm)) {
-                    await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ONE', `⚽ שער! ${pl.name} (${pl.realTeam})`);
-                }
-            }
-        }
-
-        // 3. Scrape Walla! Sports (Tertiary Goals & Assists)
-        const wallaRes = await axios.get('https://sports.walla.co.il/', {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-            timeout: 5000
-        }).catch(() => null);
-
-        if (wallaRes && wallaRes.data) {
-            const $ = cheerio.load(wallaRes.data);
-            const wallaText = $('body').text();
-            const wallaNorm = norm(wallaText);
-
-            for (const pl of allTrackedPlayers) {
-                const plNorm = norm(pl.name);
-                if (plNorm.length >= 4 && wallaNorm.includes(plNorm)) {
-                    if (wallaNorm.includes(plNorm + 'בישל') || wallaNorm.includes('בישול' + plNorm) || wallaNorm.includes(plNorm + 'מסר')) {
-                        await checkAndCreatePending(pl.name, pl.realTeam, 'assist', 'וואלה! ספורט', `👟 בישול! ${pl.name} (${pl.realTeam})`);
-                    } else {
-                        await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'וואלה! ספורט', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+            if (oneNorm.length > 0) {
+                for (const pl of allTrackedPlayers) {
+                    const plNorm = norm(pl.name);
+                    if (plNorm.length >= 4 && oneNorm.includes(plNorm)) {
+                        if (oneNorm.includes(plNorm + 'שער') || oneNorm.includes('שער' + plNorm) || oneNorm.includes(plNorm + 'גול') || oneNorm.includes('גול' + plNorm)) {
+                            await checkAndCreatePending(pl.name, pl.realTeam, 'goal', 'ONE', `⚽ שער! ${pl.name} (${pl.realTeam})`);
+                        } else if (oneNorm.includes(plNorm + 'בישל') || oneNorm.includes('בישול' + plNorm)) {
+                            await checkAndCreatePending(pl.name, pl.realTeam, 'assist', 'ONE', `👟 בישול! ${pl.name} (${pl.realTeam})`);
+                        }
                     }
                 }
             }
         }
 
-        // 4. Scrape IFA / Israeli Football Association (Cards & Yellows/Reds)
+        // 3. Scrape IFA / Israeli Football Association (Cards & Yellows/Reds)
         const ifaRes = await axios.get('https://www.football.org.il/', {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             timeout: 5000
@@ -2858,16 +3004,18 @@ const runLiveScraperLogic = async () => {
 
         if (ifaRes && ifaRes.data) {
             const $ = cheerio.load(ifaRes.data);
-            const ifaText = $('body').text();
+            const ifaText = extractLiveTickerSnippet($, '.live-match-events, .game-events, .events-list, #live-events');
             const ifaNorm = norm(ifaText);
 
-            for (const pl of allTrackedPlayers) {
-                const plNorm = norm(pl.name);
-                if (plNorm.length >= 4 && ifaNorm.includes(plNorm)) {
-                    if (ifaNorm.includes(plNorm + 'צהוב') || ifaNorm.includes('צהוב' + plNorm)) {
-                        await checkAndCreatePending(pl.name, pl.realTeam, 'yellow', 'ההתאחדות לכדורגל', `🟨 כרטיס צהוב! ${pl.name} (${pl.realTeam})`);
-                    } else if (ifaNorm.includes(plNorm + 'אדום') || ifaNorm.includes('אדום' + plNorm)) {
-                        await checkAndCreatePending(pl.name, pl.realTeam, 'red', 'ההתאחדות לכדורגל', `🟥 כרטיס אדום! ${pl.name} (${pl.realTeam})`);
+            if (ifaNorm.length > 0) {
+                for (const pl of allTrackedPlayers) {
+                    const plNorm = norm(pl.name);
+                    if (plNorm.length >= 4 && ifaNorm.includes(plNorm)) {
+                        if (ifaNorm.includes(plNorm + 'צהוב') || ifaNorm.includes('צהוב' + plNorm)) {
+                            await checkAndCreatePending(pl.name, pl.realTeam, 'yellow', 'ההתאחדות לכדורגל', `🟨 כרטיס צהוב! ${pl.name} (${pl.realTeam})`);
+                        } else if (ifaNorm.includes(plNorm + 'אדום') || ifaNorm.includes('אדום' + plNorm)) {
+                            await checkAndCreatePending(pl.name, pl.realTeam, 'red', 'ההתאחדות לכדורגל', `🟥 כרטיס אדום! ${pl.name} (${pl.realTeam})`);
+                        }
                     }
                 }
             }
