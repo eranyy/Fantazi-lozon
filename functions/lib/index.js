@@ -665,13 +665,12 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                     const opt = calculateOptimalLineupServer(squad);
                     const actualPts = squad.reduce((acc, pl) => {
                         const pts = Number(pl.points) || 0;
-                        const isCapt = pl.isCaptain || pl.captain;
-                        return acc + (isCapt ? pts * 2 : pts);
+                        return acc + pts;
                     }, 0);
                     const diff = Math.max(0, opt.optimalPoints - actualPts);
                     msg += `👤 *${u.teamName || u.name || u.manager}* (${u.manager}):\n`;
                     msg += `   📊 ניקוד בפועל: ${actualPts} נק'\n`;
-                    msg += `   💡 ניקוד אופטימלי: *${opt.optimalPoints} נק'* (מערך ${opt.formation}${opt.captain ? `, קפטן: ${opt.captain.name}` : ''})\n`;
+                    msg += `   💡 ניקוד אופטימלי: *${opt.optimalPoints} נק'* (מערך ${opt.formation})\n`;
                     if (diff > 0)
                         msg += `   ⚠️ פוטנציאל לא ממומש מהספסל: -${diff} נק'\n`;
                     msg += `\n`;
