@@ -168,17 +168,112 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
     setEditScoreModalReal(null);
   };
 
+  const parseCsvLine = (line: string) => {
+    const result: string[] = [];
+    let insideQuote = false;
+    let entry = '';
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (insideQuote && line[i + 1] === '"') {
+          entry += '"';
+          i++;
+        } else {
+          insideQuote = !insideQuote;
+        }
+      } else if (char === ',' && !insideQuote) {
+        result.push(entry.trim());
+        entry = '';
+      } else {
+        entry += char;
+      }
+    }
+    result.push(entry.trim());
+    return result;
+  };
+
   const fetchFromSportsDB = async () => {
     setIsFetchingApi(true);
-    setApiMessage({ text: "מרענן נתונים...", type: 'info' });
+    setApiMessage({ text: "סורק ומסנכרן מול קובץ ה-Google Sheet...", type: 'info' });
     try {
-      setTimeout(() => {
-        setApiMessage({ text: "הנתונים מעודכנים! להוספת משחקים היכנס להגדרות.", type: 'success' });
-        setTimeout(() => setApiMessage(null), 4000);
-        setIsFetchingApi(false);
-      }, 1000);
+      const spreadsheetId = '14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s';
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=0`;
+      
+      const response = await fetch(csvUrl);
+      if (!response.ok) throw new Error('נכשלה התחברות לקובץ האקסל');
+      const csvText = await response.text();
+      
+      const lines = csvText.split('\n').map(l => l.trim());
+      const parsedMatches: any[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        if (!cols || cols.length < 6) continue;
+        if (!cols[0].includes('מחזור')) continue;
+        if (cols[0].includes('#VALUE') || cols[0].includes('סחזור')) continue;
+
+        const homeTeam = cols[4] || '';
+        const awayTeam = cols[5] || '';
+        if (!homeTeam || !awayTeam || homeTeam === 'קבוצת בית' || awayTeam === 'קבוצת חוץ') continue;
+
+        const roundNum = parseInt(cols[0].replace(/[^\d]/g, ''), 10) || 1;
+        const dateStr = formatMatchDateDisplay(cols[1] || '');
+        const dayStr = cols[2] || '';
+        const timeStr = cols[3] || '';
+        const competition = cols[6] || 'ליגת WINNER';
+        const stadium = cols[7] || '';
+        const tvChannel = cols[8] || '';
+        const statusRaw = cols[9] || 'עתידי';
+
+        let status = statusRaw;
+        let homeScore: number | undefined = undefined;
+        let awayScore: number | undefined = undefined;
+
+        const scoreMatch = statusRaw.match(/\((\d+)\s*[-\u2013]\s*(\d+)\)/) || statusRaw.match(/(\d+)\s*[-\u2013]\s*(\d+)/);
+        if (scoreMatch) {
+          homeScore = parseInt(scoreMatch[1], 10);
+          awayScore = parseInt(scoreMatch[2], 10);
+          status = 'הסתיים';
+        } else if (statusRaw.includes('הסתיים')) {
+          status = 'הסתיים';
+        }
+
+        const matchId = `sheet_match_${roundNum}_${homeTeam.replace(/\s+/g, '_')}_${awayTeam.replace(/\s+/g, '_')}`;
+
+        const matchItem: any = {
+          id: matchId,
+          round: roundNum,
+          date: dateStr,
+          day: dayStr,
+          time: timeStr,
+          homeTeam,
+          awayTeam,
+          competition,
+          stadium,
+          tvChannel,
+          status,
+          homeScore: homeScore !== undefined ? homeScore : null,
+          awayScore: awayScore !== undefined ? awayScore : null,
+          hs: homeScore !== undefined ? homeScore : null,
+          as: awayScore !== undefined ? awayScore : null
+        };
+
+        parsedMatches.push(matchItem);
+      }
+
+      if (parsedMatches.length > 0) {
+        await updateDoc(doc(db, 'leagueData', 'real_fixtures'), { matches: parsedMatches });
+        setRealFixtures(parsedMatches);
+        setApiMessage({ text: `✓ סונכרנו בהצלחה ${parsedMatches.length} משחקים מקובץ ה-Google Sheet!`, type: 'success' });
+      } else {
+        setApiMessage({ text: 'לא נגרסו משחקים חדשים מהקובץ', type: 'error' });
+      }
+      setTimeout(() => setApiMessage(null), 4000);
+      setIsFetchingApi(false);
     } catch (error: any) {
-      setApiMessage({ text: "שגיאה ברענון", type: 'error' });
+      console.error('Error fetching sheet fixtures:', error);
+      setApiMessage({ text: `שגיאה ברענון מהאקסל: ${error.message || ''}`, type: 'error' });
+      setTimeout(() => setApiMessage(null), 4000);
       setIsFetchingApi(false);
     }
   };
@@ -755,16 +850,15 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
                     שתף
                   </button>
                 )}
-                {isAdmin && (
-                  <button 
-                    onClick={fetchFromSportsDB}
-                    disabled={isFetchingApi}
-                    className="bg-blue-600/20 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 font-bold px-3 py-1.5 rounded-lg transition-all shadow-xl disabled:opacity-50 text-xs flex items-center gap-1"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isFetchingApi ? 'animate-spin' : ''}`} />
-                    {isFetchingApi ? 'מרענן...' : 'רענן'}
-                  </button>
-                )}
+                <button 
+                  onClick={fetchFromSportsDB}
+                  disabled={isFetchingApi}
+                  className="bg-blue-600/20 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 font-bold px-3 py-1.5 rounded-lg transition-all shadow-xl disabled:opacity-50 text-xs flex items-center gap-1 active:scale-95"
+                  title="סנכרן לוח משחקים ישירות מקובץ ה-Google Sheet"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isFetchingApi ? 'animate-spin' : ''}`} />
+                  {isFetchingApi ? 'מסנכרן מהאקסל...' : 'רענן מהאקסל 🔄'}
+                </button>
               </div>
               {apiMessage && (
                 <div className={`text-[10px] font-bold px-2 py-1 rounded w-full text-right ${apiMessage.type === 'error' ? 'bg-red-500/20 text-red-400' : apiMessage.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}>
