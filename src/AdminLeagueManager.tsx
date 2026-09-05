@@ -506,11 +506,30 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col items-center justify-center bg-slate-950 px-4 md:px-6 py-2 md:py-3 rounded-2xl border border-slate-800 shadow-inner ml-1 relative z-10">
-                         <span className={`text-2xl md:text-4xl font-black tabular-nums leading-none ${isTop1 ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]' : isTop2 ? 'text-zinc-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]' : 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.3)]'}`}>
-                           {player.points}
-                         </span>
-                         <span className="text-[8px] md:text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Points</span>
+                      <div className="shrink-0 flex items-center gap-1.5 md:gap-2.5 ml-1 relative z-10">
+                         {/* ⚽ שערים */}
+                         <div className="flex flex-col items-center justify-center bg-emerald-950/80 px-2 md:px-3 py-1.5 md:py-2 rounded-xl border border-emerald-500/30 shadow-inner">
+                            <span className="text-xs md:text-base font-black text-emerald-400 tabular-nums leading-none">
+                               ⚽ {player.goals || 0}
+                            </span>
+                            <span className="text-[8px] md:text-[9px] text-emerald-300/80 font-bold mt-1">שערים</span>
+                         </div>
+
+                         {/* 🎯 בישולים */}
+                         <div className="flex flex-col items-center justify-center bg-blue-950/80 px-2 md:px-3 py-1.5 md:py-2 rounded-xl border border-blue-500/30 shadow-inner">
+                            <span className="text-xs md:text-base font-black text-blue-400 tabular-nums leading-none">
+                               🎯 {player.assists || 0}
+                            </span>
+                            <span className="text-[8px] md:text-[9px] text-blue-300/80 font-bold mt-1">בישולים</span>
+                         </div>
+
+                         {/* 🏆 ניקוד */}
+                         <div className="flex flex-col items-center justify-center bg-slate-950 px-3 md:px-4 py-1.5 md:py-2 rounded-xl border border-slate-800 shadow-inner">
+                            <span className={`text-base md:text-2xl font-black tabular-nums leading-none ${isTop1 ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]' : isTop2 ? 'text-zinc-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]' : 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.3)]'}`}>
+                              {player.points}
+                            </span>
+                            <span className="text-[8px] md:text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">ניקוד</span>
+                         </div>
                       </div>
 
                     </div>

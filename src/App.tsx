@@ -48,7 +48,7 @@ const App: React.FC = () => {
   const displayName = isEran ? 'ערן' : (loggedInUser?.name || '');
 
   // 🟢 1. מנגנון בדיקת גרסה אוטומטי - מרענן אוטומטית למשתמשים כשיוצא Build חדש 🟢
-  const LUZON_BUILD_VERSION = '14.0.20260905_v12';
+  const LUZON_BUILD_VERSION = '14.0.20260905_v13';
   useEffect(() => {
     const lastSeenVersion = localStorage.getItem('luzon_app_version');
     if (lastSeenVersion !== LUZON_BUILD_VERSION) {
