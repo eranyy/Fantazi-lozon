@@ -224,10 +224,16 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     return { t1Wins, t2Wins, draws, t1Goals, t2Goals, pastEncounters: pastEncounters.sort((a, b) => b.round - a.round) };
   };
 
-  const getPlayerPointsForRound = (player: any, _team: any, _rNum: number) => {
+  const getPlayerPointsForRound = (player: any, _team: any, rNum: number = selectedRound) => {
     if (!player) return 0;
     
-    // Prioritize explicit player.points (from manual edit, excel import, or approval)
+    // If viewing an upcoming unplayed round, score is 0 until matches start!
+    const roundFixture = fixtures.find((r: any) => r.round === rNum);
+    if (rNum >= currentRound && (!roundFixture || !roundFixture.isPlayed)) {
+      return 0;
+    }
+
+    // Prioritize explicit player.points (from manual edit, excel import, or approval) for closed rounds
     if (typeof player.points === 'number' && !isNaN(player.points)) {
       return player.points;
     }
