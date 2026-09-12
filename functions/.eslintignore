@@ -1,0 +1,8 @@
+lib/
+test_*.js
+trigger_*.js
+update_*.js
+verify_*.js
+*_ux.js
+write_to_sheets_with_gcloud.js
+*.js
