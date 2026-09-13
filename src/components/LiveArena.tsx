@@ -597,6 +597,16 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const rows = text.split('\n').map(parseCsvRow);
     let updatedTeams: string[] = []; let missingTeams: string[] = [];
 
+    const rowMap = new Map<string, number>();
+    const rowEntries: { col0: string, r: number }[] = [];
+    for (let r = 0; r < rows.length; r++) {
+      if (rows[r] && rows[r][0]) {
+        const col0 = cleanStr(rows[r][0]);
+        rowMap.set(col0, r);
+        rowEntries.push({ col0, r });
+      }
+    }
+
     for (const team of teams) {
       if (!team.squad || team.squad.length === 0) continue;
       const teamNameVariations = [
@@ -604,13 +614,23 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         team.id === 'hamsili' ? 'חמסילי' : null, team.id === 'harale' ? 'חראלה' : null,
         team.id === 'tampa' ? 'טמפה' : null, team.id === 'tumali' ? 'תומאלי' : null,
         team.id === 'holonia' ? 'חולוניה' : null, team.id === 'pichichi' ? "פיצ'יצ'י" : null,
-      ].filter(Boolean).map(cleanStr);
+      ].filter(Boolean).map(v => cleanStr(v as string));
       
       let teamRowIdx = -1;
-      for (let r = 0; r < rows.length; r++) {
-        if (rows[r] && rows[r][0]) {
-            const col0 = cleanStr(rows[r][0]);
-            if (teamNameVariations.some(v => col0 === v || col0.includes(v!))) { teamRowIdx = r; break; }
+      for (const v of teamNameVariations) {
+        if (!v) continue;
+        if (rowMap.has(v)) {
+          teamRowIdx = rowMap.get(v)!;
+          break;
+        }
+      }
+
+      if (teamRowIdx === -1) {
+        for (const entry of rowEntries) {
+          if (teamNameVariations.some(v => v && entry.col0.includes(v))) {
+            teamRowIdx = entry.r;
+            break;
+          }
         }
       }
 
