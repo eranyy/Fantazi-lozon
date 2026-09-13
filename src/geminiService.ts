@@ -1,13 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 const modelName = "gemini-1.5-flash-latest";
 
-const FALLBACK_GEMINI_KEY = "AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk";
-
 const getApiKey = (providedKey?: string) => {
   return providedKey || 
          localStorage.getItem('gemini_api_key') || 
          (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
-         FALLBACK_GEMINI_KEY;
+         "";
 };
 
 // 🟢 פונקציית עזר למניעת תקיעות - מוקצב ל-45 שניות (זמן סביר לסריקת מסמכים) 🟢
