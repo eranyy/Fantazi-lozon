@@ -1,4 +1,12 @@
-export const parseMatchDateTime = (m: any): number => {
+export interface MatchDateTimeInfo {
+  timestamp?: number;
+  date?: string;
+  time?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export const parseMatchDateTime = (m: MatchDateTimeInfo | null | undefined): number => {
   if (!m) return Infinity;
   if (typeof m.timestamp === 'number' && m.timestamp > 0) return m.timestamp;
 
@@ -29,7 +37,7 @@ export const parseMatchDateTime = (m: any): number => {
   return new Date(year, month, day, hours, minutes).getTime();
 };
 
-export const sortMatchesChronologically = (matches: any[]): any[] => {
+export const sortMatchesChronologically = <T extends MatchDateTimeInfo>(matches: T[]): T[] => {
   if (!Array.isArray(matches)) return [];
   return [...matches].sort((a, b) => parseMatchDateTime(a) - parseMatchDateTime(b));
 };
