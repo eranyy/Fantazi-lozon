@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth, functions } from './firebaseConfig'; 
 import { analyzeMatchImage, generateAISummary, generateRumors } from './geminiService'; 
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, query, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, query, getDoc, addDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server, Zap } from 'lucide-react';
-import { parseFantasyExcel } from './utils/FantasyExcelParser'; 
+import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Edit3, Plus, X, Server } from 'lucide-react';
+import { cleanStr, normalizeTeamName } from './utils/teamUtils';
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
 
-import { cleanStr, getHistoricalName, getTeamColors, normalizeTeamName } from './utils/teamUtils';
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
 const getNormalizedTeamId = (nameOrId: string) => {
