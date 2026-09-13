@@ -36,7 +36,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.triggerFridayReminder = exports.scheduledFridayReminder = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
+exports.checkMatchDeadlinesAndNotify = exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.triggerFridayReminder = exports.scheduledFridayReminder = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.onUserTransfersUpdated = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
+exports.sendPushNotificationHelper = sendPushNotificationHelper;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const firestore_1 = require("firebase-functions/v2/firestore");
@@ -422,6 +423,104 @@ exports.sendCustomPushNotification = (0, https_1.onCall)({ region: 'us-west1', c
     });
     return { success: true, count: response.successCount, failed: response.failureCount };
 });
+async function sendPushNotificationHelper(title, message, targetUserId, excludeUserId) {
+    try {
+        if (!title || !message)
+            return { success: false, reason: 'Missing title/message' };
+        const tokens = [];
+        if (targetUserId && targetUserId !== 'ALL') {
+            const userDoc = await db.collection('users').doc(targetUserId).get();
+            if (userDoc.exists) {
+                const data = userDoc.data();
+                if (data?.fcmTokens && Array.isArray(data.fcmTokens)) {
+                    tokens.push(...data.fcmTokens.filter((t) => typeof t === 'string' && t.trim()));
+                }
+                else if (data?.fcmToken && typeof data.fcmToken === 'string') {
+                    tokens.push(data.fcmToken);
+                }
+            }
+        }
+        else {
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach(doc => {
+                if (excludeUserId && doc.id === excludeUserId)
+                    return;
+                const data = doc.data();
+                if (data.fcmTokens && Array.isArray(data.fcmTokens)) {
+                    tokens.push(...data.fcmTokens.filter((t) => typeof t === 'string' && t.trim()));
+                }
+                else if (data.fcmToken && typeof data.fcmToken === 'string') {
+                    tokens.push(data.fcmToken);
+                }
+            });
+        }
+        if (tokens.length === 0) {
+            console.log(`[sendPushNotificationHelper] No FCM tokens found for target: ${targetUserId || 'ALL'}`);
+            return { success: true, count: 0 };
+        }
+        const uniqueTokens = Array.from(new Set(tokens));
+        const response = await admin.messaging().sendEachForMulticast({
+            tokens: uniqueTokens,
+            notification: { title, body: message },
+            data: { title, body: message },
+            webpush: {
+                headers: { Urgency: 'high' },
+                notification: { title, body: message, icon: '/app-icon.png', badge: '/app-icon.png', requireInteraction: true }
+            }
+        });
+        console.log(`[sendPushNotificationHelper] Sent push notification ("${title}") to ${response.successCount} devices.`);
+        return { success: true, count: response.successCount, failed: response.failureCount };
+    }
+    catch (err) {
+        console.error('[sendPushNotificationHelper] Error sending push notification:', err);
+        return { success: false, error: err };
+    }
+}
+// 🟢 טריגר אוטומטי להעברות יריבים בזמן אמת 🟢
+exports.onUserTransfersUpdated = (0, firestore_1.onDocumentUpdated)({ region: 'us-west1', document: 'users/{userId}' }, async (event) => {
+    try {
+        const beforeData = event.data?.before.data();
+        const afterData = event.data?.after.data();
+        if (!beforeData || !afterData)
+            return;
+        const userId = event.params.userId;
+        if (userId === 'admin' || userId === 'system')
+            return;
+        const beforeTransfers = Array.isArray(beforeData.transfers) ? beforeData.transfers : [];
+        const afterTransfers = Array.isArray(afterData.transfers) ? afterData.transfers : [];
+        if (afterTransfers.length <= beforeTransfers.length)
+            return;
+        const beforeIds = new Set(beforeTransfers.map((t) => t.id || `${t.type}_${t.playerName}_${t.date}`));
+        const newTransfers = afterTransfers.filter((t) => !beforeIds.has(t.id || `${t.type}_${t.playerName}_${t.date}`));
+        for (const tr of newTransfers) {
+            if (['IN', 'OUT', 'SWAP'].includes(tr.type)) {
+                const teamName = afterData.teamName || userId;
+                const playerOut = tr.playerOut || (tr.type === 'OUT' ? tr.playerName : null);
+                const playerIn = tr.playerIn || (tr.type === 'IN' ? tr.playerName : null);
+                let msgDetails = '';
+                if (playerOut && playerIn) {
+                    msgDetails = `מכר את ${playerOut} והחתים את ${playerIn}`;
+                }
+                else if (playerIn) {
+                    msgDetails = `החתים את ${playerIn}`;
+                }
+                else if (playerOut) {
+                    msgDetails = `מכר את ${playerOut}`;
+                }
+                else {
+                    continue;
+                }
+                const pushTitle = `👀 חילוף חדש בסגל!`;
+                const pushMsg = `עקבו אחריו! ${teamName} ביצע חילוף בסגל: ${msgDetails}.`;
+                console.log(`[onUserTransfersUpdated] Sending transfer alert for ${teamName}: ${pushMsg}`);
+                await sendPushNotificationHelper(pushTitle, pushMsg, 'ALL', userId);
+            }
+        }
+    }
+    catch (err) {
+        console.error('[onUserTransfersUpdated] Error handling transfer trigger:', err);
+    }
+});
 const getManagerNameByPhone = (senderPhone) => {
     const cleanPhone = String(senderPhone || '').replace(/\D/g, '');
     if (cleanPhone.includes('972525001777'))
@@ -446,8 +545,6 @@ const getManagerNameByPhone = (senderPhone) => {
 const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => {
     let managerName = 'מנג\'ר';
     try {
-        const apiKey = process.env.GEMINI_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const p = userPrompt.toLowerCase();
         const norm = (str) => String(str || '').toLowerCase().replace(/['"״׳\sאע]/g, '').replace(/יי/g, 'י');
         // Map manager phone to name & team
@@ -1376,7 +1473,9 @@ ${realFixturesContext || 'לוח המשחקים מעודכן במערכת!'}
 
 ${realWorldContext ? `${realWorldContext}\n` : ''}
 ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
-        const response = await axios_1.default.post(url, {
+        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk';
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+        const response = await axios_1.default.post(geminiUrl, {
             contents: [
                 {
                     role: 'user',
@@ -1800,6 +1899,53 @@ exports.broadcastRoundCloseToWhatsApp = (0, https_1.onCall)({ region: 'us-west1'
         }
         catch (topErr) {
             console.error('Error updating top_players tab:', topErr);
+        }
+        // 3.9 Send Automated Push Notifications for Round Closure, Personal Match Results & Analyst Tip
+        try {
+            // A. General Round Closure Push Notification
+            await sendPushNotificationHelper(`🎙️ מחזור ${round} נסגר רשמית!`, `מחזור ${round} נסגר רשמית! פוסט הסיכום של האנליסט AI והטבלה המעודכנת עלו עכשיו לאפליקציה.`, 'ALL');
+            // B. Personal Match Result Push Notifications
+            const fixturesSnap = await db.doc('leagueData/fixtures').get();
+            if (fixturesSnap.exists) {
+                const roundsData = fixturesSnap.data()?.rounds || [];
+                const currentRoundObj = roundsData.find((r) => r.round === round);
+                if (currentRoundObj && Array.isArray(currentRoundObj.matches)) {
+                    for (const m of currentRoundObj.matches) {
+                        const hTeam = teams.find(t => t.id === m.h);
+                        const aTeam = teams.find(t => t.id === m.a);
+                        const hName = hTeam?.teamName || m.h;
+                        const aName = aTeam?.teamName || m.a;
+                        const hRank = teams.findIndex(t => t.id === m.h) + 1;
+                        const aRank = teams.findIndex(t => t.id === m.a) + 1;
+                        const hs = Number(m.hs || 0);
+                        const as = Number(m.as || 0);
+                        if (hs > as) {
+                            await sendPushNotificationHelper(`🏆 ניצחת במחזור ${round}!`, `גברת ${hs}-${as} על ${aName} ועלית למקום ה-${hRank || 1} בטבלה!`, m.h);
+                            await sendPushNotificationHelper(`💔 הפסדת במחזור ${round}`, `הפסדת במחזור ${round} ${as}-${hs} ל-${hName}. כנס לעדכן את ההרכב למחזור הבא!`, m.a);
+                        }
+                        else if (as > hs) {
+                            await sendPushNotificationHelper(`🏆 ניצחת במחזור ${round}!`, `גברת ${as}-${hs} על ${hName} ועלית למקום ה-${aRank || 1} בטבלה!`, m.a);
+                            await sendPushNotificationHelper(`💔 הפסדת במחזור ${round}`, `הפסדת במחזור ${round} ${hs}-${as} ל-${aName}. כנס לעדכן את ההרכב למחזור הבא!`, m.h);
+                        }
+                        else {
+                            await sendPushNotificationHelper(`🤝 תיקו במחזור ${round}`, `תיקו ${hs}-${as} במחזור ${round} נגד ${aName}!`, m.h);
+                            await sendPushNotificationHelper(`🤝 תיקו במחזור ${round}`, `תיקו ${as}-${hs} במחזור ${round} נגד ${hName}!`, m.a);
+                        }
+                    }
+                }
+            }
+            // C. Analyst Tip ("מלאך המחזור") Push Notification
+            const topSnap = await db.doc('leagueData/top_players').get();
+            if (topSnap.exists) {
+                const topPlayers = topSnap.data()?.players || [];
+                if (topPlayers.length > 0) {
+                    const bestPlayer = topPlayers[0];
+                    await sendPushNotificationHelper(`💡 טיפ מהאנליסט`, `טיפ מהאנליסט: ${bestPlayer.name} בכושר שיא עם ${bestPlayer.points} נקודות ב-3 המחזורים האחרונים. שווה לשקול אותו להרכב?`, 'ALL');
+                }
+            }
+        }
+        catch (pushErr) {
+            console.error('Error sending round closure push notifications:', pushErr);
         }
         // 4. Construct Final WhatsApp Message
         const fullMessage = `⚽ *פנטזי לוזון 14 - סיכום מחזור ${round}* ⚽\n\n` +
@@ -2226,7 +2372,6 @@ const runFridayPreRoundReminder = async (force = false) => {
         db.collection('users').get()
     ]);
     const currentRound = (settingsSnap.exists ? settingsSnap.data()?.currentRound : 1) || 1;
-    const cutoffDate = new Date('2026-08-24T21:00:00Z').getTime();
     // Check if reminder was already sent today for this round
     const remindersSnap = await db.doc('leagueData/reminders').get();
     if (!force && remindersSnap.exists && remindersSnap.data()?.[`sent_friday_round_${currentRound}`]) {
@@ -2251,8 +2396,8 @@ const runFridayPreRoundReminder = async (force = false) => {
         teamsMap[docSnap.id] = teamName;
         if (u.teamId)
             teamsMap[u.teamId] = teamName;
-        const lastUpdate = u.lastLineupUpdate ? new Date(u.lastLineupUpdate).getTime() : 0;
-        const hasRoundLineup = Boolean(u.lineupsByRound?.[currentRound] || (currentRound > 1 ? lastUpdate > cutoffDate : lastUpdate > 0));
+        const roundData = u.lineupsByRound?.[currentRound] || u.lineupsByRound?.[String(currentRound)];
+        const hasRoundLineup = Boolean(roundData && Array.isArray(roundData.lineup) && roundData.lineup.length > 0);
         if (!hasRoundLineup) {
             const phonesList = [];
             if (u.phone)
@@ -2771,6 +2916,77 @@ exports.triggerLiveScraper = (0, https_1.onRequest)({ region: 'us-west1', cors: 
     }
     catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+// 🟢 משימה מתוזמנת לבדיקת מועדי משחקים ומשלוח תזכורות הרכב וסגירת חלון 🟢
+exports.checkMatchDeadlinesAndNotify = (0, scheduler_1.onSchedule)({ region: 'us-west1', schedule: 'every 1 hours' }, async (event) => {
+    try {
+        console.log('[checkMatchDeadlinesAndNotify] Checking upcoming round kickoff deadlines...');
+        const settingsSnap = await db.doc('leagueData/settings').get();
+        const currentRound = Number(settingsSnap.data()?.currentRound || 1);
+        const realSnap = await db.doc('leagueData/real_fixtures').get();
+        if (!realSnap.exists)
+            return;
+        const matches = realSnap.data()?.matches || [];
+        const upcomingMatches = matches.filter((m) => m.round === currentRound && m.date);
+        if (upcomingMatches.length === 0)
+            return;
+        let earliestDate = null;
+        for (const m of upcomingMatches) {
+            const dateParts = m.date.split('/');
+            if (dateParts.length === 3) {
+                const day = parseInt(dateParts[0], 10);
+                const month = parseInt(dateParts[1], 10) - 1;
+                const year = parseInt(dateParts[2], 10);
+                const timeParts = (m.time || '20:00').split(':');
+                const hour = parseInt(timeParts[0], 10);
+                const minute = parseInt(timeParts[1], 10);
+                const d = new Date(year, month, day, hour, minute);
+                if (!earliestDate || d < earliestDate) {
+                    earliestDate = d;
+                }
+            }
+        }
+        if (!earliestDate)
+            return;
+        const diffHours = (earliestDate.getTime() - Date.now()) / (1000 * 60 * 60);
+        console.log(`[checkMatchDeadlinesAndNotify] Round ${currentRound} earliest kickoff: ${earliestDate.toISOString()}. Hours remaining: ${diffHours.toFixed(1)}`);
+        // A. 24 Hours Deadline (Window: 23 to 25 hours before kickoff)
+        if (diffHours >= 23 && diffHours <= 25) {
+            const logRef = db.doc(`leagueData/notifications_log/round_${currentRound}_24h`);
+            const logDoc = await logRef.get();
+            if (!logDoc.exists) {
+                console.log(`[checkMatchDeadlinesAndNotify] Sending 24h deadline push for round ${currentRound}...`);
+                await sendPushNotificationHelper(`⏳ 24 שעות לסגירת המחזור!`, `נשארו 24 שעות לנעילת ההרכבים למחזור ${currentRound}! בדקת שאין לך שחקנים פצועים או מורחקים בהרכב?`, 'ALL');
+                await logRef.set({ sentAt: new Date().toISOString() });
+            }
+        }
+        // B. 2 Hours Deadline & Incomplete Lineup Alert (Window: 1.0 to 2.5 hours before kickoff)
+        if (diffHours >= 1.0 && diffHours <= 2.5) {
+            const logRef = db.doc(`leagueData/notifications_log/round_${currentRound}_2h`);
+            const logDoc = await logRef.get();
+            if (!logDoc.exists) {
+                console.log(`[checkMatchDeadlinesAndNotify] Checking user lineups and sending 2h deadline push for round ${currentRound}...`);
+                const usersSnap = await db.collection('users').get();
+                for (const uDoc of usersSnap.docs) {
+                    if (uDoc.id === 'admin' || uDoc.id === 'system')
+                        continue;
+                    const uData = uDoc.data();
+                    const lineup = uData.published_lineup || uData.lineup || [];
+                    const startingCount = Array.isArray(lineup) ? lineup.filter((p) => p.isStarting).length : 0;
+                    if (startingCount < 11) {
+                        await sendPushNotificationHelper(`⚠️ הרכב חסר לפני שריקת הפתיחה!`, `שים לב! חסר לך שחקן בהרכב הפותח או שיש לך שחקן שלא משחק השבוע. כנס לעדכן!`, uDoc.id);
+                    }
+                    else {
+                        await sendPushNotificationHelper(`🚨 שעתיים בלבד לסגירת החלון!`, `שעתיים בלבד לסגירת החלון! כנס לנעול את 11 השחקנים שלך לפני שהמשחק הראשון יוצא לדרך.`, uDoc.id);
+                    }
+                }
+                await logRef.set({ sentAt: new Date().toISOString() });
+            }
+        }
+    }
+    catch (err) {
+        console.error('[checkMatchDeadlinesAndNotify] Error in scheduled deadline checker:', err);
     }
 });
 //# sourceMappingURL=index.js.map

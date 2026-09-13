@@ -256,6 +256,81 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     return c;
   };
 
+  const realMatchStartMap = React.useMemo(() => {
+    const map = new Map<string, boolean>();
+    const getTeamName = (teamData: any) => {
+      if (!teamData) return '';
+      if (typeof teamData === 'string') return teamData;
+      return teamData.name || teamData.id || '';
+    };
+
+    let currentAbsolute: number | null = null;
+
+    const reversed = [...realFixtures].reverse();
+    for (const match of reversed) {
+      const rKey = match.round ? Number(match.round) : null;
+      const hCanonical = getCanonicalRealTeam(match.h || getTeamName(match.homeTeam));
+      const aCanonical = getCanonicalRealTeam(match.a || getTeamName(match.awayTeam));
+
+      let isStarted = false;
+      if (match.isPlayed || (match.hs !== undefined && match.hs !== null && match.hs !== '')) {
+        isStarted = true;
+      } else {
+        const dateStr = match.date;
+        const timeStr = match.time || match.matchTime;
+        if (dateStr && timeStr && typeof dateStr === 'string' && typeof timeStr === 'string') {
+          const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
+          let matchDay = 0, matchMonth = 0, matchYear = 0;
+
+          if (dateStr.includes('-')) {
+            const parts = dateStr.split('-');
+            if (parts.length === 3) { matchYear = parseInt(parts[0], 10); matchMonth = parseInt(parts[1], 10); matchDay = parseInt(parts[2], 10); }
+          } else if (dateStr.includes('/')) {
+            const parts = dateStr.split('/');
+            if (parts.length >= 2) { matchDay = parseInt(parts[0], 10); matchMonth = parseInt(parts[1], 10); matchYear = parts[2] ? parseInt(parts[2], 10) : 2026; }
+          }
+
+          if (timeMatch && matchDay > 0 && matchMonth > 0) {
+            if (currentAbsolute === null) {
+              const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Asia/Jerusalem',
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hour12: false
+              });
+              const parts = formatter.formatToParts(new Date());
+              const currentYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+              const currentMonth = parseInt(parts.find(p => p.type === 'month')?.value || '0', 10);
+              const currentDay = parseInt(parts.find(p => p.type === 'day')?.value || '0', 10);
+              let currentHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+              if (currentHour === 24) currentHour = 0;
+              const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
+
+              currentAbsolute = Date.UTC(currentYear, currentMonth - 1, currentDay, currentHour, currentMinute);
+            }
+
+            const currentYearFromParts = new Date(currentAbsolute).getUTCFullYear();
+            const yearToUse = matchYear === 0 ? currentYearFromParts : matchYear;
+            const matchHours = parseInt(timeMatch[1], 10);
+            const matchMinutes = parseInt(timeMatch[2], 10);
+            const matchAbsolute = Date.UTC(yearToUse, matchMonth - 1, matchDay, matchHours, matchMinutes);
+
+            isStarted = currentAbsolute >= matchAbsolute;
+          }
+        }
+      }
+
+      if (hCanonical && hCanonical !== 'unknown') {
+        const key = rKey !== null ? `${rKey}_${hCanonical}` : hCanonical;
+        if (!map.has(key)) map.set(key, isStarted);
+      }
+      if (aCanonical && aCanonical !== 'unknown') {
+        const key = rKey !== null ? `${rKey}_${aCanonical}` : aCanonical;
+        if (!map.has(key)) map.set(key, isStarted);
+      }
+    }
+    return map;
+  }, [realFixtures]);
+
   const isPlayerMatchStarted = (player: any, rNum: number = selectedRound) => {
     if (!player) return false;
 
@@ -265,62 +340,11 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const playerRealTeam = player.realTeam || player.team;
     const playerCanonical = getCanonicalRealTeam(playerRealTeam);
 
-    const getTeamName = (teamData: any) => {
-      if (!teamData) return '';
-      if (typeof teamData === 'string') return teamData;
-      return teamData.name || teamData.id || '';
-    };
-
-    const match = [...realFixtures].reverse().find(m => {
-      if (m.round && Number(m.round) !== rNum) return false;
-      const hCanonical = getCanonicalRealTeam(m.h || getTeamName(m.homeTeam));
-      const aCanonical = getCanonicalRealTeam(m.a || getTeamName(m.awayTeam));
-      return hCanonical === playerCanonical || aCanonical === playerCanonical;
-    });
-
-    if (match) {
-      if (match.isPlayed || (match.hs !== undefined && match.hs !== null && match.hs !== '')) return true;
-
-      const dateStr = match.date; 
-      const timeStr = match.time || match.matchTime;
-      if (dateStr && timeStr && typeof dateStr === 'string' && typeof timeStr === 'string') {
-        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
-        let matchDay = 0, matchMonth = 0, matchYear = 0;
-
-        if (dateStr.includes('-')) {
-          const parts = dateStr.split('-');
-          if (parts.length === 3) { matchYear = parseInt(parts[0], 10); matchMonth = parseInt(parts[1], 10); matchDay = parseInt(parts[2], 10); }
-        } else if (dateStr.includes('/')) {
-          const parts = dateStr.split('/');
-          if (parts.length >= 2) { matchDay = parseInt(parts[0], 10); matchMonth = parseInt(parts[1], 10); matchYear = parts[2] ? parseInt(parts[2], 10) : 2026; }
-        }
-
-        if (timeMatch && matchDay > 0 && matchMonth > 0) {
-          const matchHours = parseInt(timeMatch[1], 10);
-          const matchMinutes = parseInt(timeMatch[2], 10);
-
-          const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Jerusalem',
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', hour12: false
-          });
-
-          const parts = formatter.formatToParts(new Date());
-          const currentYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
-          const currentMonth = parseInt(parts.find(p => p.type === 'month')?.value || '0', 10);
-          const currentDay = parseInt(parts.find(p => p.type === 'day')?.value || '0', 10);
-          let currentHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
-          if (currentHour === 24) currentHour = 0;
-          const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
-
-          if (matchYear === 0) matchYear = currentYear;
-
-          const currentAbsolute = Date.UTC(currentYear, currentMonth - 1, currentDay, currentHour, currentMinute);
-          const matchAbsolute = Date.UTC(matchYear, matchMonth - 1, matchDay, matchHours, matchMinutes);
-
-          return currentAbsolute >= matchAbsolute;
-        }
-      }
+    const roundKey = `${rNum}_${playerCanonical}`;
+    if (realMatchStartMap.has(roundKey)) {
+      if (realMatchStartMap.get(roundKey)) return true;
+    } else if (realMatchStartMap.has(playerCanonical)) {
+      if (realMatchStartMap.get(playerCanonical)) return true;
     }
 
     // Fallback: If no match found or match timing unparsed, check if explicit live stats or points exist
