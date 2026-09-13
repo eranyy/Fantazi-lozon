@@ -1,5 +1,5 @@
 const axios = require('axios');
-const apiKey = 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+const apiKey = process.env.SHEETS_API_KEY || process.env.VITE_SHEETS_API_KEY || '';
 const spreadsheetId = '14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s';
 
 async function testWriteSheet() {

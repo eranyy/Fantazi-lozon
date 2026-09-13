@@ -1588,7 +1588,7 @@ ${realFixturesContext || 'לוח המשחקים מעודכן במערכת!'}
 ${realWorldContext ? `${realWorldContext}\n` : ''}
 ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
 
-        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk';
+        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
 
         const response = await axios.post(geminiUrl, {
