@@ -34,6 +34,16 @@ export const sortMatchesChronologically = (matches: any[]): any[] => {
   return [...matches].sort((a, b) => parseMatchDateTime(a) - parseMatchDateTime(b));
 };
 
+export const formatMatchTime = (t?: string) => {
+  if (!t) return '20:00';
+  const str = String(t).trim();
+  const parts = str.split(':');
+  if (parts.length >= 2) {
+    return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+  }
+  return str;
+};
+
 export const formatMatchDateDisplay = (dateStr?: string): string => {
   if (!dateStr) return '';
   const str = String(dateStr).trim();
