@@ -22,8 +22,8 @@ const requestPushPermission = async (userId: string) => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
-      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
-      const token = await getToken(messaging, { vapidKey });
+      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+      const token = await getToken(messaging, vapidKey ? { vapidKey } : undefined);
 
       if (token) {
         await setDoc(doc(db, "users", userId), {

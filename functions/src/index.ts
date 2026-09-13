@@ -1832,7 +1832,7 @@ export const whatsappWebhook = onRequest(
                     // Auto-reply confirmation via Meta Cloud API using Gemini AI
                     const settingsSnap = await db.collection('leagueData').doc('settings').get();
                     const storedToken = settingsSnap.exists ? settingsSnap.data()?.whatsappToken : null;
-                    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || storedToken || 'EAAu1XzkKLNMBSNOAlReyeUre0mUZAGMapdvC5SNvbupUvlbUBZC3WYXUtZCJae6p3hFGAolgP3PtWpSdEGdgNgwfgXBbzmUSKevi6n5Wveb9kbC8VzFBMFCVsyXKZCdCnaYQ7ZA5WZB52bXoemWiKj6stvkTGT4KTmaFEU4Fgh39nWJOYM3V7NeOrFq45vXQCfJwZDZD';
+                    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || storedToken || '';
                     const phoneNumberId = value?.metadata?.phone_number_id || '1337632699423375';
 
                     if (accessToken && phoneNumberId) {

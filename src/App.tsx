@@ -122,8 +122,8 @@ const App: React.FC = () => {
       if (Notification.permission === 'granted' && loggedInUser) {
         const fetchSilentToken = async () => {
           try {
-            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
-            const token = await getToken(messaging, { vapidKey });
+            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+            const token = await getToken(messaging, vapidKey ? { vapidKey } : undefined);
             if (token) {
               await setDoc(doc(db, "users", loggedInUser.id), { 
                 fcmToken: token,
@@ -154,8 +154,8 @@ const App: React.FC = () => {
       setPushStatus(permission as any);
 
       if (permission === 'granted') {
-        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
-        const token = await getToken(messaging, { vapidKey });
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+        const token = await getToken(messaging, vapidKey ? { vapidKey } : undefined);
         if (token && loggedInUser) {
           await setDoc(doc(db, "users", loggedInUser.id), { 
             fcmToken: token,
