@@ -6,6 +6,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Lock, Unlock, Edit3, Plus, X, Server, Zap } from 'lucide-react';
 import { parseFantasyExcel } from './utils/FantasyExcelParser'; 
+import { parseCsvRow } from './utils/csvParser';
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
 
@@ -40,17 +41,6 @@ const getNormalizedTeamId = (nameOrId: string) => {
     return s; 
 };
 
-const parseCsvRow = (str: string) => {
-    if (!str || typeof str !== 'string') return [];
-    let result = [], cur = '', inQuotes = false;
-    for (let i = 0; i < str.length; i++) {
-        if (str[i] === '"') inQuotes = !inQuotes;
-        else if (str[i] === ',' && !inQuotes) { result.push(cur.trim()); cur = ''; } 
-        else { cur += str[i]; }
-    }
-    result.push(cur.trim());
-    return result.map(s => s.replace(/^"|"$/g, ''));
-};
 
 const getStadium = (homeTeam: string) => {
     if (!homeTeam) return '';
