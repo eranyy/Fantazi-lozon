@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getTeamColors, cleanStr, getHistoricalName } from '../utils/teamUtils';
+import { getTeamColors, cleanStr, getHistoricalName, normalizeTeamName } from '../utils/teamUtils';
 
 describe('teamUtils', () => {
   describe('getTeamColors', () => {
@@ -44,6 +44,27 @@ describe('teamUtils', () => {
     it('cleans quotes, spaces, dashes and brackets', () => {
       expect(cleanStr('  "פיצ\'יצ\'י" (FC)-  ')).toBe('פיציציfc');
       expect(cleanStr(null)).toBe('');
+    });
+  });
+
+  describe('normalizeTeamName', () => {
+    it.each([
+      ['', ''],
+      ['  מכבי תל אביב  ', 'מכבי תא'],
+      ['הפועל באר שבע', 'הפועל בש'],
+      ['עירוני קרית שמונה', 'עירוני קש'],
+      ['מכבי פתח תקוה', 'מכבי פת'],
+      ['הפועל פתח תקווה', 'הפועל פת'],
+      ['ריינה', 'מכבי בני ריינה'],
+      ['בני ריינה', 'מכבי בני ריינה'],
+      ['מ.ס. אשדוד', 'מס אשדוד'],
+      ['עירוני טבריה', 'עירוני טבריה'],
+      ['בני סכנין', 'בני סכנין'],
+      ['מכבי נתניה', 'מכבי נתניה'],
+      ['הפועל חדרה', 'הפועל חדרה'],
+      ['  ביתר   ירושלים  ', 'ביתר ירושלים']
+    ])('normalizes %s to %s', (input, expected) => {
+      expect(normalizeTeamName(input)).toBe(expected);
     });
   });
 });

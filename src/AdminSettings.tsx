@@ -9,24 +9,8 @@ import { parseFantasyExcel } from './utils/FantasyExcelParser';
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
 
-const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
+import { cleanStr, getHistoricalName, getTeamColors, normalizeTeamName } from './utils/teamUtils';
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
-
-const normalizeTeamName = (name: string) => {
-    if (!name) return '';
-    let n = name.trim().toLowerCase().replace(/["'״׳.]/g, '').replace(/-/g, ' '); 
-    if (n.includes('תל אביב')) n = n.replace('תל אביב', 'תא');
-    if (n.includes('באר שבע')) n = n.replace('באר שבע', 'בש');
-    if (n.includes('קרית שמונה')) n = n.replace('קרית שמונה', 'קש');
-    if (n.includes('פתח תקוה') || n.includes('פתח תקווה')) n = n.replace(/פתח תקו[ו]?ה/, 'פת');
-    if (n.includes('ריינה')) return 'מכבי בני ריינה';
-    if (n.includes('אשדוד')) return 'מס אשדוד';
-    if (n.includes('טבריה')) return 'עירוני טבריה';
-    if (n.includes('סכנין')) return 'בני סכנין';
-    if (n.includes('נתניה') && n.includes('מכבי')) return 'מכבי נתניה';
-    if (n.includes('חדרה')) return 'הפועל חדרה';
-    return n.replace(/\s+/g, ' ').trim();
-};
 
 const getNormalizedTeamId = (nameOrId: string) => {
     const s = cleanStr(nameOrId);
