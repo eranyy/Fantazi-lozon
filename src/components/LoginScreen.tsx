@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, doc, setDoc, getDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, setDoc, getDoc, query, where, limit } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging, VAPID_KEY } from '../firebaseConfig';
@@ -72,23 +72,21 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       }
     }
 
-    // 2. Targeted Firestore queries by email if not found by UID
+    // 2. Targeted Firestore queries by email if not found by UID (parallel with limit(1))
     if (!foundUser && inputEmail) {
       try {
-        const qMain = query(collection(db, 'users'), where('email', '==', inputEmail));
-        const mainSnap = await getDocs(qMain);
+        const qMain = query(collection(db, 'users'), where('email', '==', inputEmail), limit(1));
+        const qAsst = query(collection(db, 'users'), where('assistantEmail', '==', inputEmail), limit(1));
+        const [mainSnap, asstSnap] = await Promise.all([getDocs(qMain), getDocs(qAsst)]);
+
         if (!mainSnap.empty) {
           const docSnap = mainSnap.docs[0];
           const data = docSnap.data();
           foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
-        } else {
-          const qAsst = query(collection(db, 'users'), where('assistantEmail', '==', inputEmail));
-          const asstSnap = await getDocs(qAsst);
-          if (!asstSnap.empty) {
-            const docSnap = asstSnap.docs[0];
-            const data = docSnap.data();
-            foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
-          }
+        } else if (!asstSnap.empty) {
+          const docSnap = asstSnap.docs[0];
+          const data = docSnap.data();
+          foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
         }
       } catch (qErr) {
         console.warn('[Login Lookup] Query by email failed, falling back to full scan', qErr);
