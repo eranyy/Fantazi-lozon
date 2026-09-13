@@ -136,11 +136,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [scanRoundInput, setScanRoundInput] = useState<string>('');
 
   const [topPlayersDriveUrl, setTopPlayersDriveUrl] = useState('');
-  const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+  const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || '';
   const [geminiApiKey, setGeminiApiKey] = useState(
     localStorage.getItem('gemini_api_key') || 
     (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
-    'AIzaSyBM6ArDeYA0oRuOLQPXt4qVIGDSrQALaYQ'
+    ''
   );
 
   const [realFixturesMatches, setRealFixturesMatches] = useState<any[]>([]);
