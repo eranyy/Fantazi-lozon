@@ -9,18 +9,31 @@ export interface ParsedPlayer {
   breakdown: any[];
 }
 
+const TEAM_ALIAS_MAP: Record<string, string> = {
+  'הפ חיפה': 'הפועל חיפה',
+  'הפ תא': 'הפועל תל אביב',
+  'הפועל תא': 'הפועל תל אביב',
+  'הפועל ת"א': 'הפועל תל אביב',
+  'מכבי תא': 'מכבי תל אביב',
+  'מכבי ת"א': 'מכבי תל אביב',
+  'בש': 'הפועל באר שבע',
+  'הפועל בש': 'הפועל באר שבע',
+  'ב"ש': 'הפועל באר שבע',
+  'הפועל ב"ש': 'הפועל באר שבע',
+  'הפ פת': 'הפועל פתח תקווה',
+  'הפועל פת': 'הפועל פתח תקווה',
+  'הפועל פ"ת': 'הפועל פתח תקווה',
+  'קש': 'עירוני קרית שמונה',
+  'ק"ש': 'עירוני קרית שמונה',
+  'עירוני קש': 'עירוני קרית שמונה',
+};
+
 const cleanTeamName = (teamName: string): string => {
   if (!teamName) return 'לא ידוע';
-  let cleaned = teamName.replace(/["'״׳]/g, '').trim();
+  const cleaned = teamName.replace(/["'״׳]/g, '').trim();
+  if (TEAM_ALIAS_MAP[cleaned]) return TEAM_ALIAS_MAP[cleaned];
   
   if (cleaned.includes('ביתר') || cleaned.includes('בית״ר') || cleaned.includes('בית"ר')) return 'בית"ר ירושלים';
-  if (cleaned === 'הפ חיפה') return 'הפועל חיפה';
-  if (cleaned === 'הפ תא' || cleaned === 'הפועל תא' || cleaned === 'הפועל ת"א') return 'הפועל תל אביב';
-  if (cleaned === 'מכבי תא' || cleaned === 'מכבי ת"א') return 'מכבי תל אביב';
-  if (cleaned === 'בש' || cleaned === 'הפועל בש' || cleaned === 'ב"ש' || cleaned === 'הפועל ב"ש') return 'הפועל באר שבע';
-  if (cleaned === 'הפ פת' || cleaned === 'הפועל פת' || cleaned === 'הפועל פ"ת') return 'הפועל פתח תקווה';
-  if (cleaned === 'קש' || cleaned === 'ק"ש' || cleaned === 'עירוני קש') return 'עירוני קרית שמונה';
-  
   return cleaned;
 };
 
