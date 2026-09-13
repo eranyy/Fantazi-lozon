@@ -1,7 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchDateTime, sortMatchesChronologically } from '../utils/dateUtils';
+import { parseMatchDateTime, sortMatchesChronologically, formatMatchTime } from '../utils/dateUtils';
 
 describe('dateUtils', () => {
+  describe('formatMatchTime', () => {
+    it('returns "20:00" for empty or undefined input', () => {
+      expect(formatMatchTime()).toBe('20:00');
+      expect(formatMatchTime('')).toBe('20:00');
+    });
+
+    it('pads valid time formats correctly', () => {
+      expect(formatMatchTime('9:5')).toBe('09:05');
+      expect(formatMatchTime('14:30')).toBe('14:30');
+      expect(formatMatchTime(' 1:2 ')).toBe('01:02');
+    });
+
+    it('returns the original string if there are no colons', () => {
+      expect(formatMatchTime('1430')).toBe('1430');
+      expect(formatMatchTime('TBD')).toBe('TBD');
+    });
+  });
+
   describe('parseMatchDateTime', () => {
     it('returns Infinity for invalid, empty or postponed matches', () => {
       expect(parseMatchDateTime(null)).toBe(Infinity);
