@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchDateTime, sortMatchesChronologically } from '../utils/dateUtils';
+import { parseMatchDateTime, sortMatchesChronologically, formatTimeWithUS } from '../utils/dateUtils';
 
 describe('dateUtils', () => {
   describe('parseMatchDateTime', () => {
@@ -46,6 +46,42 @@ describe('dateUtils', () => {
 
     it('handles non-array inputs gracefully', () => {
       expect(sortMatchesChronologically(null as any)).toEqual([]);
+    });
+  });
+
+  describe('formatTimeWithUS', () => {
+    it('returns empty string if input is falsy', () => {
+      expect(formatTimeWithUS('')).toBe('');
+      expect(formatTimeWithUS(null as any)).toBe('');
+      expect(formatTimeWithUS(undefined as any)).toBe('');
+    });
+
+    it('returns input unchanged if it already includes US flag', () => {
+      expect(formatTimeWithUS('19:00 | 12:00 🇺🇸')).toBe('19:00 | 12:00 🇺🇸');
+      expect(formatTimeWithUS('Some text 🇺🇸')).toBe('Some text 🇺🇸');
+    });
+
+    it('returns input unchanged if it does not match time format', () => {
+      expect(formatTimeWithUS('No time here')).toBe('No time here');
+      expect(formatTimeWithUS('123456')).toBe('123456');
+    });
+
+    it('formats normal times correctly (IL to US East Coast, -7 hours)', () => {
+      expect(formatTimeWithUS('20:30')).toBe('20:30 | 13:30 🇺🇸');
+      expect(formatTimeWithUS('19:00')).toBe('19:00 | 12:00 🇺🇸');
+      expect(formatTimeWithUS('15:15')).toBe('15:15 | 08:15 🇺🇸');
+      expect(formatTimeWithUS('09:45')).toBe('09:45 | 02:45 🇺🇸');
+    });
+
+    it('handles negative hours by wrapping around 24h', () => {
+      expect(formatTimeWithUS('05:00')).toBe('05:00 | 22:00 🇺🇸');
+      expect(formatTimeWithUS('00:30')).toBe('00:30 | 17:30 🇺🇸');
+      expect(formatTimeWithUS('02:15')).toBe('02:15 | 19:15 🇺🇸');
+    });
+
+    it('pads hours with zeroes when needed', () => {
+      expect(formatTimeWithUS('8:30')).toBe('08:30 | 01:30 🇺🇸');
+      expect(formatTimeWithUS('9:00')).toBe('09:00 | 02:00 🇺🇸');
     });
   });
 });

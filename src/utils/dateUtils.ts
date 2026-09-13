@@ -67,3 +67,21 @@ export const formatMatchDateDisplay = (dateStr?: string): string => {
 
   return str;
 };
+
+export const formatTimeWithUS = (ilTime: string) => {
+    if (!ilTime) return '';
+    if (ilTime.includes('🇺🇸')) return ilTime;
+
+    const timeMatch = ilTime.match(/(\d{1,2}):(\d{2})/);
+    if (!timeMatch) return ilTime;
+
+    const h = parseInt(timeMatch[1], 10);
+    const m = timeMatch[2];
+    let usH = h - 7;
+    if (usH < 0) usH += 24;
+
+    const hStr = h.toString().padStart(2, '0');
+    const usHStr = usH.toString().padStart(2, '0');
+
+    return `${hStr}:${m} | ${usHStr}:${m} 🇺🇸`;
+};
