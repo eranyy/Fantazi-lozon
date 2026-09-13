@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, setDoc, query, where, or } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../firebaseConfig';
@@ -27,7 +27,7 @@ const requestPushPermission = async (userId: string) => {
 
       if (token) {
         await setDoc(doc(db, "users", userId), {
-          fcmToken: token 
+          fcmToken: token
         }, { merge: true });
       }
     }
@@ -46,18 +46,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   const processAuthenticatedUser = async (user: any, inputEmail: string, loginMethod: string) => {
     console.log(`[Processing Auth User] Email: ${inputEmail}, UID: ${user.uid}`);
-    const usersSnap = await getDocs(collection(db, 'users'));
+
+    // O(1) query optimization to prevent full collection scan
+    const q = query(collection(db, 'users'), or(where('email', '==', inputEmail), where('assistantEmail', '==', inputEmail)));
+    let usersSnap = await getDocs(q);
+
+    if (usersSnap.empty) {
+      usersSnap = await getDocs(collection(db, 'users'));
+    }
     let foundUser: any = null;
 
     usersSnap.forEach(doc => {
       const data = doc.data();
       const mainEmail = data.email?.toLowerCase().trim();
       const asstEmail = data.assistantEmail?.toLowerCase().trim();
-      
+
       // בדיקה אם זה המנג'ר הראשי
       if (mainEmail === inputEmail) {
         foundUser = { id: doc.id, teamId: doc.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
-      } 
+      }
       // בדיקה אם זה עוזר המאמן
       else if (asstEmail === inputEmail) {
         foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
@@ -115,11 +122,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       await processAuthenticatedUser(userCredential.user, inputEmail, 'email');
     } catch (err: any) {
       console.log(`[Login Error] Code: ${err.code}, Message: ${err.message}`);
-      
+
       // Auto-create user account if email exists in Firestore but has not created a Firebase Auth user yet
       if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
         try {
-          const usersSnap = await getDocs(collection(db, 'users'));
+          const q = query(collection(db, 'users'), or(where('email', '==', inputEmail), where('assistantEmail', '==', inputEmail)));
+          let usersSnap = await getDocs(q);
+
+          if (usersSnap.empty) {
+            usersSnap = await getDocs(collection(db, 'users'));
+          }
           let isTeamMember = false;
           usersSnap.forEach(doc => {
             const data = doc.data();
@@ -204,9 +216,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      
+
       const isMobile = /Mobile|iP(hone|od)|Android|BlackBerry|IEMobile|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(navigator.userAgent);
-      
+
       if (isMobile) {
         await signInWithRedirect(auth, provider);
         return;
@@ -273,16 +285,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center font-['Assistant'] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-slate-950 px-4" dir="rtl">
-      
+
       <div className="bg-slate-900/90 backdrop-blur-md p-8 md:p-12 rounded-[40px] border border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.15)] w-full max-w-md">
-        
+
         <div className="text-center mb-10">
           <h1 className="text-5xl font-black text-white italic tracking-tighter mb-2">LUZON <span className="text-green-500">14</span></h1>
           <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">ניהול ליגת פנטזי מקצועית</p>
         </div>
 
         {/* Google Sign-In Option */}
-        <button 
+        <button
           type="button"
           onClick={handleGoogleLogin}
           disabled={loading}
@@ -309,8 +321,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label className="block text-slate-400 text-xs font-bold mb-2 ml-1">אימייל (מנג'ר / עוזר מאמן)</label>
-            <input 
-              type="email" 
+            <input
+              type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full bg-black/50 border border-slate-700 p-4 rounded-2xl text-white outline-none focus:border-green-500 transition-colors"
@@ -321,8 +333,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
           <div>
             <label className="block text-slate-400 text-xs font-bold mb-2 ml-1">סיסמה</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="w-full bg-black/50 border border-slate-700 p-4 rounded-2xl text-white outline-none focus:border-green-500 transition-colors"
@@ -333,23 +345,23 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={rememberMe}
                 onChange={e => setRememberMe(e.target.checked)}
-                className="w-5 h-5 accent-green-500" 
+                className="w-5 h-5 accent-green-500"
               />
               <span className="text-sm text-slate-300 font-bold">זכור אותי מחובר</span>
             </label>
-            
+
             <button type="button" onClick={() => handleHelp('forgot')} className="text-xs text-green-500 hover:text-green-400 font-bold">שכחתי סיסמה</button>
           </div>
 
           {resetSuccessMsg && <div className="bg-green-950/80 border border-green-500/50 text-green-300 p-3.5 rounded-xl text-center text-xs font-bold animate-in fade-in">{resetSuccessMsg}</div>}
           {error && <div className="bg-red-950/50 border border-red-500/50 text-red-400 p-3 rounded-xl text-center text-sm font-bold animate-in fade-in">{error}</div>}
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
             className="w-full bg-green-600 hover:bg-green-500 text-black font-black text-xl py-4 rounded-2xl shadow-[0_0_20px_rgba(34,197,94,0.3)] transition-all hover:scale-[1.02]"
           >
