@@ -104,6 +104,19 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
     }
   };
 
+  const [tradeHistory, setTradeHistory] = useState<any[]>([]);
+
+  const formatTradeDate = (isoStr: string) => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} בשעה ${hours}:${mins}`;
+  };
+
   useEffect(() => {
     // 1. Listen to real_league_players_scoring from Firestore
     const unsub = onSnapshot(collection(db, 'real_league_players_scoring'), snap => {
@@ -164,7 +177,14 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
       setLoading(false);
     });
 
-    return () => unsub();
+    // 2. Listen to trade_history collection
+    const unsubTrades = onSnapshot(collection(db, 'trade_history'), snap => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+      setTradeHistory(list);
+    });
+
+    return () => { unsub(); unsubTrades(); };
   }, [users]);
 
   const filteredPlayers = players.filter(pl => {
@@ -178,6 +198,117 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
     return matchesSearch && matchesPos && matchesMode;
   });
 
+  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [tradeTeamA, setTradeTeamA] = useState('tampa');
+  const [tradePlayerA, setTradePlayerA] = useState('');
+  const [tradeTeamB, setTradeTeamB] = useState('holonia');
+  const [tradePlayerB, setTradePlayerB] = useState('');
+  const [executingTrade, setExecutingTrade] = useState(false);
+  const [tradeSuccessMsg, setTradeSuccessMsg] = useState<string | null>(null);
+
+  const teamOptions = [
+    { id: 'tumali', name: 'תומאלי (אלי ותום)' },
+    { id: 'hamsili', name: 'חמסילי (ערן ואסף)' },
+    { id: 'harale', name: 'חראלה (גיא)' },
+    { id: 'holonia', name: 'חולוניה (ארז)' },
+    { id: 'pichichi', name: 'פיצ\'יצי (שלומי)' },
+    { id: 'tampa', name: 'טמפה (יינון)' }
+  ];
+
+  const getSquadForTeam = (teamId: string) => {
+    const user = users.find(u => u.id === teamId || String(u.teamName || '').toLowerCase().includes(teamId));
+    if (!user) return [];
+    const squad = user.published_lineup || user.lineup || user.squad || [];
+    return squad.map((p: any) => typeof p === 'string' ? p : p.name).filter(Boolean);
+  };
+
+  const handleExecuteTrade = async () => {
+    if (!tradeTeamA || !tradeTeamB || !tradePlayerA || !tradePlayerB) {
+      alert('נא לבחור 2 קבוצות ו-2 שחקנים לביצוע הטרייד!');
+      return;
+    }
+    if (tradeTeamA === tradeTeamB) {
+      alert('נא לבחור 2 קבוצות שונות לטרייד!');
+      return;
+    }
+    setExecutingTrade(true);
+    try {
+      const { doc, updateDoc, addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+
+      const teamADoc = users.find(u => u.id === tradeTeamA || String(u.teamName || '').toLowerCase().includes(tradeTeamA));
+      const teamBDoc = users.find(u => u.id === tradeTeamB || String(u.teamName || '').toLowerCase().includes(tradeTeamB));
+
+      if (!teamADoc || !teamBDoc) {
+        alert('אחת מהקבוצות לא נמצאה במערכת!');
+        return;
+      }
+
+      const removeP = (arr: any[], pName: string) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(p => {
+          const n = typeof p === 'string' ? p : p.name;
+          return n !== pName && !n.includes(pName) && !pName.includes(n);
+        });
+      };
+
+      const addP = (arr: any[], pName: string) => {
+        if (!Array.isArray(arr)) return [{ name: pName, isStarting: false }];
+        const exists = arr.some(p => {
+          const n = typeof p === 'string' ? p : p.name;
+          return n === pName || n.includes(pName) || pName.includes(n);
+        });
+        if (!exists) return [...arr, { name: pName, isStarting: false }];
+        return arr;
+      };
+
+      // Update Team A: remove Player A, add Player B
+      let squadA = removeP(teamADoc.squad || [], tradePlayerA);
+      squadA = addP(squadA, tradePlayerB);
+      let lineupA = removeP(teamADoc.lineup || [], tradePlayerA);
+      lineupA = addP(lineupA, tradePlayerB);
+      let pubLineupA = removeP(teamADoc.published_lineup || [], tradePlayerA);
+      pubLineupA = addP(pubLineupA, tradePlayerB);
+
+      await updateDoc(doc(db, 'users', teamADoc.id), {
+        squad: squadA,
+        lineup: lineupA,
+        published_lineup: pubLineupA
+      });
+
+      // Update Team B: remove Player B, add Player A
+      let squadB = removeP(teamBDoc.squad || [], tradePlayerB);
+      squadB = addP(squadB, tradePlayerA);
+      let lineupB = removeP(teamBDoc.lineup || [], tradePlayerB);
+      lineupB = addP(lineupB, tradePlayerA);
+      let pubLineupB = removeP(teamBDoc.published_lineup || [], tradePlayerB);
+      pubLineupB = addP(pubLineupB, tradePlayerA);
+
+      await updateDoc(doc(db, 'users', teamBDoc.id), {
+        squad: squadB,
+        lineup: lineupB,
+        published_lineup: pubLineupB
+      });
+
+      // Log to trade_history
+      await addDoc(collection(db, 'trade_history'), {
+        date: new Date().toISOString(),
+        teamA: tradeTeamA,
+        playerA: tradePlayerA,
+        teamB: tradeTeamB,
+        playerB: tradePlayerB,
+        timestamp: serverTimestamp()
+      });
+
+      setTradeSuccessMsg(`🎉 הטרייד בוצע בהצלחה! ${tradePlayerA} עבר ל-${teamBDoc.teamName || tradeTeamB}, ו-${tradePlayerB} עבר ל-${teamADoc.teamName || tradeTeamA}.`);
+      setTimeout(() => { setTradeSuccessMsg(null); setIsTradeModalOpen(false); }, 3500);
+    } catch (err: any) {
+      console.error('Trade execution failed:', err);
+      alert('שגיאה בביצוע הטרייד: ' + err.message);
+    } finally {
+      setExecutingTrade(false);
+    }
+  };
+
   return (
     <div className="space-y-6 dir-rtl text-right">
       {/* Header Banner */}
@@ -189,45 +320,93 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white tracking-wide flex items-center gap-2">
-                מציאות חלון ההעברות ⚽
+                מציאות חלון ההעברות וטריידים ⚽
                 <span className="text-xs bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-2.5 py-0.5 rounded-full font-mono">
                   ליגת העל במציאות
                 </span>
               </h2>
               <p className="text-sm text-zinc-400 mt-0.5">
-                דירוג ניקוד הפנטזי של כל שחקני ליגת העל – אתר שחקנים חופשיים לוהטים לקראת חלון החילופים!
+                דירוג ניקוד הפנטזי של כל שחקני ליגת העל – אתר שחקנים חופשיים או לבצע טריידים בין קבוצות!
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-zinc-950/60 p-1.5 rounded-xl border border-zinc-800">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => setFilterMode('FREE_ONLY')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filterMode === 'FREE_ONLY' ? 'bg-emerald-500 text-zinc-950 shadow-md' : 'text-zinc-400 hover:text-white'
-              }`}
+              onClick={() => setIsTradeModalOpen(true)}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl border border-purple-400/30 flex items-center gap-2 shadow-lg transition-all active:scale-95 text-xs md:text-sm"
             >
-              🆓 שחקנים חופשיים
+              🔄 ביצוע טרייד בין קבוצות
             </button>
-            <button
-              onClick={() => setFilterMode('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filterMode === 'ALL' ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              🌐 כל שחקני הליגה
-            </button>
-            <button
-              onClick={() => setFilterMode('DRAFTED')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filterMode === 'DRAFTED' ? 'bg-amber-500 text-zinc-950 shadow-md' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              🔒 בסגלי המנג'רים
-            </button>
+
+            <div className="flex items-center gap-2 bg-zinc-950/60 p-1.5 rounded-xl border border-zinc-800">
+              <button
+                onClick={() => setFilterMode('FREE_ONLY')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  filterMode === 'FREE_ONLY' ? 'bg-emerald-500 text-zinc-950 shadow-md' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                🆓 שחקנים חופשיים
+              </button>
+              <button
+                onClick={() => setFilterMode('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  filterMode === 'ALL' ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                🌐 כל שחקני הליגה
+              </button>
+              <button
+                onClick={() => setFilterMode('DRAFTED')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  filterMode === 'DRAFTED' ? 'bg-amber-500 text-zinc-950 shadow-md' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                🔒 בסגלי המנג'רים
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* 📜 Trade & Transfer Live History Feed */}
+      {tradeHistory.length > 0 && (
+        <div className="bg-zinc-950/70 border border-purple-500/30 rounded-2xl p-4 md:p-5 space-y-3 backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm md:text-base font-bold text-purple-300 flex items-center gap-2">
+              📜 יומן העברות וטריידים רשמי בלייב
+            </h3>
+            <span className="text-[10px] md:text-xs text-purple-400/80 font-mono bg-purple-950/80 border border-purple-500/20 px-2 py-0.5 rounded-full">
+              מתועד בשרת
+            </span>
+          </div>
+
+          <div className="space-y-2.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+            {tradeHistory.map(tr => {
+              const dateDisplay = formatTradeDate(tr.date);
+              const teamAName = tr.teamAName || tr.teamA;
+              const teamBName = tr.teamBName || tr.teamB;
+              return (
+                <div key={tr.id} className="bg-zinc-900/90 border border-zinc-800 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded font-bold">
+                      🔄 טרייד רשמי
+                    </span>
+                    <div className="text-white font-semibold">
+                      <strong className="text-purple-400">{teamAName}</strong> העבירה את <span className="text-emerald-400 font-bold">{tr.playerA}</span> ⇄ <strong className="text-indigo-400">{teamBName}</strong> העבירה את <span className="text-emerald-400 font-bold">{tr.playerB}</span>
+                    </div>
+                  </div>
+                  {dateDisplay && (
+                    <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+                      📅 {dateDisplay}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Controls Bar: Search & Position Filter */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -392,6 +571,135 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔄 Trade Engine Modal */}
+      {isTradeModalOpen && (
+        <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border-2 border-purple-500/50 rounded-3xl max-w-xl w-full p-6 space-y-6 shadow-2xl text-right dir-rtl relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+              <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                🔄 מנגנון ביצוע טרייד בין קבוצות
+              </h3>
+              <button
+                onClick={() => setIsTradeModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {tradeSuccessMsg ? (
+              <div className="bg-emerald-950/80 border border-emerald-500/50 p-6 rounded-2xl text-center space-y-2 animate-in zoom-in-95">
+                <div className="text-3xl">🎉</div>
+                <h4 className="text-lg font-bold text-emerald-400">{tradeSuccessMsg}</h4>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Team A Selection */}
+                <div className="bg-zinc-950/60 p-4 rounded-2xl border border-zinc-800 space-y-3">
+                  <label className="text-xs font-bold text-purple-400 uppercase tracking-widest block">
+                    1️⃣ קבוצה א' (היוזמת)
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select
+                      value={tradeTeamA}
+                      onChange={e => {
+                        setTradeTeamA(e.target.value);
+                        setTradePlayerA('');
+                      }}
+                      className="w-full p-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-bold text-sm focus:border-purple-500 outline-none"
+                    >
+                      {teamOptions.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={tradePlayerA}
+                      onChange={e => setTradePlayerA(e.target.value)}
+                      className="w-full p-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-bold text-sm focus:border-purple-500 outline-none"
+                    >
+                      <option value="">-- בחר שחקן למסירה --</option>
+                      {getSquadForTeam(tradeTeamA).map((pName: string) => (
+                        <option key={pName} value={pName}>{pName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Trade Icon Divider */}
+                <div className="flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-purple-600/30 border border-purple-400/40 text-purple-300 flex items-center justify-center font-bold text-lg shadow-lg">
+                    ⇄
+                  </div>
+                </div>
+
+                {/* Team B Selection */}
+                <div className="bg-zinc-950/60 p-4 rounded-2xl border border-zinc-800 space-y-3">
+                  <label className="text-xs font-bold text-indigo-400 uppercase tracking-widest block">
+                    2️⃣ קבוצה ב' (השותפה לטרייד)
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select
+                      value={tradeTeamB}
+                      onChange={e => {
+                        setTradeTeamB(e.target.value);
+                        setTradePlayerB('');
+                      }}
+                      className="w-full p-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-bold text-sm focus:border-indigo-500 outline-none"
+                    >
+                      {teamOptions.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={tradePlayerB}
+                      onChange={e => setTradePlayerB(e.target.value)}
+                      className="w-full p-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-bold text-sm focus:border-indigo-500 outline-none"
+                    >
+                      <option value="">-- בחר שחקן לקבלה --</option>
+                      {getSquadForTeam(tradeTeamB).map((pName: string) => (
+                        <option key={pName} value={pName}>{pName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Preview Box */}
+                {tradePlayerA && tradePlayerB && (
+                  <div className="bg-gradient-to-r from-purple-950/60 to-indigo-950/60 border border-purple-500/30 p-4 rounded-2xl text-xs space-y-1.5 text-center">
+                    <div className="font-black text-purple-300 text-sm">סיכום עסקת הטרייד:</div>
+                    <div className="text-zinc-200">
+                      <strong className="text-purple-400">{teamOptions.find(t => t.id === tradeTeamA)?.name}</strong> מעבירה את <span className="text-emerald-400 font-bold">{tradePlayerA}</span>
+                    </div>
+                    <div className="text-zinc-200">
+                      <strong className="text-indigo-400">{teamOptions.find(t => t.id === tradeTeamB)?.name}</strong> מעבירה את <span className="text-emerald-400 font-bold">{tradePlayerB}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    disabled={executingTrade || !tradePlayerA || !tradePlayerB}
+                    onClick={handleExecuteTrade}
+                    className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-zinc-950 font-black rounded-xl text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {executingTrade ? 'מבצע טרייד...' : '🚀 בצע טרייד והעבר דאטה בלייב'}
+                  </button>
+                  <button
+                    onClick={() => setIsTradeModalOpen(false)}
+                    className="py-3 px-5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-xl text-sm transition-all"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

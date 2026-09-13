@@ -3,8 +3,8 @@ import { Team, User, UserRole } from './types';
 import { MOCK_TEAMS } from './constants';
 import { authService } from './authService';
 import { db, messaging } from './firebaseConfig'; // 🟢 הוספנו את messaging
-import AdminLeagueManager from './AdminLeagueManager';
-import AdminSettings from './AdminSettings';
+const AdminLeagueManager = React.lazy(() => import('./AdminLeagueManager'));
+const AdminSettings = React.lazy(() => import('./AdminSettings'));
 import FixturesTab from './components/FixturesTab';
 import LiveArena from './components/LiveArena';
 import LineupManager from './components/LineupManager';
@@ -429,8 +429,18 @@ const App: React.FC = () => {
         {activeTab === 'live' && <LiveArena currentRound={currentRound} teams={teams} isModerator={isModerator} loggedInUser={{...loggedInUser, name: displayName}} isAdmin={isEran} />}
         {activeTab === 'lineup' && <LineupManager teams={teams} loggedInUser={{...loggedInUser, name: displayName}} currentRound={currentRound} isAdmin={isEran} />}
         {activeTab === 'fixtures' && <FixturesTab currentRound={currentRound} isAdmin={isEran} />}
-        {activeTab === 'table' && <div className="max-w-4xl mx-auto"><AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" /></div>}
-        {activeTab === 'settings' && <AdminSettings onClose={() => setActiveTab('home')} isAdmin={isEran} />}
+        {activeTab === 'table' && (
+          <div className="max-w-4xl mx-auto">
+            <React.Suspense fallback={<div className="p-12 text-center text-green-400 font-black animate-pulse text-lg">טוען טבלאות ליגה...</div>}>
+              <AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" />
+            </React.Suspense>
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <React.Suspense fallback={<div className="p-12 text-center text-green-400 font-black animate-pulse text-lg">טוען הגדרות מנהל...</div>}>
+            <AdminSettings onClose={() => setActiveTab('home')} isAdmin={isEran} />
+          </React.Suspense>
+        )}
         {activeTab === 'cup' && <CupTab />}
         {activeTab === 'free_agents' && <FreeAgentsTab users={teams} />}
       </main>

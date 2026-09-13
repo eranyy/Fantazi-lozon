@@ -92,6 +92,8 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   
   const [selectedRound, setSelectedRound] = useState<number>(currentRound || 1);
   const [fixtures, setFixtures] = useState<any[]>([]);
+  const [realFixtures, setRealFixtures] = useState<any[]>([]);
+  const [globalLock, setGlobalLock] = useState<boolean>(false);
 
   useEffect(() => {
     if (currentRound && currentRound > 0) {
@@ -180,7 +182,17 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       if(snap.exists()) setFixtures(snap.data().rounds || []);
       setLoading(false);
     });
-    return () => { unsubFixtures(); };
+    const unsubRealFixtures = onSnapshot(doc(db, 'leagueData', 'real_fixtures'), snap => {
+      if(snap.exists()) setRealFixtures(snap.data().matches || []);
+    });
+    const unsubSettings = onSnapshot(doc(db, 'leagueData', 'settings'), snap => {
+      if(snap.exists()) setGlobalLock(Boolean(snap.data().globalLock));
+    });
+    return () => { 
+      unsubFixtures(); 
+      unsubRealFixtures();
+      unsubSettings();
+    };
   }, []);
 
   const getLatestTransferTimestamp = (team: any) => {
@@ -224,23 +236,155 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     return { t1Wins, t2Wins, draws, t1Goals, t2Goals, pastEncounters: pastEncounters.sort((a, b) => b.round - a.round) };
   };
 
-  const getPlayerPointsForRound = (player: any, _team: any, rNum: number = selectedRound) => {
-    if (!player) return 0;
-    
-    // If viewing an upcoming unplayed round, score is 0 until matches start!
-    const roundFixture = fixtures.find((r: any) => r.round === rNum);
-    if (rNum >= currentRound && (!roundFixture || !roundFixture.isPlayed)) {
-      return 0;
+  const getCanonicalRealTeam = (teamName?: string): string => {
+    if (!teamName) return 'unknown';
+    const c = String(teamName).replace(/['"״׳.\-\s()]/g, '').toLowerCase();
+    if ((c.includes('מכבי') && (c.includes('תא') || c.includes('תלאביב'))) || c === 'מכביתא' || c === 'תא') return 'maccabi_ta';
+    if ((c.includes('הפועל') && (c.includes('תא') || c.includes('תלאביב'))) || c === 'הפועלתא') return 'hapoel_ta';
+    if (c.includes('מכבי') && c.includes('חיפה')) return 'maccabi_haifa';
+    if (c.includes('הפועל') && c.includes('חיפה')) return 'hapoel_haifa';
+    if (c.includes('הפועל') && c.includes('ירושלים')) return 'hapoel_jlm';
+    if (c.includes('ביתר') || c.includes('ביתרים')) return 'beitar_jlm';
+    if (c.includes('מכבי') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'))) return 'maccabi_pt';
+    if (c.includes('הפועל') && (c.includes('פת') || c.includes('תקוה') || c.includes('תקווה'))) return 'hapoel_pt';
+    if (c.includes('בש') || c.includes('בארשבע')) return 'hapoel_bs';
+    if (c.includes('קש') || c.includes('שמונה')) return 'kiryat_shmona';
+    if (c.includes('רמתגן') || c.includes('הפועלרמג')) return 'hapoel_rg';
+    if (c.includes('טבריה')) return 'tiberias';
+    if (c.includes('סכנין')) return 'sakhnin';
+    if (c.includes('נתניה')) return 'netanya';
+    return c;
+  };
+
+  const isPlayerMatchStarted = (player: any, rNum: number = selectedRound) => {
+    if (!player) return false;
+
+    if (rNum < currentRound) return true;
+    if (globalLock) return true;
+
+    const playerRealTeam = player.realTeam || player.team;
+    const playerCanonical = getCanonicalRealTeam(playerRealTeam);
+
+    const getTeamName = (teamData: any) => {
+      if (!teamData) return '';
+      if (typeof teamData === 'string') return teamData;
+      return teamData.name || teamData.id || '';
+    };
+
+    const match = [...realFixtures].reverse().find(m => {
+      if (m.round && Number(m.round) !== rNum) return false;
+      const hCanonical = getCanonicalRealTeam(m.h || getTeamName(m.homeTeam));
+      const aCanonical = getCanonicalRealTeam(m.a || getTeamName(m.awayTeam));
+      return hCanonical === playerCanonical || aCanonical === playerCanonical;
+    });
+
+    if (match) {
+      if (match.isPlayed || (match.hs !== undefined && match.hs !== null && match.hs !== '')) return true;
+
+      const dateStr = match.date; 
+      const timeStr = match.time || match.matchTime;
+      if (dateStr && timeStr && typeof dateStr === 'string' && typeof timeStr === 'string') {
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
+        let matchDay = 0, matchMonth = 0, matchYear = 0;
+
+        if (dateStr.includes('-')) {
+          const parts = dateStr.split('-');
+          if (parts.length === 3) { matchYear = parseInt(parts[0], 10); matchMonth = parseInt(parts[1], 10); matchDay = parseInt(parts[2], 10); }
+        } else if (dateStr.includes('/')) {
+          const parts = dateStr.split('/');
+          if (parts.length >= 2) { matchDay = parseInt(parts[0], 10); matchMonth = parseInt(parts[1], 10); matchYear = parts[2] ? parseInt(parts[2], 10) : 2026; }
+        }
+
+        if (timeMatch && matchDay > 0 && matchMonth > 0) {
+          const matchHours = parseInt(timeMatch[1], 10);
+          const matchMinutes = parseInt(timeMatch[2], 10);
+
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Jerusalem',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', hour12: false
+          });
+
+          const parts = formatter.formatToParts(new Date());
+          const currentYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+          const currentMonth = parseInt(parts.find(p => p.type === 'month')?.value || '0', 10);
+          const currentDay = parseInt(parts.find(p => p.type === 'day')?.value || '0', 10);
+          let currentHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+          if (currentHour === 24) currentHour = 0;
+          const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
+
+          if (matchYear === 0) matchYear = currentYear;
+
+          const currentAbsolute = Date.UTC(currentYear, currentMonth - 1, currentDay, currentHour, currentMinute);
+          const matchAbsolute = Date.UTC(matchYear, matchMonth - 1, matchDay, matchHours, matchMinutes);
+
+          return currentAbsolute >= matchAbsolute;
+        }
+      }
     }
 
-    // Prioritize explicit player.points (from manual edit, excel import, or approval) for closed rounds
-    if (typeof player.points === 'number' && !isNaN(player.points)) {
+    // Fallback: If no match found or match timing unparsed, check if explicit live stats or points exist
+    if (player.stats && Object.keys(player.stats).length > 0) {
+      const hasRealActivity = Object.entries(player.stats).some(([k, v]) => {
+        if (k === 'notInSquad' || k === 'notPlayedIn16') return false;
+        return v === true || (typeof v === 'number' && v > 0);
+      });
+      if (hasRealActivity) return true;
+    }
+    if (typeof player.points === 'number' && !isNaN(player.points) && player.points !== 0) return true;
+
+    return false;
+  };
+
+  const isPlayerHalftimeSubOut = (player: any, team: any, rNum: number = selectedRound) => {
+    if (!team || !team.transfers) return false;
+    return team.transfers.some((t: any) => 
+      t.type === 'HALFTIME_SUB' && 
+      t.round === rNum && 
+      t.status !== 'CANCELLED' && 
+      isSamePlayer({ name: t.playerOut }, player)
+    );
+  };
+
+  const getPlayerPointsForRound = (player: any, team: any, _rNum: number = selectedRound) => {
+    if (!player) return 0;
+    
+    const isHalftimeOut = isPlayerHalftimeSubOut(player, team, _rNum);
+
+    // 1. Calculate live points directly from stats if stats object has real recorded events or flags
+    if (player.stats && Object.keys(player.stats).length > 0) {
+      const hasRealActivity = Object.entries(player.stats).some(([k, v]) => {
+        if (k === 'notInSquad' || k === 'notPlayedIn16') return false;
+        return v === true || (typeof v === 'number' && v > 0);
+      });
+
+      if (hasRealActivity || player.stats.notInSquad || player.stats.notPlayedIn16) {
+        const statsObj = { ...player.stats };
+        if (isHalftimeOut && statsObj.played60 === undefined) {
+          statsObj.played60 = false;
+          statsObj.started = true;
+        }
+        return calculatePointsFromStats(statsObj, player.position || player.pos || '');
+      }
+    }
+
+    // 2. Prioritize explicit non-zero player.points (from manual edit, excel import, or approval)
+    if (typeof player.points === 'number' && !isNaN(player.points) && player.points !== 0) {
       return player.points;
     }
 
-    // Calculate live points directly from stats if stats object exists and is non-zero
-    if (player.stats && Object.keys(player.stats).length > 0) {
-      return calculatePointsFromStats(player.stats, player.position || player.pos || '');
+    // 3. Check if player's real team match has started according to real_fixtures schedule
+    const started = isPlayerMatchStarted(player, _rNum);
+    if (!started) {
+      return 0;
+    }
+
+    // 4. Default for starting lineup players whose match HAS started (and no manual stats yet):
+    if (player.isStarting !== false) {
+      if (isHalftimeOut) {
+        return 1;
+      }
+      return 2;
     }
 
     return 0;
@@ -569,9 +713,15 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   useEffect(() => {
     if (editingPlayer) {
       const st = editingPlayer.player.stats || {};
+      const hasExistingStats = editingPlayer.player.stats && Object.keys(editingPlayer.player.stats).length > 0;
+
+      // Default to started=true and played60=true for new/un-edited players (starts at +2 pts), allow manual removal
+      const defaultStarted = hasExistingStats && st.started !== undefined ? Boolean(st.started) : true;
+      const defaultPlayed60 = hasExistingStats && st.played60 !== undefined ? Boolean(st.played60) : true;
+
       setStats({
-        started: Boolean(st.started),
-        played60: Boolean(st.played60),
+        started: defaultStarted,
+        played60: defaultPlayed60,
         notInSquad: Boolean(st.notInSquad),
         notPlayedIn16: Boolean(st.notPlayedIn16),
         won: Boolean(st.won), 
@@ -1182,7 +1332,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
             
             const hTeam = teams.find(t => t.id === match.h); const aTeam = teams.find(t => t.id === match.a);
             const expandedTeamObj = isExpanded ? teams.find(t => t.id === expandedTeamId) : null;
-            const isEditable = (isAdmin || isModerator || (loggedInUser && expandedTeamObj && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(expandedTeamObj.teamName))) && (!isSelectedRoundClosed || isUnlockedByAdmin);
+            const isEditable = (!isSelectedRoundClosed || isUnlockedByAdmin);
             
             return (
               <div key={idx} className={`bg-slate-900/60 backdrop-blur-md rounded-[32px] border transition-all duration-300 overflow-hidden flex flex-col ${isExpanded ? 'border-slate-500 shadow-[0_0_30px_rgba(255,255,255,0.05)]' : 'border-slate-800 shadow-xl hover:border-slate-700'}`}>
@@ -1397,7 +1547,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
               return !hasPlayed && Number(p.points) === 0;
           }).sort((a:any,b:any) => POS_ORDER[a.position] - POS_ORDER[b.position]);
 
-          const isEditable = isAdmin || isModerator || (loggedInUser && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(team?.teamName || ''));
+          const isEditable = (!isSelectedRoundClosed || isUnlockedByAdmin);
           const roundSubs = (team?.transfers || []).filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
           const subInNames = roundSubs.map((s:any) => s.playerIn);
 
@@ -1492,7 +1642,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           };
 
           const renderPlayerRow = (p: any, fTeamName?: string, realTeamId?: string) => {
-              const isEditable = isAdmin || isModerator || (loggedInUser && getNormalizedTeamId(loggedInUser.teamName) === getNormalizedTeamId(fTeamName || ''));
+              const isEditable = (!isSelectedRoundClosed || isUnlockedByAdmin);
               return (
                   <button key={p.id} onClick={() => { if (isEditable) { setAuditModal(null); setEditingPlayer({ teamId: realTeamId || (fTeamName === hName ? auditModal.hId : auditModal.aId), player: p }); } }} className={`w-full text-right bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 flex flex-col mb-2 transition-colors group ${isEditable ? 'hover:bg-slate-800 cursor-pointer hover:border-blue-500/50' : 'cursor-default'}`}>
                       <div className="flex justify-between items-start w-full">

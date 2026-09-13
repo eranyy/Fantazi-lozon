@@ -1,13 +1,11 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 const modelName = "gemini-1.5-flash-latest";
-
-const FALLBACK_GEMINI_KEY = "AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk";
 
 const getApiKey = (providedKey?: string) => {
   return providedKey || 
          localStorage.getItem('gemini_api_key') || 
          (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
-         FALLBACK_GEMINI_KEY;
+         '';
 };
 
 // 🟢 פונקציית עזר למניעת תקיעות - מוקצב ל-45 שניות (זמן סביר לסריקת מסמכים) 🟢
@@ -29,20 +27,37 @@ const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 45000
 
 export const analyzeMatchImage = async (base64Data: string, mimeType: string, hint?: string, apiKey?: string) => {
   const activeKey = getApiKey(apiKey);
-  
-  // 🟢 שימוש ב-SDK המודרני 🟢
   const ai = new GoogleGenAI({ apiKey: activeKey }); 
   
-  const prompt = `אתה סוכן AI מומחה ופדנט לחילוץ נתונים מטבלאות ספורט מורכבות ומסמכי PDF רשמיים.\\nאני מספק לך תמונה או קובץ PDF של משחקי ליגת העל בכדורגל (ישראל). \\nרמז למחזור שצריך לחלץ: \\"${hint || 'לא ידוע'}\\".\\n\\nהמשימה שלך היא לחלץ את המשחקים ולהחזיר אותם אך ורק כמערך JSON חוקי.\\n\\n🚨 חוקי ברזל לסריקה מושלמת (קריטי להצלחת המשימה!) 🚨:\\n1. **סרוק את כל המסמך ביסודיות, שורה אחר שורה, מההתחלה ועד הסוף!** אל תעצור עד שסיימת לקרוא הכל.\\n2. חפש את המספר שניתן לך ברמז (למשל מחזור 28, 30, 32 או 33).\\n3. **שים לב לפלייאוף!** המחזור יכול להיות מפוצל ל\\"פלייאוף עליון\\" ו\\"פלייאוף תחתון\\". אם ביקשתי מחזור מסוים, עליך למצוא ולחלץ את *כל* המשחקים של אותו מחזור משני הפלייאופים יחד!\\n4. אל תניח שיש מספר קבוע של משחקים. יכולים להיות 3, 4, 6 או 7 משחקים. חלץ את כולם.\\n5. קרא בעיון כל טבלה. לפעמים שמות הקבוצות או התאריכים נשברים לשורות נפרדות. חבר אותם למשחק אחד.\\n6. השעה של המשחק היא קריטית! חלץ אותה במדויק.\\n\\nהחזר אך ורק מערך JSON, ללא שום טקסט או הסבר נוסף (ללא פורמט Markdown כמו \\\\\`\\\\\`\\\\\`json).\\n\\nכל אובייקט במערך חייב לכלול בדיוק את המפתחות הבאים:\\n- \\"round\\": (מספר שלם לפי הרמז שסיפקתי).\\n- \\"homeTeam\\": (מחרוזת) שם קבוצת הבית בעברית.\\n- \\"awayTeam\\": (מחרוזת) שם קבוצת החוץ בעברית.\\n- \\"date\\": (מחרוזת) תאריך המשחק (למשל 19.04 או 19/04). \\n- \\"time\\": (מחרוזת) שעת המשחק המדויקת בפורמט HH:MM בלבד (למשל \\"20:00\\"). ללא מילים נוספות!\\n- \\"stadium\\": (מחרוזת) חלץ את שם המגרש/אצטדיון בעברית (למשל \\"סמי עופר\\", \\"בלומפילד\\", \\"דוחא\\", \\"טרנר\\", \\"שלמה ביטוח\\"). אם לא מופיע, החזר \\"\\".\\n- \\"tvChannel\\": (מחרוזת) ערוץ שידור אם יש, אחרת \\"\\".`;
-
-  // 🟢 שימוש במודל החדיש והיציב ביותר 🟢
-  const modelName = "gemini-1.5-flash-latest";
+  const prompt = `אתה סוכן AI מומחה ופדנט לחילוץ נתונים מטבלאות ספורט מורכבות ומסמכי PDF רשמיים.
+אני מספק לך תמונה או קובץ PDF של משחקי ליגת העל בכדורגל (ישראל). 
+רמז למחזור שצריך לחלץ: "${hint || 'לא ידוע'}".
+המשימה שלך היא לחלץ את המשחקים ולהחזיר אותם אך ורק במבנה ה-JSON הנדרש.`;
 
   try {
-      console.log(`מפעיל חילוץ PDF/תמונה עם ${modelName}...`);
+      console.log(`מפעיל חילוץ PDF/תמונה עם Structured Outputs (${modelName})...`);
       const requestPromise = ai.models.generateContent({
         model: modelName,
-        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }]
+        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                round: { type: Type.INTEGER },
+                homeTeam: { type: Type.STRING },
+                awayTeam: { type: Type.STRING },
+                date: { type: Type.STRING },
+                time: { type: Type.STRING },
+                stadium: { type: Type.STRING },
+                tvChannel: { type: Type.STRING }
+              },
+              required: ["round", "homeTeam", "awayTeam", "date", "time", "stadium", "tvChannel"]
+            }
+          }
+        }
       });
 
       const response = await fetchWithTimeout(requestPromise, 45000); 
@@ -59,7 +74,13 @@ export const analyzeMatchImage = async (base64Data: string, mimeType: string, hi
 };
 
 export const generateAISummary = async (fixtures: any[], teams: any[], pollData?: any, apiKey?: string) => {
-    const activeKey = getApiKey(apiKey);
+    let activePoll = pollData;
+    let customKey = apiKey;
+    if (typeof pollData === 'string' && !apiKey) {
+        customKey = pollData;
+        activePoll = undefined;
+    }
+    const activeKey = getApiKey(customKey);
     const ai = new GoogleGenAI({ apiKey: activeKey });
 
     const sortedTeams = [...teams].filter(t => t.id !== 'admin' && t.id !== 'system').sort((a, b) => {
@@ -134,6 +155,130 @@ export const generateRumors = async (teams: any[], apiKey?: string) => {
         return response.text || "";
     } catch (error: any) {
         console.error("Rumors generation failed:", error);
+        throw error;
+    }
+};
+
+export const getTacticalAdvice = async (squad: any[], opponentTeam?: string, apiKey?: string) => {
+    const activeKey = getApiKey(apiKey);
+    const ai = new GoogleGenAI({ apiKey: activeKey });
+
+    const squadText = (squad || []).map(p => `${p.name} (${p.position}, נקודות: ${p.points || 0})`).join(', ');
+    const prompt = `אתה מאמן טקטי בכיר בליגת הפנטזי "לוזון 14".
+נתח את הסגל הבא: ${squadText}.
+קבוצה יריבה במחזור הקרוב: ${opponentTeam || 'לא צוינה'}.
+ספק ניתוח טקטי מדויק במבנה ה-JSON הנדרש.`;
+
+    try {
+        const requestPromise = ai.models.generateContent({
+            model: "gemini-1.5-flash-latest",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        recommendedFormation: { type: Type.STRING },
+                        captainChoice: { type: Type.STRING },
+                        substituteSuggestions: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        },
+                        transferRecommendation: { type: Type.STRING },
+                        confidenceScore: { type: Type.INTEGER }
+                    },
+                    required: ["recommendedFormation", "captainChoice", "substituteSuggestions", "transferRecommendation", "confidenceScore"]
+                }
+            }
+        });
+
+        const response = await fetchWithTimeout(requestPromise, 25000);
+        return JSON.parse(response.text || '{}');
+    } catch (error: any) {
+        console.error("Tactical advice failed:", error);
+        throw error;
+    }
+};
+
+export const analyzeDraft = async (squad: any[], teamName: string, apiKey?: string) => {
+    const activeKey = getApiKey(apiKey);
+    const ai = new GoogleGenAI({ apiKey: activeKey });
+
+    const squadText = (squad || []).map(p => `${p.name} (${p.position}, קבוצה במציאות: ${p.team || 'לא ידוע'})`).join('\n');
+    const prompt = `אתה אנליסט דראפט פנטזי לוזון 14.
+נתח את תוצאות הדראפט של קבוצת ${teamName}:
+${squadText}
+החזר ניתוח דראפט מקיף במבנה JSON מובנה.`;
+
+    try {
+        const requestPromise = ai.models.generateContent({
+            model: "gemini-1.5-flash-latest",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        draftGrade: { type: Type.STRING },
+                        squadBalanceScore: { type: Type.INTEGER },
+                        topSleeperPicks: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        },
+                        keyRisks: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        },
+                        summaryAdvice: { type: Type.STRING }
+                    },
+                    required: ["draftGrade", "squadBalanceScore", "topSleeperPicks", "keyRisks", "summaryAdvice"]
+                }
+            }
+        });
+
+        const response = await fetchWithTimeout(requestPromise, 25000);
+        return JSON.parse(response.text || '{}');
+    } catch (error: any) {
+        console.error("Draft analysis failed:", error);
+        throw error;
+    }
+};
+
+export const analyzeLiveScoring = async (matchData: any, apiKey?: string) => {
+    const activeKey = getApiKey(apiKey);
+    const ai = new GoogleGenAI({ apiKey: activeKey });
+
+    const prompt = `אתה פרשן הלייב של פנטזי לוזון 14.
+נתח את אירועי המשחק בלייב והניקוד שנצבר:
+${JSON.stringify(matchData)}
+החזר ניתוח בלייב במבנה JSON מובנה.`;
+
+    try {
+        const requestPromise = ai.models.generateContent({
+            model: "gemini-1.5-flash-latest",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        currentWinner: { type: Type.STRING },
+                        liveHighlights: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        },
+                        gameChangerPlayer: { type: Type.STRING },
+                        winProbabilityPercent: { type: Type.INTEGER }
+                    },
+                    required: ["currentWinner", "liveHighlights", "gameChangerPlayer", "winProbabilityPercent"]
+                }
+            }
+        });
+
+        const response = await fetchWithTimeout(requestPromise, 25000);
+        return JSON.parse(response.text || '{}');
+    } catch (error: any) {
+        console.error("Live scoring analysis failed:", error);
         throw error;
     }
 };

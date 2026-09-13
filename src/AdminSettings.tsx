@@ -592,7 +592,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         const playersSnap = await getDocs(collection(db, 'players'));
         const dbPlayers = playersSnap.docs.map(d => d.data());
 
-        const playerPointsMap: Record<string, { points: number, team: string, fantasyTeam: string, rawName: string }> = {};
+        const playerPointsMap: Record<string, { points: number, team: string, fantasyTeam: string, rawName: string, goals?: number, assists?: number }> = {};
         const cleanForMatch = (name: string) => name.toLowerCase().replace(/['"״׳`\-\s().]/g, '');
 
         data.valueRanges.forEach((rangeData: any) => {
@@ -616,15 +616,22 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                            }
                         }
                         const finalName = matchedDbPlayer ? matchedDbPlayer.name : playerName;
-                        if (!playerPointsMap[finalName]) playerPointsMap[finalName] = { points: 0, team: matchedDbPlayer ? matchedDbPlayer.team : 'לא ידוע', fantasyTeam: matchedDbPlayer ? matchedDbPlayer.fantasyTeam : '', rawName: finalName };
-                        playerPointsMap[finalName].points += points;
+                        const realTeam = matchedDbPlayer ? matchedDbPlayer.team : 'ליגת העל';
+                        const goalsCount = matchedDbPlayer?.goals || 0;
+                        const assistsCount = matchedDbPlayer?.assists || 0;
+                        
+                        if (!playerPointsMap[finalName]) {
+                            playerPointsMap[finalName] = { points, team: realTeam, fantasyTeam: matchedDbPlayer?.fantasyTeam || '', rawName: finalName, goals: goalsCount, assists: assistsCount };
+                        } else {
+                            playerPointsMap[finalName].points += points;
+                        }
                     }
                 }
             });
         });
 
         const topPlayers = Object.values(playerPointsMap).sort((a, b) => b.points - a.points).slice(0, 50);
-        await setDoc(doc(db, 'leagueData', 'top_players'), { players: topPlayers.map(p => ({ name: p.rawName, team: p.team, points: p.points, fantasyTeamName: p.fantasyTeam })), lastUpdated: new Date().toISOString() });
+        await setDoc(doc(db, 'leagueData', 'top_players'), { players: topPlayers.map(p => ({ name: p.rawName, team: p.team, points: p.points, goals: p.goals || 0, assists: p.assists || 0, fantasyTeamName: p.fantasyTeam })), lastUpdated: new Date().toISOString() });
         showMessage(`✅ הצלחה! האפליקציה פירקה ${roundSheets.length} מחזורים באפס תקלות! 👑`, 'success');
         setTopPlayersDriveUrl('');
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, History, Settings2, LayoutGrid, List, MessageCircle, RefreshCw, Eraser, Search, Share2, Send, ArrowRightLeft, Snowflake, Plus, Trash2, Undo2, AlertTriangle, CheckCircle2, Siren, Trophy, Lock, Unlock } from 'lucide-react';
 import { Team, Player, User } from '../types';
+import { calculateOptimalLineup } from '../utils/optimalLineup';
 import { db } from '../firebaseConfig';
 import { collection, doc, updateDoc, arrayUnion, onSnapshot, addDoc } from 'firebase/firestore';
 import { GoogleGenAI } from "@google/genai";
@@ -177,6 +178,119 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const [playerOutId, setPlayerOutId] = useState('');
   const [transferNote, setTransferNote] = useState('');
 
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [tradeTeamA, setTradeTeamA] = useState('tampa');
+  const [tradePlayerA, setTradePlayerA] = useState('');
+  const [tradeTeamB, setTradeTeamB] = useState('holonia');
+  const [tradePlayerB, setTradePlayerB] = useState('');
+  const [executingTrade, setExecutingTrade] = useState(false);
+  const [tradeSuccessMsg, setTradeSuccessMsg] = useState<string | null>(null);
+
+  const teamOptions = [
+    { id: 'tumali', name: 'תומאלי (אלי ותום)' },
+    { id: 'hamsili', name: 'חמסילי (ערן ואסף)' },
+    { id: 'harale', name: 'חראלה (גיא)' },
+    { id: 'holonia', name: 'חולוניה (ארז)' },
+    { id: 'pichichi', name: 'פיציצי (שלומי)' },
+    { id: 'tampa', name: 'טמפה (יינון)' }
+  ];
+
+  const getSquadForTeamId = (teamId: string) => {
+    const tDoc = teams.find((u: any) => u.id === teamId || String(u.teamName || '').toLowerCase().includes(teamId));
+    if (!tDoc) return [];
+    const sq = tDoc.published_lineup || tDoc.lineup || tDoc.squad || [];
+    return sq.map((p: any) => typeof p === 'string' ? p : p.name).filter(Boolean);
+  };
+
+  const handleExecuteTradeModal = async () => {
+    if (!tradeTeamA || !tradeTeamB || !tradePlayerA || !tradePlayerB) {
+      alert('נא לבחור 2 קבוצות ו-2 שחקנים לביצוע הטרייד!');
+      return;
+    }
+    if (tradeTeamA === tradeTeamB) {
+      alert('נא לבחור 2 קבוצות שונות לטרייד!');
+      return;
+    }
+    setExecutingTrade(true);
+    try {
+      const { doc, updateDoc, addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+
+      const teamADoc = teams.find((u: any) => u.id === tradeTeamA || String(u.teamName || '').toLowerCase().includes(tradeTeamA));
+      const teamBDoc = teams.find((u: any) => u.id === tradeTeamB || String(u.teamName || '').toLowerCase().includes(tradeTeamB));
+
+      if (!teamADoc || !teamBDoc) {
+        alert('אחת מהקבוצות לא נמצאה במערכת!');
+        return;
+      }
+
+      const removeP = (arr: any[], pName: string) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(p => {
+          const n = typeof p === 'string' ? p : p.name;
+          return n !== pName && !n.includes(pName) && !pName.includes(n);
+        });
+      };
+
+      const addP = (arr: any[], pName: string) => {
+        if (!Array.isArray(arr)) return [{ name: pName, isStarting: false }];
+        const exists = arr.some(p => {
+          const n = typeof p === 'string' ? p : p.name;
+          return n === pName || n.includes(pName) || pName.includes(n);
+        });
+        if (!exists) return [...arr, { name: pName, isStarting: false }];
+        return arr;
+      };
+
+      // Update Team A: remove Player A, add Player B
+      let squadA = removeP(teamADoc.squad || [], tradePlayerA);
+      squadA = addP(squadA, tradePlayerB);
+      let lineupA = removeP(teamADoc.lineup || [], tradePlayerA);
+      lineupA = addP(lineupA, tradePlayerB);
+      let pubLineupA = removeP(teamADoc.published_lineup || [], tradePlayerA);
+      pubLineupA = addP(pubLineupA, tradePlayerB);
+
+      await updateDoc(doc(db, 'users', teamADoc.id), {
+        squad: squadA,
+        lineup: lineupA,
+        published_lineup: pubLineupA
+      });
+
+      // Update Team B: remove Player B, add Player A
+      let squadB = removeP(teamBDoc.squad || [], tradePlayerB);
+      squadB = addP(squadB, tradePlayerA);
+      let lineupB = removeP(teamBDoc.lineup || [], tradePlayerB);
+      lineupB = addP(lineupB, tradePlayerA);
+      let pubLineupB = removeP(teamBDoc.published_lineup || [], tradePlayerB);
+      pubLineupB = addP(pubLineupB, tradePlayerA);
+
+      await updateDoc(doc(db, 'users', teamBDoc.id), {
+        squad: squadB,
+        lineup: lineupB,
+        published_lineup: pubLineupB
+      });
+
+      // Log to trade_history
+      await addDoc(collection(db, 'trade_history'), {
+        date: new Date().toISOString(),
+        teamA: tradeTeamA,
+        teamAName: teamADoc.teamName || tradeTeamA,
+        playerA: tradePlayerA,
+        teamB: tradeTeamB,
+        teamBName: teamBDoc.teamName || tradeTeamB,
+        playerB: tradePlayerB,
+        timestamp: serverTimestamp()
+      });
+
+      setTradeSuccessMsg(`🎉 הטרייד בוצע בהצלחה! ${tradePlayerA} עבר ל-${teamBDoc.teamName || tradeTeamB}, ו-${tradePlayerB} עבר ל-${teamADoc.teamName || tradeTeamA}.`);
+      setTimeout(() => { setTradeSuccessMsg(null); setShowTradeModal(false); }, 3500);
+    } catch (err: any) {
+      console.error('Trade execution failed:', err);
+      alert('שגיאה בביצוע הטרייד: ' + err.message);
+    } finally {
+      setExecutingTrade(false);
+    }
+  };
+
   const [editingLog, setEditingLog] = useState<any>(null);
   const [showAdminSquadEditor, setShowAdminSquadEditor] = useState(false);
   const [adminSquad, setAdminSquad] = useState<Player[]>([]);
@@ -188,6 +302,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const [appAlert, setAppAlert] = useState<{title: string, msg: string, type: 'success'|'error'|'info', whatsappText?: string} | null>(null);
   
   const [adminOverrideData, setAdminOverrideData] = useState<{playersIn: any[], playersOut: any[]} | null>(null);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
 
   const [playoffRounds, setPlayoffRounds] = useState<number[]>([]);
   const [globalLock, setGlobalLock] = useState<boolean>(false);
@@ -319,18 +434,17 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
             }
         } else {
             const savedRoundLineup = team.lineupsByRound?.[currentRound]?.lineup;
-            if (Array.isArray(savedRoundLineup) && savedRoundLineup.length === 11) {
+            if (Array.isArray(savedRoundLineup) && savedRoundLineup.length > 0) {
               startingPlayers = savedRoundLineup.map((p: any) => ({ ...p, isStarting: true }));
-              benchPlayers = (team.lineupsByRound?.[currentRound]?.subsOut || []).map((p: any) => ({ ...p, isStarting: false }));
-            } else if (team.published_lineup && team.published_lineup.length === 11) {
+              const startingIds = new Set(startingPlayers.map(p => p.id));
+              benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
+            } else if (Array.isArray(team.published_lineup) && team.published_lineup.length > 0) {
               startingPlayers = team.published_lineup.map((p: any) => ({ ...p, isStarting: true }));
               const startingIds = new Set(startingPlayers.map(p => p.id));
               benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
             } else {
-              startingPlayers = safeSquad.filter(p => p.isStarting === true);
-              if (startingPlayers.length < 11) startingPlayers = safeSquad.slice(0, 11).map(p => ({ ...p, isStarting: true }));
-              const startingIds = new Set(startingPlayers.map(p => p.id));
-              benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
+              startingPlayers = [];
+              benchPlayers = safeSquad.map((p: any) => ({ ...p, isStarting: false }));
             }
         }
 
@@ -366,6 +480,11 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const gks = activeLineup.filter(p => normalizePos(p.position) === 'GK').length;
   const currentFormationStr = `${defs}-${mids}-${fwds}`;
   
+  const optimalAnalysis = React.useMemo(() => {
+    const fullSquad = [...activeLineup, ...activeBench];
+    return calculateOptimalLineup(fullSquad);
+  }, [activeLineup, activeBench]);
+
   let isFormationValid = false;
   
   if (isCupModeActive) {
@@ -864,9 +983,22 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
   const handleClearPitch = () => {
     if (!canEditLineup) return;
+    if (lineup.length === 0) {
+      return showToast('המגרש כבר ריק!', 'info');
+    }
+    setShowClearConfirmModal(true);
+  };
+
+  const confirmClearPitch = () => {
     const allPlayers = [...lineup, ...bench];
-    setLineup([]); setBench(allPlayers.sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99)));
-    showToast('המגרש נוקה.', 'success');
+    const safeAll: Player[] = Array.from(new Map(
+      allPlayers.filter((p: any) => p && (p.id || p.name)).map((p: any) => [p.id || p.name, { ...p, isStarting: false }])
+    ).values());
+
+    setLineup([]);
+    setBench(safeAll.sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99)));
+    setShowClearConfirmModal(false);
+    showToast('🧹 כל השחקנים הורדו מהדשא לספסל.', 'success');
   };
 
   const checkPlayerCooldown = (playerName: string) => {
@@ -1167,21 +1299,31 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     if (!myTeam) return;
     setIsSaving(true);
     try {
-      const validIds = new Set(adminSquad.map(x => x.id));
-      
-      const deletedPlayers = (myTeam.squad || []).filter((p: any) => !validIds.has(p.id));
+      const validIds = new Set(adminSquad.map(x => x.id).filter(Boolean));
+      const validNames = new Set(adminSquad.map(x => x.name).filter(Boolean));
 
-      const updatedLineup = (myTeam.published_lineup || []).filter((x:any) => validIds.has(x.id)).map((x:any) => adminSquad.find(a => a.id === x.id)!);
-      const updatedSubs = (myTeam.published_subs_out || []).filter((x:any) => validIds.has(x.id)).map((x:any) => adminSquad.find(a => a.id === x.id)!);
-      
-      const existingIds = new Set([...updatedLineup.map((x:any) => x.id), ...updatedSubs.map((x:any) => x.id)]);
-      const newlyAddedToAdmin = adminSquad.filter(x => !existingIds.has(x.id));
+      const isPlayerValid = (x: any) => (x.id && validIds.has(x.id)) || (x.name && validNames.has(x.name));
+
+      const deletedPlayers = (myTeam.squad || []).filter((p: any) => !isPlayerValid(p));
+
+      const updatedLineup = (myTeam.published_lineup || myTeam.lineup || [])
+        .filter((x: any) => isPlayerValid(x))
+        .map((x: any) => adminSquad.find(a => (a.id && a.id === x.id) || (a.name && a.name === x.name)) || x);
+
+      const updatedSubs = (myTeam.published_subs_out || (myTeam as any).subsOut || (myTeam as any).subs || [])
+        .filter((x: any) => isPlayerValid(x))
+        .map((x: any) => adminSquad.find(a => (a.id && a.id === x.id) || (a.name && a.name === x.name)) || x);
+
+      const existingNames = new Set([...updatedLineup.map((x: any) => x.name), ...updatedSubs.map((x: any) => x.name)]);
+      const newlyAddedToAdmin = adminSquad.filter(x => !existingNames.has(x.name));
       newlyAddedToAdmin.forEach(p => p.isStarting = false);
       const finalSubs = [...updatedSubs, ...newlyAddedToAdmin];
 
       const updateData: any = { 
           squad: adminSquad, 
           players: adminSquad, 
+          lineup: updatedLineup,
+          subs: finalSubs,
           published_lineup: updatedLineup, 
           published_subs_out: finalSubs 
       };
@@ -1676,8 +1818,21 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                     <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">מערך</span>
                     <span className={`text-sm font-black ${isFormationValid ? 'text-white' : 'text-red-400'}`}>{currentFormationStr}</span>
                   </div>
-                  <div className={`bg-black/40 backdrop-blur-xl px-4 py-2 rounded-2xl border shadow-lg text-sm font-black tracking-wider ${isCupModeActive ? 'border-yellow-500/30' : 'border-white/10'} ${activeLineup.length === 11 ? (isFormationValid ? 'text-green-400' : 'text-red-400') : isFormationValid ? 'text-orange-400' : 'text-red-400'}`}>
-                    {activeLineup.length}/11
+                  <div className="flex items-center gap-2">
+                    {canEditLineup && (!globalLock || isManagerOrAdmin) && (
+                      <button 
+                        onClick={handleClearPitch}
+                        className="pointer-events-auto bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 backdrop-blur-xl px-3 py-1.5 sm:px-4 sm:py-2 rounded-2xl flex items-center gap-1.5 shadow-lg text-xs sm:text-sm font-black transition-all active:scale-95 cursor-pointer"
+                        title="להוריד את כל השחקנים מהדשא לספסל"
+                      >
+                        <span>🧹</span>
+                        <span className="hidden sm:inline">להוריד מהדשא</span>
+                        <span className="sm:hidden">איפוס</span>
+                      </button>
+                    )}
+                    <div className={`bg-black/40 backdrop-blur-xl px-4 py-2 rounded-2xl border shadow-lg text-sm font-black tracking-wider ${isCupModeActive ? 'border-yellow-500/30' : 'border-white/10'} ${activeLineup.length === 11 ? (isFormationValid ? 'text-green-400' : 'text-red-400') : isFormationValid ? 'text-orange-400' : 'text-red-400'}`}>
+                      {activeLineup.length}/11
+                    </div>
                   </div>
                 </div>
 
@@ -1803,13 +1958,21 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         return (
           <div className="flex flex-col gap-6 md:gap-8 animate-in slide-in-from-right duration-300">
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-               <div className="col-span-2 lg:col-span-2">
+               <div className="col-span-2 lg:col-span-2 flex flex-col sm:flex-row gap-3">
                  <button 
                    onClick={() => isMyTeam && (!globalLock || isManagerOrAdmin) ? setShowTransferModal(true) : null}
-                   className={`w-full h-full min-h-[120px] rounded-[32px] border-2 flex flex-col items-center justify-center gap-2 transition-all shadow-xl ${isMyTeam && (!globalLock || isManagerOrAdmin) ? 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white border-blue-400/50 active:scale-[0.98]' : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'}`}
+                   className={`flex-1 min-h-[100px] rounded-[24px] border-2 flex flex-col items-center justify-center gap-1 transition-all shadow-xl p-3 ${isMyTeam && (!globalLock || isManagerOrAdmin) ? 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white border-blue-400/50 active:scale-[0.98]' : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'}`}
                  >
-                   <ArrowRightLeft className="w-8 h-8 md:w-10 md:h-10 mb-1" />
-                   <span className="text-xl md:text-2xl font-black">{isMyTeam && (!globalLock || isManagerOrAdmin) ? 'בצע חילוף סגל / רכש' : globalLock && !isManagerOrAdmin ? 'השוק נעול' : 'מצב צפייה בלבד'}</span>
+                   <ArrowRightLeft className="w-7 h-7 mb-0.5" />
+                   <span className="text-base md:text-lg font-black">{isMyTeam && (!globalLock || isManagerOrAdmin) ? 'חילוף סגל / רכש' : globalLock && !isManagerOrAdmin ? 'השוק נעול' : 'מצב צפייה'}</span>
+                 </button>
+
+                 <button 
+                   onClick={() => setShowTradeModal(true)}
+                   className="flex-1 min-h-[100px] rounded-[24px] border-2 border-purple-500/50 bg-gradient-to-br from-purple-700 via-indigo-800 to-slate-900 hover:from-purple-600 hover:to-indigo-700 text-white flex flex-col items-center justify-center gap-1 transition-all shadow-xl p-3 active:scale-[0.98]"
+                 >
+                   <span className="text-2xl mb-0.5">🔄</span>
+                   <span className="text-base md:text-lg font-black">ביצוע טרייד בין קבוצות</span>
                  </button>
                </div>
 
@@ -2261,6 +2424,162 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
             <div className="flex gap-3 mt-8">
               <button onClick={saveLogEdit} className="flex-1 bg-white hover:bg-slate-200 py-3.5 rounded-xl font-black text-black transition-colors">שמור</button>
               <button onClick={() => setEditingLog(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 py-3.5 rounded-xl font-black text-white transition-colors">ביטול</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔄 Trade Engine Modal */}
+      {showTradeModal && (
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-purple-500/50 rounded-3xl max-w-xl w-full p-6 space-y-6 shadow-2xl text-right dir-rtl relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                🔄 מנגנון ביצוע טרייד בין קבוצות
+              </h3>
+              <button
+                onClick={() => setShowTradeModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {tradeSuccessMsg ? (
+              <div className="bg-emerald-950/80 border border-emerald-500/50 p-6 rounded-2xl text-center space-y-2 animate-in zoom-in-95">
+                <div className="text-3xl">🎉</div>
+                <h4 className="text-lg font-bold text-emerald-400">{tradeSuccessMsg}</h4>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Team A Selection */}
+                <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <label className="text-xs font-bold text-purple-400 uppercase tracking-widest block">
+                    1️⃣ קבוצה א' (היוזמת)
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select
+                      value={tradeTeamA}
+                      onChange={e => {
+                        setTradeTeamA(e.target.value);
+                        setTradePlayerA('');
+                      }}
+                      className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-sm focus:border-purple-500 outline-none"
+                    >
+                      {teamOptions.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={tradePlayerA}
+                      onChange={e => setTradePlayerA(e.target.value)}
+                      className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-sm focus:border-purple-500 outline-none"
+                    >
+                      <option value="">-- בחר שחקן למסירה --</option>
+                      {getSquadForTeamId(tradeTeamA).map((pName: string) => (
+                        <option key={pName} value={pName}>{pName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Trade Icon Divider */}
+                <div className="flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-purple-600/30 border border-purple-400/40 text-purple-300 flex items-center justify-center font-bold text-lg shadow-lg">
+                    ⇄
+                  </div>
+                </div>
+
+                {/* Team B Selection */}
+                <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <label className="text-xs font-bold text-indigo-400 uppercase tracking-widest block">
+                    2️⃣ קבוצה ב' (השותפה לטרייד)
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select
+                      value={tradeTeamB}
+                      onChange={e => {
+                        setTradeTeamB(e.target.value);
+                        setTradePlayerB('');
+                      }}
+                      className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-sm focus:border-indigo-500 outline-none"
+                    >
+                      {teamOptions.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={tradePlayerB}
+                      onChange={e => setTradePlayerB(e.target.value)}
+                      className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-sm focus:border-indigo-500 outline-none"
+                    >
+                      <option value="">-- בחר שחקן לקבלה --</option>
+                      {getSquadForTeamId(tradeTeamB).map((pName: string) => (
+                        <option key={pName} value={pName}>{pName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Preview Box */}
+                {tradePlayerA && tradePlayerB && (
+                  <div className="bg-gradient-to-r from-purple-950/60 to-indigo-950/60 border border-purple-500/30 p-4 rounded-2xl text-xs space-y-1.5 text-center">
+                    <div className="font-black text-purple-300 text-sm">סיכום עסקת הטרייד:</div>
+                    <div className="text-slate-200">
+                      <strong className="text-purple-400">{teamOptions.find(t => t.id === tradeTeamA)?.name}</strong> מעבירה את <span className="text-emerald-400 font-bold">{tradePlayerA}</span>
+                    </div>
+                    <div className="text-slate-200">
+                      <strong className="text-indigo-400">{teamOptions.find(t => t.id === tradeTeamB)?.name}</strong> מעבירה את <span className="text-emerald-400 font-bold">{tradePlayerB}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    disabled={executingTrade || !tradePlayerA || !tradePlayerB}
+                    onClick={handleExecuteTradeModal}
+                    className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {executingTrade ? 'מבצע טרייד...' : '🚀 בצע טרייד והעבר דאטה בלייב'}
+                  </button>
+                  <button
+                    onClick={() => setShowTradeModal(false)}
+                    className="py-3 px-5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-sm transition-all"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[99999] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-500/40 p-6 sm:p-8 rounded-[32px] w-full max-w-md shadow-2xl animate-in zoom-in-95 text-center relative overflow-hidden">
+            <div className="w-16 h-16 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 shadow-inner">
+              🧹
+            </div>
+            <h3 className="text-2xl font-black text-white mb-2">להוריד את השחקנים מהדשא?</h3>
+            <p className="text-slate-300 text-sm font-bold mb-6 leading-relaxed">
+              פעולה זו תוריד את כל השחקנים שבהרכב בחזרה לספסל ותרוקן את המגרש. תוכל להרכיב 11 שחקנים מחדש מתי שתרצה.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={confirmClearPitch}
+                className="flex-1 py-3.5 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base rounded-2xl shadow-[0_10px_25px_rgba(225,29,72,0.4)] transition-all active:scale-95"
+              >
+                כן, הורד מהדשא 🧹
+              </button>
+              <button
+                onClick={() => setShowClearConfirmModal(false)}
+                className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-base rounded-2xl transition-colors active:scale-95 border border-slate-700"
+              >
+                ביטול
+              </button>
             </div>
           </div>
         </div>

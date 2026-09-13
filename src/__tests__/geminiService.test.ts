@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { analyzeMatchImage, generateAISummary, generateRumors } from '../geminiService';
+import { analyzeMatchImage, generateAISummary, generateRumors, getTacticalAdvice, analyzeDraft, analyzeLiveScoring } from '../geminiService';
 
 // Mock the GoogleGenAI class
 const mockGenerateContent = vi.fn();
 vi.mock('@google/genai', () => {
   return {
+    Type: {
+      ARRAY: 'ARRAY',
+      OBJECT: 'OBJECT',
+      STRING: 'STRING',
+      INTEGER: 'INTEGER',
+      NUMBER: 'NUMBER',
+      BOOLEAN: 'BOOLEAN'
+    },
     GoogleGenAI: class {
       models = {
         generateContent: mockGenerateContent,
@@ -213,6 +221,67 @@ describe('geminiService', () => {
 
         const promptUsed = mockGenerateContent.mock.calls[0][0].contents;
         expect(promptUsed).toContain('אין שחקנים כרגע');
+    });
+  });
+
+  describe('structured output functions', () => {
+    it('should generate tactical advice JSON successfully', async () => {
+      mockGenerateContent.mockResolvedValue({
+        text: JSON.stringify({
+          recommendedFormation: '4-3-3',
+          captainChoice: 'Player 1',
+          substituteSuggestions: ['Sub 1'],
+          transferRecommendation: 'Transfer 1',
+          confidenceScore: 92
+        })
+      });
+
+      const squad = [{ name: 'Player 1', position: 'FWD', points: 10 }];
+      const promise = getTacticalAdvice(squad, 'Team B');
+      vi.runAllTimers();
+      const res = await promise;
+
+      expect(res.recommendedFormation).toBe('4-3-3');
+      expect(res.confidenceScore).toBe(92);
+    });
+
+    it('should analyze draft JSON successfully', async () => {
+      mockGenerateContent.mockResolvedValue({
+        text: JSON.stringify({
+          draftGrade: 'A+',
+          squadBalanceScore: 95,
+          topSleeperPicks: ['Sleeper 1'],
+          keyRisks: ['Risk 1'],
+          summaryAdvice: 'Great draft'
+        })
+      });
+
+      const squad = [{ name: 'Player 1', position: 'FWD', team: 'Maccabi Haifa' }];
+      const promise = analyzeDraft(squad, 'Hamsili');
+      vi.runAllTimers();
+      const res = await promise;
+
+      expect(res.draftGrade).toBe('A+');
+      expect(res.squadBalanceScore).toBe(95);
+    });
+
+    it('should analyze live scoring JSON successfully', async () => {
+      mockGenerateContent.mockResolvedValue({
+        text: JSON.stringify({
+          currentWinner: 'Hamsili',
+          liveHighlights: ['Goal in min 80'],
+          gameChangerPlayer: 'Player 1',
+          winProbabilityPercent: 88
+        })
+      });
+
+      const matchData = { homeScore: 2, awayScore: 1 };
+      const promise = analyzeLiveScoring(matchData);
+      vi.runAllTimers();
+      const res = await promise;
+
+      expect(res.currentWinner).toBe('Hamsili');
+      expect(res.winProbabilityPercent).toBe(88);
     });
   });
 });

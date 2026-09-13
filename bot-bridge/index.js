@@ -7,7 +7,7 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 const INVITE_CODE = 'D5eNbpvjeQE6WtXb59bbL7'; // Fantazy Luzon 14 Group Invite Code
-const BOT_PHONE_NUMBER = '972525001777';
+const BOT_PHONE_NUMBER = '972502719917';
 
 // Smart Router for Bot Responses
 async function getLuzonReply(userPrompt, senderPhone) {
@@ -41,49 +41,105 @@ async function getLuzonReply(userPrompt, senderPhone) {
     return `⚽ **לוזון Bot:**\nאהלן! אני כאן לשירותכם. לשאילתות על משחקים, היכל התהילה, ניקוד בלייב או לינק לאתר - פשוט תשאלו! 🏆`;
 }
 
+let activeGroupJid = null;
+
 async function startBot() {
     console.log('🚀 Starting Luzon Bot WhatsApp Baileys Bridge...');
-    const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth_info'));
+    const fs = require('fs');
+    const authFolder = path.join(__dirname, 'auth_info');
+    if (!fs.existsSync(authFolder)) {
+        fs.mkdirSync(authFolder, { recursive: true });
+    }
+    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
     
+    const qrcodeTerminal = require('qrcode-terminal');
+
+    const { Browsers } = require('@whiskeysockets/baileys');
+
     const sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '20.0.04']
+        printQRInTerminal: true,
+        browser: ['Mac OS', 'Desktop', '1.0.0'],
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', async () => {
+        try {
+            if (!fs.existsSync(authFolder)) fs.mkdirSync(authFolder, { recursive: true });
+            await saveCreds();
+        } catch (e) {}
+    });
 
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(BOT_PHONE_NUMBER);
-                console.log('\n==================================================');
-                console.log(`🔑 YOUR WHATSAPP PAIRING CODE IS: ${code}`);
-                console.log('==================================================\n');
-            } catch (err) {
-                console.error('Error requesting pairing code:', err);
-            }
-        }, 3000);
-    }
+    const QRCode = require('qrcode');
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            console.log('\n==================================================');
+            console.log('📱 SCAN THIS QR CODE WITH YOUR WHATSAPP CAMERA:');
+            qrcodeTerminal.generate(qr, { small: true });
+            console.log('==================================================\n');
+
+            try {
+                const qrImgPath = 'C:/Users/user/.gemini/antigravity/brain/46b28d56-9505-4e85-bf2b-3ac3433ba0ed/qr.png';
+                await QRCode.toFile(qrImgPath, qr, { margin: 2, scale: 8 });
+                console.log('🖼️ Saved QR Code PNG image to:', qrImgPath);
+            } catch (qrErr) {
+                console.error('Error saving QR PNG:', qrErr.message);
+            }
+        }
 
         if (connection === 'open') {
             console.log('✅ WhatsApp Luzon Bot Bridge is ONLINE & CONNECTED!');
             
             try {
-                const groupJid = await sock.groupAcceptInvite(INVITE_CODE);
-                console.log('🎉 Successfully joined WhatsApp Group! JID:', groupJid);
+                activeGroupJid = await sock.groupAcceptInvite(INVITE_CODE);
+                console.log('🎉 Successfully joined WhatsApp Group! JID:', activeGroupJid);
             } catch (err) {
                 console.log('ℹ️ Group Join Note:', err.message || err);
             }
+
+            // 🟢 Listener for live scoring/events broadcast from Firestore to WhatsApp group 🟢
+            try {
+                db.collection('wa_broadcasts').where('sent', '==', false).onSnapshot(async (snapshot) => {
+                    if (snapshot.empty) return;
+                    for (const docSnap of snapshot.docs) {
+                        const data = docSnap.data();
+                        if (data.message && activeGroupJid) {
+                            try {
+                                console.log('📢 Broadcasting live update to WhatsApp group:', data.message.substring(0, 50) + '...');
+                                await sock.sendMessage(activeGroupJid, { text: data.message });
+                                await docSnap.ref.update({ sent: true, sentAt: admin.firestore.FieldValue.serverTimestamp() });
+                                console.log('✅ Marked broadcast document as sent:', docSnap.id);
+                                await new Promise(res => setTimeout(res, 2000));
+                            } catch (sendErr) {
+                                console.error('❌ Error broadcasting message:', sendErr.message || sendErr);
+                            }
+                        }
+                    }
+                }, (err) => {
+                    console.error('Firestore wa_broadcasts listener error:', err);
+                });
+            } catch (e) {
+                console.error('Failed to initialize wa_broadcasts listener:', e);
+            }
+
         } else if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
-            console.log('⚠️ Connection closed. Reconnecting:', shouldReconnect);
-            if (shouldReconnect) startBot();
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            console.log('⚠️ Connection closed (statusCode: ' + statusCode + ').');
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+                console.log('🔑 Credentials expired/logged out. Resetting auth_info directory...');
+                try {
+                    const fs = require('fs');
+                    fs.rmSync(path.join(__dirname, 'auth_info'), { recursive: true, force: true });
+                } catch (e) {}
+            }
+            console.log('Reconnecting in 3 seconds...');
+            setTimeout(() => startBot(), 3000);
         }
     });
 
