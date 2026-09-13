@@ -37,7 +37,7 @@ const getHistoricalName = (tName: string) => {
     return tName;
 };
 
-const getTeamColors = (teamName: string, isGK: boolean) => {
+export const getTeamColors = (teamName: string, isGK: boolean) => {
   if (isGK) return { prim: '#bef264', sec: '#4d7c0f', text: '#14532d' }; 
   const name = teamName || '';
   if (name.includes('טמפה')) return { prim: '#ef4444', sec: '#991b1b', text: '#ffffff' }; 
