@@ -6,6 +6,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { DownloadCloud, Users, RefreshCw, Database, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Key, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Edit3, Plus, X, Server } from 'lucide-react';
 import { cleanStr, normalizeTeamName } from './utils/teamUtils';
+import { formatTimeWithUS } from './utils/dateUtils';
 
 interface AdminSettingsProps { onClose?: () => void; isAdmin?: boolean; inline?: boolean; initialSubTab?: string; }
 
@@ -48,24 +49,6 @@ const getStadium = (homeTeam: string) => {
     if (n.includes('נתניה') || n.includes('חדרה')) return 'אצטדיון נתניה';
     if (n.includes('טבריה') || n.includes('ריינה') || n.includes('קש') || n.includes('שמונה')) return 'גרין';
     return '';
-};
-
-const formatTimeWithUS = (ilTime: string) => {
-    if (!ilTime) return '';
-    if (ilTime.includes('🇺🇸')) return ilTime; 
-    
-    const timeMatch = ilTime.match(/(\d{1,2}):(\d{2})/);
-    if (!timeMatch) return ilTime;
-    
-    const h = parseInt(timeMatch[1], 10);
-    const m = timeMatch[2];
-    let usH = h - 7;
-    if (usH < 0) usH += 24;
-    
-    const hStr = h.toString().padStart(2, '0');
-    const usHStr = usH.toString().padStart(2, '0');
-    
-    return `${hStr}:${m} | ${usHStr}:${m} 🇺🇸`;
 };
 
 const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdmin = false }) => {

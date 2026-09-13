@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchDateTime, sortMatchesChronologically, formatMatchDateDisplay, formatMatchTime } from '../utils/dateUtils';
+import { parseMatchDateTime, sortMatchesChronologically, formatMatchDateDisplay, formatMatchTime, formatTimeWithUS } from '../utils/dateUtils';
 
 describe('dateUtils', () => {
   describe('parseMatchDateTime', () => {
@@ -84,5 +84,34 @@ describe('dateUtils', () => {
       expect(formatMatchDateDisplay('24/8')).toBe('24/08/2026');
     });
   });
+
+  describe('formatTimeWithUS', () => {
+    it('returns empty string for missing or empty input', () => {
+      expect(formatTimeWithUS('')).toBe('');
+      expect(formatTimeWithUS(null as any)).toBe('');
+      expect(formatTimeWithUS(undefined as any)).toBe('');
+    });
+
+    it('returns string unchanged if US flag emoji is already present', () => {
+      expect(formatTimeWithUS('20:30 | 13:30 🇺🇸')).toBe('20:30 | 13:30 🇺🇸');
+    });
+
+    it('returns original input if time pattern HH:MM is not found', () => {
+      expect(formatTimeWithUS('TBD')).toBe('TBD');
+      expect(formatTimeWithUS('טרם נקבע')).toBe('טרם נקבע');
+    });
+
+    it('converts Israel time to US timezone (subtracting 7 hours)', () => {
+      expect(formatTimeWithUS('20:00')).toBe('20:00 | 13:00 🇺🇸');
+      expect(formatTimeWithUS('21:15')).toBe('21:15 | 14:15 🇺🇸');
+    });
+
+    it('handles midnight wrap-around correctly when subtracting 7 hours', () => {
+      expect(formatTimeWithUS('03:00')).toBe('03:00 | 20:00 🇺🇸');
+      expect(formatTimeWithUS('06:45')).toBe('06:45 | 23:45 🇺🇸');
+      expect(formatTimeWithUS('00:00')).toBe('00:00 | 17:00 🇺🇸');
+    });
+  });
 });
+
 
