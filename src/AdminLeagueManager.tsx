@@ -24,7 +24,7 @@ const DEFAULT_SEASONS = [
 
 const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
 
-const getHistoricalName = (tName: string) => {
+export const getHistoricalName = (tName: string) => {
     if (!tName) return '';
     const n = cleanStr(tName);
     if (n.includes('חמסילי')) return 'חמסילי';
