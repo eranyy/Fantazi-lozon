@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, setDoc, getDoc, query, where } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../firebaseConfig';
@@ -46,30 +46,76 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   const processAuthenticatedUser = async (user: any, inputEmail: string, loginMethod: string) => {
     console.log(`[Processing Auth User] Email: ${inputEmail}, UID: ${user.uid}`);
-    const usersSnap = await getDocs(collection(db, 'users'));
     let foundUser: any = null;
 
-    usersSnap.forEach(doc => {
-      const data = doc.data();
-      const mainEmail = data.email?.toLowerCase().trim();
-      const asstEmail = data.assistantEmail?.toLowerCase().trim();
-      
-      // בדיקה אם זה המנג'ר הראשי
-      if (mainEmail === inputEmail) {
-        foundUser = { id: doc.id, teamId: doc.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
-      } 
-      // בדיקה אם זה עוזר המאמן
-      else if (asstEmail === inputEmail) {
-        foundUser = { id: doc.id, teamId: doc.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
-      }
-      // בדיקה אם זה אחד מעוזרי המאמן (מערך)
-      else if (data.assistants && Array.isArray(data.assistants)) {
-        const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
-        if (assistant) {
-          foundUser = { id: doc.id, teamId: doc.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: assistant.role || data.assistantRole || 'USER' };
+    // 1. Direct document lookup by Firebase Auth UID first (O(1) fast path)
+    if (user?.uid) {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          const data = userDocSnap.data();
+          const mainEmail = data.email?.toLowerCase().trim();
+          const asstEmail = data.assistantEmail?.toLowerCase().trim();
+          if (mainEmail === inputEmail) {
+            foundUser = { id: userDocSnap.id, teamId: userDocSnap.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
+          } else if (asstEmail === inputEmail) {
+            foundUser = { id: userDocSnap.id, teamId: userDocSnap.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
+          } else if (data.assistants && Array.isArray(data.assistants)) {
+            const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
+            if (assistant) {
+              foundUser = { id: userDocSnap.id, teamId: userDocSnap.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: assistant.role || data.assistantRole || 'USER' };
+            }
+          }
         }
+      } catch (uidErr) {
+        console.warn('[Login Lookup] UID lookup failed, falling back to email query', uidErr);
       }
-    });
+    }
+
+    // 2. Targeted Firestore queries by email if not found by UID
+    if (!foundUser && inputEmail) {
+      try {
+        const qMain = query(collection(db, 'users'), where('email', '==', inputEmail));
+        const mainSnap = await getDocs(qMain);
+        if (!mainSnap.empty) {
+          const docSnap = mainSnap.docs[0];
+          const data = docSnap.data();
+          foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
+        } else {
+          const qAsst = query(collection(db, 'users'), where('assistantEmail', '==', inputEmail));
+          const asstSnap = await getDocs(qAsst);
+          if (!asstSnap.empty) {
+            const docSnap = asstSnap.docs[0];
+            const data = docSnap.data();
+            foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
+          }
+        }
+      } catch (qErr) {
+        console.warn('[Login Lookup] Query by email failed, falling back to full scan', qErr);
+      }
+    }
+
+    // 3. Fallback: Full collection scan if user was not found by UID or direct query
+    if (!foundUser) {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      usersSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        const mainEmail = data.email?.toLowerCase().trim();
+        const asstEmail = data.assistantEmail?.toLowerCase().trim();
+
+        if (mainEmail === inputEmail) {
+          foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.manager || data.name || data.teamName, email: data.email, teamName: data.teamName, role: data.role || 'USER' };
+        } else if (asstEmail === inputEmail) {
+          foundUser = { id: docSnap.id, teamId: docSnap.id, name: data.assistantName || `עוזר מאמן - ${data.teamName}`, email: data.assistantEmail, teamName: data.teamName, role: data.assistantRole || 'USER' };
+        } else if (data.assistants && Array.isArray(data.assistants)) {
+          const assistant = data.assistants.find((a: any) => a.email?.toLowerCase().trim() === inputEmail);
+          if (assistant) {
+            foundUser = { id: docSnap.id, teamId: docSnap.id, name: assistant.name || `עוזר מאמן - ${data.teamName}`, email: assistant.email, teamName: data.teamName, role: assistant.role || data.assistantRole || 'USER' };
+          }
+        }
+      });
+    }
 
     if (foundUser) {
       try {
