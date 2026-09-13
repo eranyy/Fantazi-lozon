@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const apiKey = process.env.GOOGLE_API_KEY || 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+const apiKey = process.env.GOOGLE_API_KEY || '';
 
 async function testGemini() {
     const models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];

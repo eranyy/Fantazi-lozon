@@ -2,7 +2,7 @@ const axios = require('axios');
 
 async function fetchWithGvizAndApi() {
   const spreadsheetId = '1Ru6w8bk7G1Mx_uPHyEuEKEeqseLqVj0NuOhMdCExiYQ';
-  const apiKey = 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+  const apiKey = process.env.GOOGLE_API_KEY || '';
 
   console.log('=== ATTEMPT 1: GVIZ CSV ENDPOINT ===');
   try {
