@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Team, User, UserRole } from './types';
 import { MOCK_TEAMS } from './constants';
 import { authService } from './authService';
-import { db, messaging } from './firebaseConfig'; // 🟢 הוספנו את messaging
+import { db, messaging, VAPID_KEY } from './firebaseConfig';
 const AdminLeagueManager = React.lazy(() => import('./AdminLeagueManager'));
 const AdminSettings = React.lazy(() => import('./AdminSettings'));
 import FixturesTab from './components/FixturesTab';
@@ -122,8 +122,7 @@ const App: React.FC = () => {
       if (Notification.permission === 'granted' && loggedInUser) {
         const fetchSilentToken = async () => {
           try {
-            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-            const token = await getToken(messaging, vapidKey ? { vapidKey } : undefined);
+            const token = await getToken(messaging, { vapidKey: VAPID_KEY });
             if (token) {
               await setDoc(doc(db, "users", loggedInUser.id), { 
                 fcmToken: token,
@@ -154,8 +153,7 @@ const App: React.FC = () => {
       setPushStatus(permission as any);
 
       if (permission === 'granted') {
-        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-        const token = await getToken(messaging, vapidKey ? { vapidKey } : undefined);
+        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
         if (token && loggedInUser) {
           await setDoc(doc(db, "users", loggedInUser.id), { 
             fcmToken: token,

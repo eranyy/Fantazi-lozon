@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, doc, setDoc, getDoc, query, where } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
-import { db, auth, messaging } from '../firebaseConfig';
+import { db, auth, messaging, VAPID_KEY } from '../firebaseConfig';
 import { authService } from '../authService';
 
 interface LoginScreenProps {
@@ -22,8 +22,7 @@ const requestPushPermission = async (userId: string) => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
-      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-      const token = await getToken(messaging, vapidKey ? { vapidKey } : undefined);
+      const token = await getToken(messaging, { vapidKey: VAPID_KEY });
 
       if (token) {
         await setDoc(doc(db, "users", userId), {
