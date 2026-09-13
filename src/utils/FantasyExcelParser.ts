@@ -1,3 +1,7 @@
+import { parseCsvRow } from './csvUtils';
+
+export { parseCsvRow };
+
 export interface ParsedPlayer {
   id: string;
   name: string;
@@ -61,23 +65,7 @@ export const parseFantasyExcel = (csvText: string): ParsedPlayer[] => {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Custom CSV parser to safely handle commas inside quoted strings (like "הפועל פ""ת")
-    let row = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let j = 0; j < line.length; j++) {
-      if (line[j] === '"') inQuotes = !inQuotes;
-      else if (line[j] === ',' && !inQuotes) {
-        row.push(cur.trim());
-        cur = '';
-      } else {
-        cur += line[j];
-      }
-    }
-    row.push(cur.trim());
-    
-    // Clean outer quotes from each cell
-    row = row.map(s => s.replace(/^"|"$/g, '').trim());
+    const row = parseCsvRow(line);
 
     // Basic validation: row must have at least 4 columns, and it shouldn't be the header
     if (row.length < 4 || row[0] === 'עמדה' || !row[1]) continue;

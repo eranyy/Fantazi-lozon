@@ -29,22 +29,7 @@ const getNormalizedTeamId = (nameOrId: string) => {
     return s; 
 };
 
-const parseCsvRow = (str: string) => {
-    let result = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let i = 0; i < str.length; i++) {
-        if (str[i] === '"') inQuotes = !inQuotes;
-        else if (str[i] === ',' && !inQuotes) {
-            result.push(cur.trim());
-            cur = '';
-        } else {
-            cur += str[i];
-        }
-    }
-    result.push(cur.trim());
-    return result.map(s => s.replace(/^"|"$/g, ''));
-};
+import { parseCsvRow } from '../utils/csvUtils';
 
 const Jersey = ({ primary, secondary, textColor, text }: { primary: string, secondary: string, textColor: string, text: string }) => {
   const gradId = `grad-arena-${primary.replace('#', '')}-${secondary.replace('#', '')}`;
