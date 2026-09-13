@@ -1,5 +1,5 @@
 const axios = require('axios');
-const apiKey = 'AIzaSyARwamUBjcirbqFtWn_RpKkOdiHmeGlis0';
+const apiKey = process.env.GOOGLE_API_KEY || '';
 const spreadsheetId = '14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s';
 
 async function inspectSpreadsheetTabs() {
