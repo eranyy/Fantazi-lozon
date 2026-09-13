@@ -13,16 +13,7 @@ const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'ט�
 
 const POS_ORDER: Record<string, number> = { 'GK': 1, 'שוער': 1, 'DEF': 2, 'הגנה': 2, 'בלם': 2, 'מגן': 2, 'MID': 3, 'קשר': 3, 'קישור': 3, 'FWD': 4, 'חלוץ': 4, 'התקפה': 4 };
 
-const getTeamColors = (teamName: string, isGK: boolean) => {
-  if (isGK) return { prim: '#bef264', sec: '#4d7c0f', text: '#14532d' }; 
-  const name = teamName || '';
-  if (name.includes('טמפה')) return { prim: '#ef4444', sec: '#991b1b', text: '#ffffff' }; 
-  if (name.includes('תומאלי') || name.includes('פיצ\'יצ\'י') || name.includes('פציצי')) return { prim: '#facc15', sec: '#1d4ed8', text: '#ffffff' }; 
-  if (name.includes('חמסילי')) return { prim: '#18181b', sec: '#16a34a', text: '#facc15' }; 
-  if (name.includes('חולוניה')) return { prim: '#a855f7', sec: '#4c1d95', text: '#ffffff' }; 
-  if (name.includes('חראלה')) return { prim: '#78350f', sec: '#b91c1c', text: '#ffffff' }; 
-  return { prim: '#3b82f6', sec: '#1e3a8a', text: '#ffffff' }; 
-};
+import { getTeamColors } from '../utils/teamUtils';
 
 const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
 
