@@ -165,8 +165,9 @@ describe('geminiService', () => {
       mockGenerateContent.mockResolvedValue({ text: 'Summary text' });
       const teams = [{ id: '1', teamName: 'Team A', name: 'Manager A', points: 10 }];
       const fixtures: any[] = [];
+      const pollData = {};
 
-      const promise = generateAISummary(fixtures, teams, 'custom-summary-key');
+      const promise = generateAISummary(fixtures, teams, pollData, 'custom-summary-key');
       vi.runAllTimers();
       await promise;
 
