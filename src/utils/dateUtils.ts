@@ -67,3 +67,14 @@ export const formatMatchDateDisplay = (dateStr?: string): string => {
 
   return str;
 };
+
+export const formatMatchTime = (t?: string): string => {
+  if (!t) return '20:00';
+  const str = String(t).trim();
+  const parts = str.split(':');
+  if (parts.length >= 2) {
+    return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+  }
+  return str;
+};
+

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchDateTime, sortMatchesChronologically } from '../utils/dateUtils';
+import { parseMatchDateTime, sortMatchesChronologically, formatMatchDateDisplay, formatMatchTime } from '../utils/dateUtils';
 
 describe('dateUtils', () => {
   describe('parseMatchDateTime', () => {
@@ -48,4 +48,41 @@ describe('dateUtils', () => {
       expect(sortMatchesChronologically(null as any)).toEqual([]);
     });
   });
+
+  describe('formatMatchTime', () => {
+    it('returns default 20:00 for missing or empty input', () => {
+      expect(formatMatchTime(undefined)).toBe('20:00');
+      expect(formatMatchTime('')).toBe('20:00');
+    });
+
+    it('formats time strings with padding correctly', () => {
+      expect(formatMatchTime('8:30')).toBe('08:30');
+      expect(formatMatchTime('20:15')).toBe('20:15');
+      expect(formatMatchTime('9:5')).toBe('09:05');
+      expect(formatMatchTime('19:00:00')).toBe('19:00');
+    });
+
+    it('returns original string if format is unparseable', () => {
+      expect(formatMatchTime('TBD')).toBe('TBD');
+    });
+  });
+
+  describe('formatMatchDateDisplay', () => {
+    it('returns empty string for missing input', () => {
+      expect(formatMatchDateDisplay(undefined)).toBe('');
+      expect(formatMatchDateDisplay('')).toBe('');
+    });
+
+    it('preserves postponed or unassigned date markers', () => {
+      expect(formatMatchDateDisplay('נדחה')).toBe('נדחה');
+      expect(formatMatchDateDisplay('טרם נקבע')).toBe('טרם נקבע');
+    });
+
+    it('formats ISO and DMY dates correctly', () => {
+      expect(formatMatchDateDisplay('2026-08-24')).toBe('24/08/2026');
+      expect(formatMatchDateDisplay('4/8/2026')).toBe('04/08/2026');
+      expect(formatMatchDateDisplay('24/8')).toBe('24/08/2026');
+    });
+  });
 });
+

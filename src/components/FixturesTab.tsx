@@ -2,19 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { CalendarDays, Flame, CheckCircle2, Clock, ChevronRight, ChevronLeft, MapPin, Tv } from 'lucide-react';
-import { sortMatchesChronologically, formatMatchDateDisplay } from '../utils/dateUtils';
+import { sortMatchesChronologically, formatMatchDateDisplay, formatMatchTime } from '../utils/dateUtils';
 
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
-
-const formatMatchTime = (t?: string) => {
-  if (!t) return '20:00';
-  const str = String(t).trim();
-  const parts = str.split(':');
-  if (parts.length >= 2) {
-    return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
-  }
-  return str;
-};
 
 // הוספנו את isAdmin ל-props כדי לדעת אם להציג את עורך ההיסטוריה
 interface FixturesTabProps {
