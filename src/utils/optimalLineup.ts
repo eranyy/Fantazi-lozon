@@ -40,12 +40,11 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
     };
   }
 
-  // Calculate actual points if actualLineup provided (NO captain multiplier in Fantasy Luzon 14)
+  // Calculate actual points if actualLineup provided
   let actualPoints = 0;
   if (Array.isArray(actualLineup) && actualLineup.length > 0) {
     actualPoints = actualLineup.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
   } else {
-    // If no actualLineup given, calculate from starting players in squad
     actualPoints = squad.reduce((sum, pl) => {
       if (pl.isStarting) {
         return sum + (Number(pl.points) || 0);
@@ -60,13 +59,14 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   const mids: Player[] = [];
   const fwds: Player[] = [];
 
-  squad.forEach(pl => {
+  for (let i = 0; i < squad.length; i++) {
+    const pl = squad[i];
     const pos = getNormalizedPos(pl.position);
     if (pos === 'GK') gks.push(pl);
     else if (pos === 'DEF') defs.push(pl);
     else if (pos === 'MID') mids.push(pl);
     else if (pos === 'FWD') fwds.push(pl);
-  });
+  }
 
   // Sort each position by points descending
   const sortByPts = (a: Player, b: Player) => (Number(b.points) || 0) - (Number(a.points) || 0);
@@ -75,14 +75,6 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   mids.sort(sortByPts);
   fwds.sort(sortByPts);
 
-  let bestResult: {
-    lineup: Player[];
-    bench: Player[];
-    formation: string;
-    totalPoints: number;
-  } | null = null;
-
-  // Best GK is top GK
   const bestGK = gks[0] || null;
   if (!bestGK) {
     return {
@@ -95,22 +87,44 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
     };
   }
 
-  // Test all 7 legal formations
-  for (const form of ALLOWED_FORMATIONS) {
+  // Precompute prefix sums for O(1) totalPoints lookup per formation
+  const buildPrefixSums = (players: Player[]) => {
+    const pref = new Float64Array(players.length + 1);
+    let sum = 0;
+    for (let i = 0; i < players.length; i++) {
+      sum += Number(players[i].points) || 0;
+      pref[i + 1] = sum;
+    }
+    return pref;
+  };
+
+  const gkPts = Number(bestGK.points) || 0;
+  const defPrefix = buildPrefixSums(defs);
+  const midPrefix = buildPrefixSums(mids);
+  const fwdPrefix = buildPrefixSums(fwds);
+
+  let bestResult: {
+    lineup: Player[];
+    bench: Player[];
+    formation: string;
+    totalPoints: number;
+  } | null = null;
+
+  // Evaluate all 7 legal formations using prefix sums
+  for (let i = 0; i < ALLOWED_FORMATIONS.length; i++) {
+    const form = ALLOWED_FORMATIONS[i];
     if (defs.length < form.def || mids.length < form.mid || fwds.length < form.fwd) {
       continue;
     }
 
-    const selectedDefs = defs.slice(0, form.def);
-    const selectedMids = mids.slice(0, form.mid);
-    const selectedFwds = fwds.slice(0, form.fwd);
-
-    const starting11 = [bestGK, ...selectedDefs, ...selectedMids, ...selectedFwds];
-
-    // Total points for starting 11 (1x points each, no captain multiplier)
-    const totalPts = starting11.reduce((sum, pl) => sum + (Number(pl.points) || 0), 0);
+    const totalPts = gkPts + defPrefix[form.def] + midPrefix[form.mid] + fwdPrefix[form.fwd];
 
     if (!bestResult || totalPts > bestResult.totalPoints) {
+      const selectedDefs = defs.slice(0, form.def);
+      const selectedMids = mids.slice(0, form.mid);
+      const selectedFwds = fwds.slice(0, form.fwd);
+      const starting11 = [bestGK, ...selectedDefs, ...selectedMids, ...selectedFwds];
+
       const startingIds = new Set(starting11.map(p => p.id || p.name));
       const bench = squad.filter(p => !startingIds.has(p.id || p.name));
 
