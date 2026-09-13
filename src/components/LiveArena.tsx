@@ -1278,8 +1278,21 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                               <span className="font-black text-sm text-slate-300">המגרש ריק - טרם הוגש הרכב למחזור {selectedRound}</span>
                             </div>
                           ) : (
-                            ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
-                            const currentLineup = applySubstitutionsToLineup(expandedTeamObj);
+                            (() => {
+                              const currentLineup = applySubstitutionsToLineup(expandedTeamObj);
+
+                              const subInPlayers = new Set(
+                                (expandedTeamObj?.transfers || [])
+                                  .filter((t:any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED')
+                                  .map((t:any) => t.playerIn)
+                              );
+
+                              const squadNames = (expandedTeamObj?.squad || [])
+                                .map((sp: any) => cleanStr(sp.name))
+                                .filter(Boolean);
+                              const hasSquad = squadNames.length > 0;
+
+                              return ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
                             const posPlayers = currentLineup.filter((p: any) => isPosMatch(p.position, pos));
                             if (posPlayers.length === 0) return <div key={pos} className="min-h-[50px]"></div>;
 
@@ -1287,14 +1300,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                               <div key={pos} className="flex justify-center flex-wrap gap-2 sm:gap-4 md:gap-8">
                                 {posPlayers.map((p: any) => {
                                   const nameParts = p.name.split(' '); const lastName = nameParts[nameParts.length - 1];
-                                  const isSubIn = (expandedTeamObj?.transfers || []).some((t:any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED' && t.playerIn === p.name);
+                                  const isSubIn = subInPlayers.has(p.name);
                                   const colors = getTeamColors(expandedTeamObj?.teamName || '', p.position === 'GK');
                                   const playerPoints = getPlayerPointsForRound(p, expandedTeamObj, selectedRound);
                                   const hasPlayed = (p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0))) || (playerPoints !== 0);
                                   const isUntouched = !hasPlayed && playerPoints === 0;
 
-                                  const isReleased = (expandedTeamObj?.squad || []).length > 0 && !(expandedTeamObj.squad || []).some((sp: any) => {
-                                    const cA = cleanStr(sp.name);
+                                  const isReleased = hasSquad && !squadNames.some((cA: string) => {
                                     const cB = cleanStr(p.name);
                                     return cA && cB && (cA === cB || cA.includes(cB) || cB.includes(cA));
                                   });
@@ -1334,6 +1346,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                               </div>
                             );
                           })
+                            })()
                         )}
                         </div>
                       </div>

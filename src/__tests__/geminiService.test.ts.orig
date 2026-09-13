@@ -162,17 +162,15 @@ describe('geminiService', () => {
     });
 
     it('should use provided custom apiKey if supplied', async () => {
-      vi.stubEnv('VITE_GEMINI_API_KEY', '');
       mockGenerateContent.mockResolvedValue({ text: 'Summary text' });
       const teams = [{ id: '1', teamName: 'Team A', name: 'Manager A', points: 10 }];
       const fixtures: any[] = [];
 
-      const promise = generateAISummary(fixtures, teams, undefined, 'custom-summary-key');
+      const promise = generateAISummary(fixtures, teams, 'custom-summary-key');
       vi.runAllTimers();
       await promise;
 
       expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'custom-summary-key' });
-      vi.unstubAllEnvs();
     });
 
     it('should throw error when generateAISummary times out or fails', async () => {
