@@ -6,8 +6,8 @@ if (!admin.apps.length) {
     admin.initializeApp({ projectId: 'fantasy-luzon' });
 }
 const db = admin.firestore();
-const INVITE_CODE = 'D5eNbpvjeQE6WtXb59bbL7'; // Fantazy Luzon 14 Group Invite Code
-const BOT_PHONE_NUMBER = '972502719917';
+const INVITE_CODE = process.env.WA_INVITE_CODE || process.env.VITE_WA_INVITE_CODE || '';
+const BOT_PHONE_NUMBER = process.env.BOT_PHONE_NUMBER || '';
 
 // Smart Router for Bot Responses
 async function getLuzonReply(userPrompt, senderPhone) {
