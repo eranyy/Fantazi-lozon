@@ -1,3 +1,5 @@
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env.local') });
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const admin = require('firebase-admin');
 const path = require('path');
@@ -6,7 +8,7 @@ if (!admin.apps.length) {
     admin.initializeApp({ projectId: 'fantasy-luzon' });
 }
 const db = admin.firestore();
-const INVITE_CODE = 'D5eNbpvjeQE6WtXb59bbL7'; // Fantazy Luzon 14 Group Invite Code
+const INVITE_CODE = process.env.WHATSAPP_INVITE_CODE; // Fantazy Luzon 14 Group Invite Code
 const BOT_PHONE_NUMBER = '972525001777';
 
 // Smart Router for Bot Responses
@@ -74,11 +76,15 @@ async function startBot() {
         if (connection === 'open') {
             console.log('✅ WhatsApp Luzon Bot Bridge is ONLINE & CONNECTED!');
             
-            try {
-                const groupJid = await sock.groupAcceptInvite(INVITE_CODE);
-                console.log('🎉 Successfully joined WhatsApp Group! JID:', groupJid);
-            } catch (err) {
-                console.log('ℹ️ Group Join Note:', err.message || err);
+            if (INVITE_CODE) {
+                try {
+                    const groupJid = await sock.groupAcceptInvite(INVITE_CODE);
+                    console.log('🎉 Successfully joined WhatsApp Group! JID:', groupJid);
+                } catch (err) {
+                    console.log('ℹ️ Group Join Note:', err.message || err);
+                }
+            } else {
+                console.log('ℹ️ Group Join Skipped: WHATSAPP_INVITE_CODE environment variable not set.');
             }
         } else if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
