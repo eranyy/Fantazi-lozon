@@ -204,15 +204,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       setLoading(false);
   };
 
-  const toggleGlobalUnlock = async () => {
-      setLoading(true);
-      const newUnlockState = !globalUnlock;
-      try {
-          await setDoc(doc(db, 'leagueData', 'settings'), { globalUnlock: newUnlockState, globalLock: false }, { merge: true });
-          showMessage(`✅ פתיחת מחזור (עוקף שעון) ${newUnlockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
-      setLoading(false);
-  };
 
   const toggle5thFwdRule = async () => {
       setLoading(true);
