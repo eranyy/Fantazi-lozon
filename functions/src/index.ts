@@ -3257,26 +3257,27 @@ export const checkMatchDeadlinesAndNotify = onSchedule({ region: 'us-west1', sch
             if (!logDoc.exists) {
                 console.log(`[checkMatchDeadlinesAndNotify] Checking user lineups and sending 2h deadline push for round ${currentRound}...`);
                 const usersSnap = await db.collection('users').get();
-                for (const uDoc of usersSnap.docs) {
-                    if (uDoc.id === 'admin' || uDoc.id === 'system') continue;
+                const pushPromises = usersSnap.docs.map(async (uDoc) => {
+                    if (uDoc.id === 'admin' || uDoc.id === 'system') return;
                     const uData = uDoc.data();
                     const lineup = uData.published_lineup || uData.lineup || [];
                     const startingCount = Array.isArray(lineup) ? lineup.filter((p: any) => p.isStarting).length : 0;
 
                     if (startingCount < 11) {
-                        await sendPushNotificationHelper(
+                        return sendPushNotificationHelper(
                             `⚠️ הרכב חסר לפני שריקת הפתיחה!`,
                             `שים לב! חסר לך שחקן בהרכב הפותח או שיש לך שחקן שלא משחק השבוע. כנס לעדכן!`,
                             uDoc.id
                         );
                     } else {
-                        await sendPushNotificationHelper(
+                        return sendPushNotificationHelper(
                             `🚨 שעתיים בלבד לסגירת החלון!`,
                             `שעתיים בלבד לסגירת החלון! כנס לנעול את 11 השחקנים שלך לפני שהמשחק הראשון יוצא לדרך.`,
                             uDoc.id
                         );
                     }
-                }
+                });
+                await Promise.all(pushPromises);
                 await logRef.set({ sentAt: new Date().toISOString() });
             }
         }
