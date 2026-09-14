@@ -78,16 +78,25 @@ describe('geminiService', () => {
       expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'provided-key' });
     });
 
-    it('should fallback to env variable if no key is provided', async () => {
+    it('should fallback to env variable or localStorage if no key is provided', async () => {
         mockGenerateContent.mockResolvedValue({ text: '[]' });
 
         vi.stubEnv('VITE_GEMINI_API_KEY', 'env-key');
 
-        const promise = analyzeMatchImage('base64string', 'image/png', '1');
+        let promise = analyzeMatchImage('base64string', 'image/png', '1');
         vi.runAllTimers();
         await promise;
 
         expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'env-key' });
+
+        vi.unstubAllEnvs();
+        localStorage.setItem('gemini_api_key', 'local-key');
+
+        promise = analyzeMatchImage('base64string', 'image/png', '1');
+        vi.runAllTimers();
+        await promise;
+
+        expect(mockGoogleGenAIConstructor).toHaveBeenCalledWith({ apiKey: 'local-key' });
     });
 
     it('should throw error on timeout', async () => {
