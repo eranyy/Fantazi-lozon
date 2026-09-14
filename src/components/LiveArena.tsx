@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3, Lock, Unlock } from 'lucide-react';
 import { db, functions } from '../firebaseConfig';
-import { doc, onSnapshot, updateDoc, addDoc, collection, getDoc, setDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, addDoc, collection, getDoc, setDoc, serverTimestamp, arrayUnion, writeBatch } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { UserRole } from '../types';
 import html2canvas from 'html2canvas';
@@ -890,6 +890,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
       };
       const emptyStats = { started: false, played60: false, notInSquad: false, notPlayedIn16: false, won: false, goals: 0, assists: 0, cleanSheet: false, conceded: 0, yellow: false, secondYellow: false, red: false, penaltyWon: 0, penaltyMissed: 0, penaltySaved: 0, ownGoals: 0, assistOwnGoal: 0 };
       const matchesDataForSummary: any[] = []; const excelSyncRows: any[] = []; 
+      const batch = writeBatch(db);
 
       for (const match of currentMatches) {
         const homeScore = calculateTeamScore(match.h); const awayScore = calculateTeamScore(match.a);
@@ -911,7 +912,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           });
           const resetSquad = (hTeam.squad || []).map((p:any) => ({...p, points: 0, stats: emptyStats}));
           const newHForm = [...(hTeam.form || []), hResult].slice(-5);
-          await updateDoc(doc(db, 'users', hTeam.id), { points: (hTeam.points || 0) + hPts, gf: (hTeam.gf || 0) + homeScore, ga: (hTeam.ga || 0) + awayScore, wins: (hTeam.wins || 0) + hW, draws: (hTeam.draws || 0) + hD, losses: (hTeam.losses || 0) + hL, played: (hTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newHForm });
+          batch.update(doc(db, 'users', hTeam.id), { points: (hTeam.points || 0) + hPts, gf: (hTeam.gf || 0) + homeScore, ga: (hTeam.ga || 0) + awayScore, wins: (hTeam.wins || 0) + hW, draws: (hTeam.draws || 0) + hD, losses: (hTeam.losses || 0) + hL, played: (hTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newHForm });
         }
 
         if(aTeam) {
@@ -921,7 +922,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           });
           const resetSquad = (aTeam.squad || []).map((p:any) => ({...p, points: 0, stats: emptyStats}));
           const newAForm = [...(aTeam.form || []), aResult].slice(-5);
-          await updateDoc(doc(db, 'users', aTeam.id), { points: (aTeam.points || 0) + aPts, gf: (aTeam.gf || 0) + awayScore, ga: (aTeam.ga || 0) + homeScore, wins: (aTeam.wins || 0) + aW, draws: (aTeam.draws || 0) + aD, losses: (aTeam.losses || 0) + aL, played: (aTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newAForm });
+          batch.update(doc(db, 'users', aTeam.id), { points: (aTeam.points || 0) + aPts, gf: (aTeam.gf || 0) + awayScore, ga: (aTeam.ga || 0) + homeScore, wins: (aTeam.wins || 0) + aW, draws: (aTeam.draws || 0) + aD, losses: (aTeam.losses || 0) + aL, played: (aTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newAForm });
         }
       }
 
@@ -964,9 +965,11 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         if(r.round === currentRound) return { ...r, isPlayed: true, matches: r.matches.map((m:any) => ({ ...m, hs: calculateTeamScore(m.h), as: calculateTeamScore(m.a) })) } 
         return r;
       });
-      await updateDoc(doc(db, 'leagueData', 'fixtures'), { rounds: updatedRounds });
-      await updateDoc(doc(db, 'leagueData', 'settings'), { currentRound: currentRound + 1 });
-      await setDoc(doc(db, 'round_backups', `backup_round_${currentRound}`), backupData);
+      batch.update(doc(db, 'leagueData', 'fixtures'), { rounds: updatedRounds });
+      batch.update(doc(db, 'leagueData', 'settings'), { currentRound: currentRound + 1 });
+      batch.set(doc(db, 'round_backups', `backup_round_${currentRound}`), backupData);
+
+      await batch.commit();
 
       setAppAlert({title: 'מחזור נסגר', msg: 'המחזור נסגר בהצלחה! הניקוד עבר לטבלה וסונכרן למסד הנתונים האוטומטי (אקסל).', type: 'success'});
     } catch (e: any) { setAppAlert({title: 'שגיאה', msg: 'שגיאה בסגירת מחזור: ' + e.message, type: 'error'}); }
