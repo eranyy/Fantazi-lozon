@@ -430,7 +430,7 @@ const App: React.FC = () => {
         {activeTab === 'table' && (
           <div className="max-w-4xl mx-auto">
             <React.Suspense fallback={<div className="p-12 text-center text-green-400 font-black animate-pulse text-lg">טוען טבלאות ליגה...</div>}>
-              <AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" />
+              <AdminLeagueManager inline={true} initialSubTab="table" />
             </React.Suspense>
           </div>
         )}
