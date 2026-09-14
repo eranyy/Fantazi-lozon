@@ -200,7 +200,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       try {
           await setDoc(doc(db, 'leagueData', 'settings'), { globalLock: newLockState, globalUnlock: false }, { merge: true });
           showMessage(`✅ נעילת המחזור ${newLockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון מצב הנעילה', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון מצב הנעילה', 'error'); }
       setLoading(false);
   };
 
@@ -210,7 +210,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       try {
           await setDoc(doc(db, 'leagueData', 'settings'), { globalUnlock: newUnlockState, globalLock: false }, { merge: true });
           showMessage(`✅ פתיחת מחזור (עוקף שעון) ${newUnlockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
       setLoading(false);
   };
 
@@ -221,7 +221,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           await setDoc(doc(db, 'leagueData', 'settings'), { allowMidfielderAs5thFwd: nextVal }, { merge: true });
           setAllowMidfielderAs5thFwd(nextVal);
           showMessage(nextVal ? '⚡ חוק חלוץ 5 גמיש הופעל בהצלחה!' : '⚪ חוק חלוץ 5 גמיש כבוי כעת', 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
       finally { setLoading(false); }
   };
 
@@ -234,7 +234,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         triggeredBy: 'ערן'
       }, { merge: true });
       showMessage('⚡ רענון בלייב נשלח לכל המשתמשים בהצלחה!', 'success');
-    } catch (e) {
+    } catch {
       showMessage('❌ שגיאה בשליחת רענון בלייב', 'error');
     } finally {
       setLoading(false);
@@ -294,7 +294,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       try {
           await setDoc(doc(db, 'leagueData', 'cup_settings'), updates, { merge: true });
           showMessage('✅ הגדרות הגביע עודכנו!', 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון הגביע', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון הגביע', 'error'); }
       setIsSavingCup(false);
   };
 
@@ -351,7 +351,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       const currentRound = settingsSnap.exists() ? settingsSnap.data().currentRound || 1 : 1;
       if (currentRound <= 1) return showMessage('❌ הליגה במחזור 1, אין לאן לחזור אחורה.', 'error');
       setShowUndoConfirm(true);
-    } catch (e) { showMessage('שגיאה בקריאת נתוני הליגה.', 'error'); }
+    } catch { showMessage('שגיאה בקריאת נתוני הליגה.', 'error'); }
   };
 
   const executeUndoRound = async () => {
@@ -652,7 +652,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           const newMatches = [...realFixturesMatches]; newMatches[editingMatchIndex] = editingMatchData;
           await setDoc(doc(db, 'leagueData', 'real_fixtures'), { matches: newMatches, lastUpdated: new Date().toISOString() }, { merge: true });
           showMessage('✅ המשחק נשמר בהצלחה', 'success'); setEditingMatchIndex(null); setEditingMatchData(null);
-      } catch (e) { showMessage('❌ שגיאה בשמירת המשחק', 'error'); }
+      } catch { showMessage('❌ שגיאה בשמירת המשחק', 'error'); }
   };
 
   const syncTableFromDrive = async () => {
@@ -712,7 +712,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           const { deletedAt, ...teamData } = team;
           await setDoc(doc(db, 'users', team.id), teamData); await deleteDoc(doc(db, 'deleted_users', team.id));
           showMessage(`✅ הקבוצה ${team.teamName} שוחזרה בהצלחה!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בשחזור הקבוצה', 'error'); }
+      } catch { showMessage('❌ שגיאה בשחזור הקבוצה', 'error'); }
       setLoading(false);
   };
 
@@ -749,7 +749,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           await setDoc(doc(db, 'users', teamId), { ...newUser, name: newUser.manager, points: 0, played: 0, gf: 0, ga: 0, wins: 0, draws: 0, losses: 0, squad: [], players: [], budget: 100, isApproved: true, createdAt: new Date().toISOString() });
           showMessage('✅ קבוצה חדשה נוצרה בהצלחה!', 'success'); setShowAddUser(false);
           setNewUser({ teamName: '', manager: '', assistantName: '', email: '', assistantEmail: '', role: 'USER', isApproved: true, assistants: [] });
-      } catch (e) { showMessage('❌ שגיאה ביצירת הקבוצה', 'error'); }
+      } catch { showMessage('❌ שגיאה ביצירת הקבוצה', 'error'); }
       setLoading(false);
   };
 
@@ -759,7 +759,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       try {
           await updateDoc(doc(db, 'users', editingUser.id), editingUser);
           showMessage('✅ השינויים נשמרו בהצלחה!', 'success'); setEditingUser(null);
-      } catch (e) { showMessage('❌ שגיאה בשמירת השינויים', 'error'); }
+      } catch { showMessage('❌ שגיאה בשמירת השינויים', 'error'); }
       setLoading(false);
   };
 
@@ -807,7 +807,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               }
           }
           setDeleteConfirmId(null);
-      } catch (e) { showMessage('❌ שגיאה בתהליך המחיקה', 'error'); }
+      } catch { showMessage('❌ שגיאה בתהליך המחיקה', 'error'); }
       setLoading(false);
   };
 
@@ -826,7 +826,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           batch.update(doc(db, 'leagueData', 'fixtures'), { rounds: [] }); batch.update(doc(db, 'leagueData', 'settings'), { currentRound: 1 });
           await batch.commit(); showMessage(`🏆 עונת ${seasonArchiveName} ננעלה! האפליקציה מאופסת לעונה הבאה.`, 'success');
           setShowEndSeason(false); setEndSeasonPwd(''); setCupWinner('');
-      } catch (e) { showMessage('❌ שגיאה בסגירת העונה', 'error'); }
+      } catch { showMessage('❌ שגיאה בסגירת העונה', 'error'); }
       setLoading(false);
   };
 
@@ -836,7 +836,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           const newMatches = realFixturesMatches.filter((_, i) => i !== index);
           await setDoc(doc(db, 'leagueData', 'real_fixtures'), { matches: newMatches, lastUpdated: new Date().toISOString() }, { merge: true });
           showMessage('✅ משחק נמחק', 'success');
-      } catch (e) { showMessage('❌ שגיאה במחיקת המשחק', 'error'); }
+      } catch { showMessage('❌ שגיאה במחיקת המשחק', 'error'); }
   };
 
   const addNewManualMatch = async () => {
@@ -844,7 +844,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           const newMatches = [...realFixturesMatches, { round: systemCurrentRound, homeTeam: 'קבוצת בית', awayTeam: 'קבוצת חוץ', date: '01/01', time: '20:00', stadium: '', tvChannel: '' }];
           await setDoc(doc(db, 'leagueData', 'real_fixtures'), { matches: newMatches, lastUpdated: new Date().toISOString() }, { merge: true });
           showMessage('✅ שורת משחק חדשה נוספה!', 'success'); setEditingMatchIndex(newMatches.length - 1); setEditingMatchData(newMatches[newMatches.length - 1]);
-      } catch (e) { showMessage('❌ שגיאה ביצירת המשחק', 'error'); }
+      } catch { showMessage('❌ שגיאה ביצירת המשחק', 'error'); }
   };
 
   const handleClearDeletedLogs = async () => {
