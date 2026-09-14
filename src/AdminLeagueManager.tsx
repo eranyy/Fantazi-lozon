@@ -186,7 +186,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
         setAllPlayersDB(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubScoring(); unsubPlayersDB(); };
+    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubPredictor(); unsubPolls(); unsubScoring(); unsubPlayersDB(); };
   }, []);
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'success') => { 
