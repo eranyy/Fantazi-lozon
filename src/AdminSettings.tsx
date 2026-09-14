@@ -210,7 +210,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       try {
           await setDoc(doc(db, 'leagueData', 'settings'), { globalUnlock: newUnlockState, globalLock: false }, { merge: true });
           showMessage(`✅ פתיחת מחזור (עוקף שעון) ${newUnlockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
       setLoading(false);
   };
 
