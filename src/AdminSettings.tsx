@@ -103,7 +103,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
   const [topPlayersDriveUrl, setTopPlayersDriveUrl] = useState('');
   const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || '';
-  const [geminiApiKey, setGeminiApiKey] = useState(
+  const [geminiApiKey] = useState(
     localStorage.getItem('gemini_api_key') || 
     (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
     ''
