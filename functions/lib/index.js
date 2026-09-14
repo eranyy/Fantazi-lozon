@@ -1473,7 +1473,7 @@ ${realFixturesContext || 'לוח המשחקים מעודכן במערכת!'}
 
 ${realWorldContext ? `${realWorldContext}\n` : ''}
 ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
-        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk';
+        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
         const response = await axios_1.default.post(geminiUrl, {
             contents: [
@@ -1679,7 +1679,7 @@ exports.whatsappWebhook = (0, https_1.onRequest)({ region: 'us-west1', cors: tru
                 // Auto-reply confirmation via Meta Cloud API using Gemini AI
                 const settingsSnap = await db.collection('leagueData').doc('settings').get();
                 const storedToken = settingsSnap.exists ? settingsSnap.data()?.whatsappToken : null;
-                const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || storedToken || 'EAAu1XzkKLNMBSNOAlReyeUre0mUZAGMapdvC5SNvbupUvlbUBZC3WYXUtZCJae6p3hFGAolgP3PtWpSdEGdgNgwfgXBbzmUSKevi6n5Wveb9kbC8VzFBMFCVsyXKZCdCnaYQ7ZA5WZB52bXoemWiKj6stvkTGT4KTmaFEU4Fgh39nWJOYM3V7NeOrFq45vXQCfJwZDZD';
+                const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || storedToken || '';
                 const phoneNumberId = value?.metadata?.phone_number_id || '1337632699423375';
                 if (accessToken && phoneNumberId) {
                     const aiReply = await askGeminiFantasyAI(messageText, fromPhone);
@@ -1717,8 +1717,8 @@ exports.updateRealFixtures = (0, https_1.onRequest)({ region: 'us-west1', cors: 
     }
     try {
         const { apiKey, matches } = req.body || {};
-        const SECRET_KEY = process.env.WEBHOOK_SECRET_KEY || 'luzon_spark_agent_2026';
-        if (apiKey !== SECRET_KEY && apiKey !== 'luzon_spark_agent_2026') {
+        const SECRET_KEY = process.env.WEBHOOK_SECRET_KEY;
+        if (SECRET_KEY && apiKey !== SECRET_KEY) {
             res.status(403).json({ error: 'Unauthorized: Invalid API Key' });
             return;
         }
@@ -2968,6 +2968,8 @@ exports.checkMatchDeadlinesAndNotify = (0, scheduler_1.onSchedule)({ region: 'us
             if (!logDoc.exists) {
                 console.log(`[checkMatchDeadlinesAndNotify] Checking user lineups and sending 2h deadline push for round ${currentRound}...`);
                 const usersSnap = await db.collection('users').get();
+                const BATCH_SIZE = 100;
+                let pushPromises = [];
                 for (const uDoc of usersSnap.docs) {
                     if (uDoc.id === 'admin' || uDoc.id === 'system')
                         continue;
@@ -2975,11 +2977,18 @@ exports.checkMatchDeadlinesAndNotify = (0, scheduler_1.onSchedule)({ region: 'us
                     const lineup = uData.published_lineup || uData.lineup || [];
                     const startingCount = Array.isArray(lineup) ? lineup.filter((p) => p.isStarting).length : 0;
                     if (startingCount < 11) {
-                        await sendPushNotificationHelper(`⚠️ הרכב חסר לפני שריקת הפתיחה!`, `שים לב! חסר לך שחקן בהרכב הפותח או שיש לך שחקן שלא משחק השבוע. כנס לעדכן!`, uDoc.id);
+                        pushPromises.push(sendPushNotificationHelper(`⚠️ הרכב חסר לפני שריקת הפתיחה!`, `שים לב! חסר לך שחקן בהרכב הפותח או שיש לך שחקן שלא משחק השבוע. כנס לעדכן!`, uDoc.id));
                     }
                     else {
-                        await sendPushNotificationHelper(`🚨 שעתיים בלבד לסגירת החלון!`, `שעתיים בלבד לסגירת החלון! כנס לנעול את 11 השחקנים שלך לפני שהמשחק הראשון יוצא לדרך.`, uDoc.id);
+                        pushPromises.push(sendPushNotificationHelper(`🚨 שעתיים בלבד לסגירת החלון!`, `שעתיים בלבד לסגירת החלון! כנס לנעול את 11 השחקנים שלך לפני שהמשחק הראשון יוצא לדרך.`, uDoc.id));
                     }
+                    if (pushPromises.length >= BATCH_SIZE) {
+                        await Promise.all(pushPromises);
+                        pushPromises = [];
+                    }
+                }
+                if (pushPromises.length > 0) {
+                    await Promise.all(pushPromises);
                 }
                 await logRef.set({ sentAt: new Date().toISOString() });
             }
