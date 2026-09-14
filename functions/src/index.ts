@@ -599,6 +599,10 @@ const getManagerNameByPhone = (senderPhone: string) => {
     return 'מנג\'ר';
 };
 
+let _fallbackPlayerCache: any[] | null = null;
+let _fallbackPlayerCacheTime = 0;
+const PLAYER_CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+
 // 🟢 עוזר AI חכם של ג'מיני למענה על שאלות פנטזי לוזון ב-WhatsApp 🟢
 const askGeminiFantasyAI = async (userPrompt: string, senderPhone: string = '', chatId: string = ''): Promise<string> => {
     let managerName = 'מנג\'ר';
@@ -1634,13 +1638,31 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
                 return `⚽ *בנסון* (מכבי חיפה) משחק במציאות במכבי חיפה, ובפנטזי לוזון הוא שייך לקבוצת *חולוניה* (מנג'ר: ארז)! 🛡️`;
             }
             try {
-                const usersSnap = await db.collection('users').get();
-                for (const d of usersSnap.docs) {
-                    const u = d.data();
-                    const squad = u.squad || [];
-                    const found = squad.find((pl: any) => pl.name && p.includes(String(pl.name).toLowerCase()));
-                    if (found) {
-                        return `⚽ *${found.name}* (${found.realTeam || found.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🏆`;
+                const now = Date.now();
+                if (!_fallbackPlayerCache || now - _fallbackPlayerCacheTime > PLAYER_CACHE_TTL) {
+                    const newCache = [];
+                    const usersSnap = await db.collection('users').get();
+                    for (const d of usersSnap.docs) {
+                        const u = d.data();
+                        const squad = u.squad || [];
+                        for (const pl of squad) {
+                            if (pl.name) {
+                                newCache.push({
+                                    nameLower: String(pl.name).toLowerCase(),
+                                    pl: pl,
+                                    u: u
+                                });
+                            }
+                        }
+                    }
+                    _fallbackPlayerCache = newCache;
+                    _fallbackPlayerCacheTime = now;
+                }
+
+                for (let i = 0, len = _fallbackPlayerCache.length; i < len; i++) {
+                    if (p.includes(_fallbackPlayerCache[i].nameLower)) {
+                        const { pl, u } = _fallbackPlayerCache[i];
+                        return `⚽ *${pl.name}* (${pl.realTeam || pl.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🏆`;
                     }
                 }
             } catch (uErr) {

@@ -541,6 +541,9 @@ const getManagerNameByPhone = (senderPhone) => {
         return 'שלומי (פיצ\'יצי)';
     return 'מנג\'ר';
 };
+let _fallbackPlayerCache = null;
+let _fallbackPlayerCacheTime = 0;
+const PLAYER_CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 // 🟢 עוזר AI חכם של ג'מיני למענה על שאלות פנטזי לוזון ב-WhatsApp 🟢
 const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => {
     let managerName = 'מנג\'ר';
@@ -1473,7 +1476,7 @@ ${realFixturesContext || 'לוח המשחקים מעודכן במערכת!'}
 
 ${realWorldContext ? `${realWorldContext}\n` : ''}
 ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
-        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'AIzaSyDsXUeI2CUSm4bz5A2K32BFOOa5xkRPtvk';
+        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
         const response = await axios_1.default.post(geminiUrl, {
             contents: [
@@ -1516,13 +1519,30 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
                 return `⚽ *בנסון* (מכבי חיפה) משחק במציאות במכבי חיפה, ובפנטזי לוזון הוא שייך לקבוצת *חולוניה* (מנג'ר: ארז)! 🛡️`;
             }
             try {
-                const usersSnap = await db.collection('users').get();
-                for (const d of usersSnap.docs) {
-                    const u = d.data();
-                    const squad = u.squad || [];
-                    const found = squad.find((pl) => pl.name && p.includes(String(pl.name).toLowerCase()));
-                    if (found) {
-                        return `⚽ *${found.name}* (${found.realTeam || found.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🏆`;
+                const now = Date.now();
+                if (!_fallbackPlayerCache || now - _fallbackPlayerCacheTime > PLAYER_CACHE_TTL) {
+                    const newCache = [];
+                    const usersSnap = await db.collection('users').get();
+                    for (const d of usersSnap.docs) {
+                        const u = d.data();
+                        const squad = u.squad || [];
+                        for (const pl of squad) {
+                            if (pl.name) {
+                                newCache.push({
+                                    nameLower: String(pl.name).toLowerCase(),
+                                    pl: pl,
+                                    u: u
+                                });
+                            }
+                        }
+                    }
+                    _fallbackPlayerCache = newCache;
+                    _fallbackPlayerCacheTime = now;
+                }
+                for (let i = 0, len = _fallbackPlayerCache.length; i < len; i++) {
+                    if (p.includes(_fallbackPlayerCache[i].nameLower)) {
+                        const { pl, u } = _fallbackPlayerCache[i];
+                        return `⚽ *${pl.name}* (${pl.realTeam || pl.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🏆`;
                     }
                 }
             }
@@ -1679,7 +1699,7 @@ exports.whatsappWebhook = (0, https_1.onRequest)({ region: 'us-west1', cors: tru
                 // Auto-reply confirmation via Meta Cloud API using Gemini AI
                 const settingsSnap = await db.collection('leagueData').doc('settings').get();
                 const storedToken = settingsSnap.exists ? settingsSnap.data()?.whatsappToken : null;
-                const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || storedToken || 'EAAu1XzkKLNMBSNOAlReyeUre0mUZAGMapdvC5SNvbupUvlbUBZC3WYXUtZCJae6p3hFGAolgP3PtWpSdEGdgNgwfgXBbzmUSKevi6n5Wveb9kbC8VzFBMFCVsyXKZCdCnaYQ7ZA5WZB52bXoemWiKj6stvkTGT4KTmaFEU4Fgh39nWJOYM3V7NeOrFq45vXQCfJwZDZD';
+                const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || storedToken || '';
                 const phoneNumberId = value?.metadata?.phone_number_id || '1337632699423375';
                 if (accessToken && phoneNumberId) {
                     const aiReply = await askGeminiFantasyAI(messageText, fromPhone);
@@ -1717,8 +1737,8 @@ exports.updateRealFixtures = (0, https_1.onRequest)({ region: 'us-west1', cors: 
     }
     try {
         const { apiKey, matches } = req.body || {};
-        const SECRET_KEY = process.env.WEBHOOK_SECRET_KEY || 'luzon_spark_agent_2026';
-        if (apiKey !== SECRET_KEY && apiKey !== 'luzon_spark_agent_2026') {
+        const SECRET_KEY = process.env.WEBHOOK_SECRET_KEY;
+        if (SECRET_KEY && apiKey !== SECRET_KEY) {
             res.status(403).json({ error: 'Unauthorized: Invalid API Key' });
             return;
         }
