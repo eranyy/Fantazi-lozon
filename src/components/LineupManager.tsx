@@ -1223,7 +1223,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           });
       }
 
-      const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+      const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
       if (activeApiKey) {
         try {

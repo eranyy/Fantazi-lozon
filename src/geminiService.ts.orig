@@ -2,8 +2,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 const modelName = "gemini-1.5-flash-latest";
 
 const getApiKey = (providedKey?: string) => {
-  return providedKey || 
-         (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
+  return providedKey ||
+         localStorage.getItem('gemini_api_key') ||
+         (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
          '';
 };
 
@@ -26,10 +27,10 @@ const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 45000
 
 export const analyzeMatchImage = async (base64Data: string, mimeType: string, hint?: string, apiKey?: string) => {
   const activeKey = getApiKey(apiKey);
-  const ai = new GoogleGenAI({ apiKey: activeKey }); 
-  
+  const ai = new GoogleGenAI({ apiKey: activeKey });
+
   const prompt = `אתה סוכן AI מומחה ופדנט לחילוץ נתונים מטבלאות ספורט מורכבות ומסמכי PDF רשמיים.
-אני מספק לך תמונה או קובץ PDF של משחקי ליגת העל בכדורגל (ישראל). 
+אני מספק לך תמונה או קובץ PDF של משחקי ליגת העל בכדורגל (ישראל).
 רמז למחזור שצריך לחלץ: "${hint || 'לא ידוע'}".
 המשימה שלך היא לחלץ את המשחקים ולהחזיר אותם אך ורק במבנה ה-JSON הנדרש.`;
 
@@ -59,7 +60,7 @@ export const analyzeMatchImage = async (base64Data: string, mimeType: string, hi
         }
       });
 
-      const response = await fetchWithTimeout(requestPromise, 45000); 
+      const response = await fetchWithTimeout(requestPromise, 45000);
 
       const text = response.text;
       if (!text) throw new Error("No response from Gemini AI");
@@ -88,7 +89,7 @@ export const generateAISummary = async (fixtures: any[], teams: any[], pollData?
         return ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0));
     });
 
-    const leagueStandingsText = sortedTeams.map((t, index) => 
+    const leagueStandingsText = sortedTeams.map((t, index) =>
         `מקום ${index + 1}: ${t.teamName} (מנג'ר: ${t.name || t.manager}) | נקודות בטבלה: ${t.points || 0} | שערים: ${t.gf || 0} זכות, ${t.ga || 0} חובה (הפרש: ${(t.gf || 0) - (t.ga || 0)})`
     ).join('\n');
 

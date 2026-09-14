@@ -932,7 +932,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           console.log('✅ Data synced to Google Sheets successfully!');
       } catch (excelError) { console.error('❌ Failed to sync to Google Sheets:', excelError); }
 
-      const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+      const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (activeApiKey) {
         try {
           const ai = new GoogleGenAI({ apiKey: activeApiKey });
