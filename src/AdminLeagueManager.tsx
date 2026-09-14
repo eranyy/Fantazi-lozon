@@ -42,7 +42,7 @@ const Jersey = ({ primary, secondary, textColor, text }: { primary: string, seco
   );
 };
 
-const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) => {
+const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
   const [activeSubTab, setActiveSubTab] = useState<'table' | 'rules' | 'hof' | 'records' | 'power' | 'top_players' | 'predictor'>(initialSubTab || 'table');
   const [teams, setTeams] = useState<any[]>([]);
   const [historySeasons, setHistorySeasons] = useState<any[]>(DEFAULT_SEASONS);
@@ -186,7 +186,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
         setAllPlayersDB(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubScoring(); unsubPlayersDB(); };
+    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubScoring(); unsubPlayersDB(); unsubPredictor(); unsubPolls(); };
   }, []);
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'success') => { 
@@ -300,7 +300,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
           try {
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             showMessage('התמונה הועתקה! פתח ווצאפ והדבק (Ctrl+V) 📋', 'success');
-          } catch (err) {
+          } catch {
             const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'Luzon14_Table.png'; link.click();
             showMessage('התמונה ירדה למחשב! צרף אותה לווצאפ 📥', 'success');
           }
