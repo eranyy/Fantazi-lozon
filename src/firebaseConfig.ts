@@ -5,7 +5,7 @@ import { getMessaging } from "firebase/messaging";
 import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
-  apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyAYU35Cc-mewf1WAHjHUAcmq1ATntoU9YI",
+  apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "",
   authDomain: (import.meta.env && import.meta.env.VITE_FIREBASE_AUTH_DOMAIN) || "fantasy-luzon.firebaseapp.com",
   projectId: (import.meta.env && import.meta.env.VITE_FIREBASE_PROJECT_ID) || "fantasy-luzon",
   storageBucket: (import.meta.env && import.meta.env.VITE_FIREBASE_STORAGE_BUCKET) || "fantasy-luzon.firebasestorage.app",
