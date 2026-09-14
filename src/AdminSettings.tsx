@@ -90,7 +90,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [isSyncingTable, setIsSyncingTable] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [squadsDriveUrl, setSquadsDriveUrl] = useState('');
-  const [transfersDriveUrl, setTransfersDriveUrl] = useState('');
   
   const [playoffRoundsInput, setPlayoffRoundsInput] = useState<string>(''); 
   const [cupSettings, setCupSettings] = useState<any>({ isOpen: false, stage: 'groups', activeTeams: [], groupStandings: {} });
