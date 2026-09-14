@@ -909,7 +909,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           hLineupForExcel.forEach((player: any) => {
             excelSyncRows.push({ syncId: `R${currentRound}_${hTeam.id}_${player.id}`, date: new Date().toISOString().split('T')[0], round: currentRound, fantasyTeam: TEAM_NAMES[hTeam.id] || hTeam.id, player: player.name, points: player.points || 0 });
           });
-          const resetSquad = (hTeam.squad || []).map((p:any) => ({...p, points: 0, stats: emptyStats}));
+          const resetSquad = (hTeam.squad || []).map((p:any) => { p.points = 0; p.stats = emptyStats; return p; });
           const newHForm = [...(hTeam.form || []), hResult].slice(-5);
           await updateDoc(doc(db, 'users', hTeam.id), { points: (hTeam.points || 0) + hPts, gf: (hTeam.gf || 0) + homeScore, ga: (hTeam.ga || 0) + awayScore, wins: (hTeam.wins || 0) + hW, draws: (hTeam.draws || 0) + hD, losses: (hTeam.losses || 0) + hL, played: (hTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newHForm });
         }
@@ -919,7 +919,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           aLineupForExcel.forEach((player: any) => {
             excelSyncRows.push({ syncId: `R${currentRound}_${aTeam.id}_${player.id}`, date: new Date().toISOString().split('T')[0], round: currentRound, fantasyTeam: TEAM_NAMES[aTeam.id] || aTeam.id, player: player.name, points: player.points || 0 });
           });
-          const resetSquad = (aTeam.squad || []).map((p:any) => ({...p, points: 0, stats: emptyStats}));
+          const resetSquad = (aTeam.squad || []).map((p:any) => { p.points = 0; p.stats = emptyStats; return p; });
           const newAForm = [...(aTeam.form || []), aResult].slice(-5);
           await updateDoc(doc(db, 'users', aTeam.id), { points: (aTeam.points || 0) + aPts, gf: (aTeam.gf || 0) + awayScore, ga: (aTeam.ga || 0) + homeScore, wins: (aTeam.wins || 0) + aW, draws: (aTeam.draws || 0) + aD, losses: (aTeam.losses || 0) + aL, played: (aTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newAForm });
         }
