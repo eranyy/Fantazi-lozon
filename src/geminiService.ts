@@ -3,7 +3,6 @@ const modelName = "gemini-1.5-flash-latest";
 
 const getApiKey = (providedKey?: string) => {
   return providedKey || 
-         localStorage.getItem('gemini_api_key') || 
          (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) || 
          '';
 };

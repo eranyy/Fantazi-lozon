@@ -38,6 +38,27 @@ const REAL_TEAMS_ISRAEL = [
 
 import { getTeamColors } from '../utils/teamUtils';
 
+const safeArray = (val: any): any[] => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'object') {
+    if (Array.isArray(val.Ku)) return val.Ku;
+    for (const key of Object.keys(val)) {
+      if (Array.isArray(val[key])) return val[key];
+    }
+    const vals = Object.values(val).filter(x => x && typeof x === 'object');
+    if (vals.length > 0) return vals;
+  }
+  return [];
+};
+
+const isSubLog = (t: any) => {
+  if (!t || typeof t !== 'object') return false;
+  const type = (t.type || '').toUpperCase();
+  if (type === 'CANCELLED_SUB' || (t.status || '').toUpperCase() === 'CANCELLED') return false;
+  return type === 'HALFTIME_SUB' || type === 'HALFTIME' || type === 'ADMIN_MANUAL_SUB' || type === 'MANUAL_SUB' || (type.includes('SUB') && !type.includes('VAR') && !type.includes('REGULAR'));
+};
+
 const getCanonicalRealTeam = (teamName?: string): string => {
   if (!teamName) return 'unknown';
   const c = teamName.replace(/['"״׳.\-\s]/g, '').toLowerCase();
@@ -65,6 +86,12 @@ const isTeamMatch = (t1?: string, t2?: string): boolean => {
   return getCanonicalRealTeam(t1) === getCanonicalRealTeam(t2);
 };
 
+const normalizeHebrewName = (s?: string | null) => {
+  if (!s) return '';
+  let str = String(s).toLowerCase().replace(/['"״׳`\-\s()]/g, '');
+  return str.replace(/א+/g, 'א').replace(/ו+/g, 'ו').replace(/י+/g, 'י');
+};
+
 const isSamePlayer = (a: any, b: any) => {
   if (!a || !b) return false;
   if (a.id && b.id && a.id === b.id) return true;
@@ -72,12 +99,17 @@ const isSamePlayer = (a: any, b: any) => {
   const cA = cleanStr(a.name);
   const cB = cleanStr(b.name);
   if (!cA || !cB) return false;
-  const nameMatch = cA === cB || cA.includes(cB) || cB.includes(cA);
+  const nA = normalizeHebrewName(a.name);
+  const nB = normalizeHebrewName(b.name);
+  const nameMatch = cA === cB || cA.includes(cB) || cB.includes(cA) || nA === nB || nA.includes(nB) || nB.includes(nA);
   if (!nameMatch) return false;
 
   const aTeam = cleanStr(a.realTeam || a.team || '');
   const bTeam = cleanStr(b.realTeam || b.team || '');
   if (aTeam && bTeam && aTeam.length > 2 && bTeam.length > 2) {
+    if (aTeam === 'unknown' || bTeam === 'unknown' || aTeam.includes('unknown') || bTeam.includes('unknown')) {
+      return true;
+    }
     return aTeam === bTeam || aTeam.includes(bTeam) || bTeam.includes(aTeam);
   }
   return true;
@@ -406,7 +438,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       if (team) {
         setMyTeam(team);
         
-        const rawSquad = (team.squad && team.squad.length > 0) ? team.squad : (team.players && team.players.length > 0) ? team.players : [];
+        const rawSquad = safeArray(team.squad).length > 0 ? safeArray(team.squad) : safeArray(team.players);
         const sourceSquad = rawSquad;
         const safeSquad: Player[] = Array.from(new Map(
           sourceSquad.filter((p: any) => p && p.id).map((p: any) => [p.id, { ...p, position: normalizePos(p.position) }])
@@ -416,8 +448,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
         let benchPlayers: Player[] = [];
 
         if (isCupModeActive) {
-            startingPlayers = (team.cup_lineup || []).map((p:any) => ({...p, isStarting: true}));
-            benchPlayers = (team.cup_bench || []).map((p:any) => ({...p, isStarting: false}));
+            startingPlayers = safeArray(team.cup_lineup).map((p:any) => ({...p, isStarting: true}));
+            benchPlayers = safeArray(team.cup_bench).map((p:any) => ({...p, isStarting: false}));
             
             if (startingPlayers.length === 0 && benchPlayers.length === 0) {
                 startingPlayers = safeSquad.filter(p => p.isStarting === true);
@@ -429,8 +461,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
               startingPlayers = savedRoundLineup.map((p: any) => ({ ...p, isStarting: true }));
               const startingIds = new Set(startingPlayers.map(p => p.id));
               benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
-            } else if (Array.isArray(team.published_lineup) && team.published_lineup.length > 0) {
-              startingPlayers = team.published_lineup.map((p: any) => ({ ...p, isStarting: true }));
+            } else if (safeArray(team.published_lineup).length > 0) {
+              startingPlayers = safeArray(team.published_lineup).map((p: any) => ({ ...p, isStarting: true }));
               const startingIds = new Set(startingPlayers.map(p => p.id));
               benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
             } else {
@@ -453,13 +485,14 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           setLineup(startingPlayers); setBench(benchPlayers.sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99)));
         }
         
-        setTransfersLog(team.transfers || []);
+        setTransfersLog(safeArray(team.transfers));
       }
     }
   }, [activeTeamId, teams, isCupModeActive, currentRound]);
 
-  const usedTransfers = transfersLog.filter(t => (t.type === 'IN' || t.type === 'SWAP') && !t.isFreeze).length;
-  const freezeCount = transfersLog.filter(t => t.type === 'FREEZE_IN' || t.isFreeze).length;
+  const safeTransfersLog = safeArray(transfersLog);
+  const usedTransfers = safeTransfersLog.filter(t => (t.type === 'IN' || t.type === 'SWAP') && !t.isFreeze).length;
+  const freezeCount = safeTransfersLog.filter(t => t.type === 'FREEZE_IN' || t.isFreeze).length;
   const transferPercent = Math.min((usedTransfers / 14) * 100, 100);
 
   const activeLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
@@ -590,7 +623,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
   const checkIsHalftimeSub = (playerName: string) => {
     if (isCupModeActive) return false; 
-    return transfersLog.some(t => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED' && t.playerIn === playerName);
+    return safeArray(transfersLog).some(t => isSubLog(t) && (!t.round || Number(t.round) === Number(currentRound)) && (t.playerIn === playerName || isSamePlayer({ name: t.playerIn }, { name: playerName })));
   };
 
   const handleWhatsAppShare = () => {
@@ -700,7 +733,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     if (from === 'bench') {
       if (currentActiveLineup.length >= 11) return showToast(`❌ ההרכב מלא (11/11). קודם הורד שחקן לספסל כדי לפנות מקום!`, 'error');
       
-      const sameTeamCountInLineup = currentActiveLineup.filter(p => isTeamMatch(p.team, player.team)).length;
+      const playerRealTeam = (player as any).realTeam || player.team;
+      const sameTeamCountInLineup = currentActiveLineup.filter(p => isTeamMatch((p as any).realTeam || p.team, playerRealTeam)).length;
       
       let maxAllowedFromTeam = 2;
       if (isCupModeActive) {
@@ -710,7 +744,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       }
       
       if (sameTeamCountInLineup >= maxAllowedFromTeam) {
-        return showToast(`❌ חוק לוזון: אסור יותר מ-${maxAllowedFromTeam} שחקנים מאותה קבוצה (${player.team}) בהרכב!`, 'error');
+        return showToast(`❌ חוק לוזון: אסור יותר מ-${maxAllowedFromTeam} שחקנים מאותה קבוצה (${playerRealTeam}) בהרכב!`, 'error');
       }
 
       const newDefs = currentActiveLineup.filter(p => normalizePos(p.position) === 'DEF').length + (normalizePos(player.position) === 'DEF' ? 1 : 0);
@@ -748,7 +782,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     if (!canEditLineup || !myTeam || isCupModeActive) return showToast('חילופי מחצית זמינים רק למשחקי ליגה!', 'error');
     if (!subOutId || !subInId) return showToast('בחר שחקן יוצא ונכנס', 'error');
     
-    const activeSubs = transfersLog.filter(t => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
+const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round || Number(t.round) === Number(currentRound)));
     if (activeSubs.length >= 3 && !isManagerOrAdmin) return showToast('❌ ביצעת 3 חילופי מחצית במחזור זה!', 'error');
 
       const playerOut = lineup.find(p => p.id === subOutId || isSamePlayer(p, { id: subOutId }));
@@ -849,7 +883,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       
       try {
           await updateDoc(doc(db, 'users', myTeam.id), { 
-              transfers: arrayUnion(subLog), 
+              transfers: [...safeArray(myTeam.transfers), subLog], 
               published_lineup: newLineup, 
               published_subs_out: newBench,
               lineup: newLineup,
@@ -958,7 +992,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                   timestamp: new Date().toLocaleString('he-IL', { hour12: false })
               };
               newTransfers.push(editLog);
-              updateData.transfers = arrayUnion(editLog);
+              updateData.transfers = [...safeArray(myTeam?.transfers), editLog];
               setTransfersLog(newTransfers);
           }
       }
@@ -1194,7 +1228,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       const updateData: any = { 
         squad: updatedSquad, 
         players: updatedSquad, 
-        transfers: arrayUnion(logEntry),
+        transfers: [...safeArray(myTeam?.transfers), logEntry],
         published_lineup: updatedLineup,
         lineup: updatedLineup,
         published_subs_out: updatedBench 
@@ -1223,7 +1257,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           });
       }
 
-      const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+      const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 
       if (activeApiKey) {
         try {
@@ -1617,7 +1651,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                       <RefreshCw className="w-5 h-5 text-orange-500" /> חילופי מחצית
                     </h3>
                     <span className="text-[10px] font-black bg-orange-500/10 text-orange-400 px-3 py-1.5 rounded-lg border border-orange-500/30">
-                      {transfersLog.filter(t => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED').length} / 3
+                      {safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round || Number(t.round) === Number(currentRound))).length} / 3
                     </span>
                   </div>
                   
@@ -1646,7 +1680,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                   </div>
 
                   {(() => {
-                    const activeSubs = transfersLog.filter(t => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED');
+                const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round || Number(t.round) === Number(currentRound)));
                     if (activeSubs.length === 0) return null;
                     
                     return (
@@ -1910,7 +1944,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
       )}
 
       {activeTab === 'transfers' && (() => {
-        const rawLogs = transfersLog.filter(log => ['IN', 'OUT', 'SWAP', 'FREEZE_IN'].includes(log.type));
+        const rawLogs = safeArray(transfersLog).filter(log => log && ['IN', 'OUT', 'SWAP', 'FREEZE_IN'].includes(log.type));
         
         // Smart dynamic pairing of legacy OUT + IN logs from same day/session
         const filteredTransfersLog: any[] = [];
