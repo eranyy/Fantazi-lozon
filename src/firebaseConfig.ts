@@ -21,5 +21,16 @@ setPersistence(auth, browserLocalPersistence).catch(console.error);
 
 export const VAPID_KEY = (import.meta.env && import.meta.env.VITE_FIREBASE_VAPID_KEY) || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";
 
-export const messaging = getMessaging(app);
+let messagingInstance: ReturnType<typeof getMessaging> | null = null;
+try {
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'Notification' in window) {
+    messagingInstance = getMessaging(app);
+  }
+} catch (e) {
+  // Messaging not supported in this environment
+}
+
+export const messaging = messagingInstance;
 export const functions = getFunctions(app, "us-west1");
+
+

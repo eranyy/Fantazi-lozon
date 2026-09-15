@@ -119,10 +119,10 @@ const App: React.FC = () => {
       setPushStatus(Notification.permission as any);
 
       // אם המשתמש כבר אישר התראות בעבר, ניקח לו את הטוקן באופן שקט מאחורי הקלעים
-      if (Notification.permission === 'granted' && loggedInUser) {
+      if (Notification.permission === 'granted' && loggedInUser && messaging) {
         const fetchSilentToken = async () => {
           try {
-            const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+            const token = await getToken(messaging!, { vapidKey: VAPID_KEY });
             if (token) {
               await setDoc(doc(db, "users", loggedInUser.id), { 
                 fcmToken: token,
@@ -152,8 +152,8 @@ const App: React.FC = () => {
       const permission = await Notification.requestPermission();
       setPushStatus(permission as any);
 
-      if (permission === 'granted') {
-        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+      if (permission === 'granted' && messaging) {
+        const token = await getToken(messaging!, { vapidKey: VAPID_KEY });
         if (token && loggedInUser) {
           await setDoc(doc(db, "users", loggedInUser.id), { 
             fcmToken: token,

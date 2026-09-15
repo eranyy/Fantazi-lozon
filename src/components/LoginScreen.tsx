@@ -21,8 +21,8 @@ const getDeviceType = () => {
 const requestPushPermission = async (userId: string) => {
   try {
     const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-      const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+    if (permission === "granted" && messaging) {
+      const token = await getToken(messaging!, { vapidKey: VAPID_KEY });
 
       if (token) {
         await setDoc(doc(db, "users", userId), {
