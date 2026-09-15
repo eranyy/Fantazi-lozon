@@ -118,7 +118,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [pushMessage, setPushMessage] = useState('');
   const [pushTargetUserId, setPushTargetUserId] = useState('ALL');
   const [isSendingPush, setIsSendingPush] = useState(false);
-  const [allowMidfielderAs5thFwd, setAllowMidfielderAs5thFwd] = useState<boolean>(true);
 
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -139,7 +138,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             if (data.globalLock !== undefined) setGlobalLock(data.globalLock);
             if (data.globalUnlock !== undefined) setGlobalUnlock(data.globalUnlock);
             if (data.currentRound !== undefined) setSystemCurrentRound(data.currentRound);
-            if (data.allowMidfielderAs5thFwd !== undefined) setAllowMidfielderAs5thFwd(data.allowMidfielderAs5thFwd);
         }
     });
 
@@ -192,16 +190,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'success') => { setToast({msg, type}); if (type !== 'info') setTimeout(() => setToast(null), 5000); };
 
-  const toggle5thFwdRule = async () => {
-      setLoading(true);
-      try {
-          const nextVal = !allowMidfielderAs5thFwd;
-          await setDoc(doc(db, 'leagueData', 'settings'), { allowMidfielderAs5thFwd: nextVal }, { merge: true });
-          setAllowMidfielderAs5thFwd(nextVal);
-          showMessage(nextVal ? '⚡ חוק חלוץ 5 גמיש הופעל בהצלחה!' : '⚪ חוק חלוץ 5 גמיש כבוי כעת', 'success');
-      } catch { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
-      finally { setLoading(false); }
-  };
 
   const handleForceGlobalRefresh = async () => {
     if (!window.confirm("האם אתה בטוח שברצונך לכפות רענון בלייב לכל המשתמשים הפעילים באתר?")) return;
