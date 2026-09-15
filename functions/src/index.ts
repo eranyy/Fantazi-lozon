@@ -79,14 +79,21 @@ interface Round {
 }
 // endregion
 
+const safeArray = (val: any): any[] => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'object') return Object.values(val);
+    return [];
+};
+
 // region --- Logic ported from LiveArena.tsx for server-side calculation ---
 const applySubstitutionsToLineup = (team: Team, currentRound: number): Player[] => {
     if (!team) return [];
-    let currentLineup = [...(team.published_lineup || [])];
-    const bench = team.published_subs_out || [];
+    let currentLineup = [...safeArray(team.published_lineup)];
+    const bench = safeArray(team.published_subs_out);
 
-    const roundSubs = (team.transfers || []).filter((t: any) =>
-        t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED'
+    const roundSubs = safeArray(team.transfers).filter((t: any) =>
+        t && t.type === 'HALFTIME_SUB' && Number(t.round) === Number(currentRound) && (t.status || '').toUpperCase() !== 'CANCELLED'
     );
 
     const sortedSubs = roundSubs.sort((a: any, b: any) =>
@@ -113,12 +120,12 @@ const calculateTeamScore = (team: Team, currentRound: number): number => {
         total += currentLineup.reduce((sum: number, p: Player) => sum + (Number(p.points) || 0), 0);
     }
 
-    const roundSubs = (team.transfers || []).filter((t: any) =>
-        t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED'
+    const roundSubs = safeArray(team.transfers).filter((t: any) =>
+        t && t.type === 'HALFTIME_SUB' && Number(t.round) === Number(currentRound) && (t.status || '').toUpperCase() !== 'CANCELLED'
     );
 
     roundSubs.forEach((sub: any) => {
-        const allPossibleOutPlayers = [...(team.published_subs_out || []), ...(team.squad || [])];
+        const allPossibleOutPlayers = [...safeArray(team.published_subs_out), ...safeArray(team.squad)];
         const benchedPlayerOut = allPossibleOutPlayers.find((p: any) => p.name === sub.playerOut);
 
         if (benchedPlayerOut) {
@@ -147,10 +154,10 @@ const getTeamLiveEvents = (team: Team, currentRound: number): { goals: number, y
         playersInPlay.add(player.name);
     });
 
-    const subbedOutPlayers = (team.transfers || [])
-        .filter((t: any) => t.type === 'HALFTIME_SUB' && t.round === currentRound && t.status !== 'CANCELLED')
+    const subbedOutPlayers = safeArray(team.transfers)
+        .filter((t: any) => t && t.type === 'HALFTIME_SUB' && Number(t.round) === Number(currentRound) && (t.status || '').toUpperCase() !== 'CANCELLED')
         .map((sub: any) => {
-             const allPlayers = [...(team.published_subs_out || []), ...(team.squad || [])];
+             const allPlayers = [...safeArray(team.published_subs_out), ...safeArray(team.squad)];
              return allPlayers.find((p: any) => p.name === sub.playerOut);
         })
         .filter(Boolean);
@@ -461,31 +468,36 @@ export const sendCustomPushNotification = onCall(
             return { success: true, count: 0, message: 'No registered FCM tokens found.' };
         }
 
-        const response = await admin.messaging().sendEachForMulticast({
-            tokens,
-            notification: {
-                title,
-                body: message,
-            },
-            data: {
-                title,
-                body: message,
-            },
-            webpush: {
-                headers: {
-                    Urgency: 'high'
-                },
-                notification: {
-                    title,
-                    body: message,
-                    icon: '/app-icon.png',
-                    badge: '/app-icon.png',
-                    requireInteraction: true
-                }
-            }
+        const uniqueTokens = Array.from(new Set(tokens));
+        const batchSize = 500;
+        const batches: string[][] = [];
+        for (let i = 0; i < uniqueTokens.length; i += batchSize) {
+            batches.push(uniqueTokens.slice(i, i + batchSize));
+        }
+
+        let totalSuccess = 0;
+        let totalFailed = 0;
+
+        const results = await Promise.all(
+            batches.map(batchTokens =>
+                admin.messaging().sendEachForMulticast({
+                    tokens: batchTokens,
+                    notification: { title, body: message },
+                    data: { title, body: message },
+                    webpush: {
+                        headers: { Urgency: 'high' },
+                        notification: { title, body: message, icon: '/app-icon.png', badge: '/app-icon.png', requireInteraction: true }
+                    }
+                })
+            )
+        );
+
+        results.forEach(res => {
+            totalSuccess += res.successCount;
+            totalFailed += res.failureCount;
         });
 
-        return { success: true, count: response.successCount, failed: response.failureCount };
+        return { success: true, count: totalSuccess, failed: totalFailed };
     }
 );
 
@@ -523,17 +535,36 @@ export async function sendPushNotificationHelper(title: string, message: string,
         }
 
         const uniqueTokens = Array.from(new Set(tokens));
-        const response = await admin.messaging().sendEachForMulticast({
-            tokens: uniqueTokens,
-            notification: { title, body: message },
-            data: { title, body: message },
-            webpush: {
-                headers: { Urgency: 'high' },
-                notification: { title, body: message, icon: '/app-icon.png', badge: '/app-icon.png', requireInteraction: true }
-            }
+        const batchSize = 500;
+        const batches: string[][] = [];
+        for (let i = 0; i < uniqueTokens.length; i += batchSize) {
+            batches.push(uniqueTokens.slice(i, i + batchSize));
+        }
+
+        let totalSuccess = 0;
+        let totalFailed = 0;
+
+        const results = await Promise.all(
+            batches.map(batchTokens =>
+                admin.messaging().sendEachForMulticast({
+                    tokens: batchTokens,
+                    notification: { title, body: message },
+                    data: { title, body: message },
+                    webpush: {
+                        headers: { Urgency: 'high' },
+                        notification: { title, body: message, icon: '/app-icon.png', badge: '/app-icon.png', requireInteraction: true }
+                    }
+                })
+            )
+        );
+
+        results.forEach(res => {
+            totalSuccess += res.successCount;
+            totalFailed += res.failureCount;
         });
-        console.log(`[sendPushNotificationHelper] Sent push notification ("${title}") to ${response.successCount} devices.`);
-        return { success: true, count: response.successCount, failed: response.failureCount };
+
+        console.log(`[sendPushNotificationHelper] Sent push notification ("${title}") to ${totalSuccess} devices (${totalFailed} failed).`);
+        return { success: true, count: totalSuccess, failed: totalFailed };
     } catch (err) {
         console.error('[sendPushNotificationHelper] Error sending push notification:', err);
         return { success: false, error: err };
@@ -2500,8 +2531,8 @@ export const runOneHourPreMatchReminder = async (forceManual: boolean = false) =
         return { success: true, message: 'All teams have full lineups!' };
     }
 
-    // 🟢 Send Personal FCM Push Notifications directly to all device tokens of missing team managers & co-managers 🟢
-    for (const team of missingTeams) {
+    // 🟢 Send Personal FCM Push Notifications concurrently directly to all device tokens of missing team managers & co-managers 🟢
+    await Promise.all(missingTeams.map(async (team) => {
         const teamTokensSet = new Set<string>();
 
         usersSnap.forEach(dSnap => {
@@ -2540,7 +2571,7 @@ export const runOneHourPreMatchReminder = async (forceManual: boolean = false) =
                 console.error(`[1h Reminder Push] Error sending push to ${team.teamName}:`, pushErr?.message || pushErr);
             }
         }
-    }
+    }));
 
     const missingLines = missingTeams.map(t => {
         const mentionsStr = t.phones.map((p: string) => `@${p.replace(/\D/g, '')}`).join(' ');
@@ -2712,12 +2743,37 @@ const runFridayPreRoundReminder = async (force: boolean = false) => {
         message: fullMessage
     });
 
+    // 🟢 Also Send Native WhatsApp Polls for each H2H matchup 🟢
+    if (fantasyRound && Array.isArray(fantasyRound.matches)) {
+        for (let idx = 0; idx < fantasyRound.matches.length; idx++) {
+            const m = fantasyRound.matches[idx];
+            const hName = teamsMap[m.h] || m.h;
+            const aName = teamsMap[m.a] || m.a;
+            
+            try {
+                const pollUrl = `${greenHost}/waInstance${greenId}/sendPoll/${greenToken}`;
+                await axios.post(pollUrl, {
+                    chatId: groupChatId,
+                    message: `🔮 סקר נביאי הליגה - מחזור ${currentRound} (מפגש ${idx + 1}): מי תנצח במפגש בין ${hName} ל-${aName}? ⚔️`,
+                    options: [
+                        { optionName: `🏆 ניצחון ל-${hName}` },
+                        { optionName: `🤝 תיקו דרמטי!` },
+                        { optionName: `🏆 ניצחון ל-${aName}` }
+                    ]
+                });
+                await new Promise(r => setTimeout(r, 1500));
+            } catch (pErr: any) {
+                console.error(`Error sending Friday poll for ${hName} vs ${aName}:`, pErr?.message);
+            }
+        }
+    }
+
     await db.doc('leagueData/reminders').set({
         [`sent_friday_round_${currentRound}`]: true,
         lastSentAt: new Date().toISOString()
     }, { merge: true });
 
-    console.log(`[FridayReminder] Sent Friday pre-round reminder for round ${currentRound}.`);
+    console.log(`[FridayReminder] Sent Friday pre-round reminder & polls for round ${currentRound}.`);
     return { success: true, round: currentRound, missingTeamsCount: missingTeams.length, message: fullMessage };
 };
 
@@ -3282,5 +3338,116 @@ export const checkMatchDeadlinesAndNotify = onSchedule({ region: 'us-west1', sch
         }
     } catch (err) {
         console.error('[checkMatchDeadlinesAndNotify] Error in scheduled deadline checker:', err);
+    }
+});
+
+// 🟢 Cloud Function: Admin / Arena Manager Live Player Points Update 🟢
+export const updateLivePlayerPoints = onCall({ region: 'us-west1' }, async (request) => {
+    try {
+        const { teamId, round, player, cleanStats, finalPoints, actionBy } = request.data || {};
+        if (!teamId || !player) {
+            throw new HttpsError('invalid-argument', 'Missing teamId or player object');
+        }
+
+        console.log(`[updateLivePlayerPoints] Updating player ${player.name} for team ${teamId} (Round ${round}, Pts: ${finalPoints})...`);
+
+        let teamRef = db.collection('users').doc(teamId);
+        let teamSnap = await teamRef.get();
+
+        if (!teamSnap.exists) {
+            const snap = await db.collection('users').get();
+            const foundDoc = snap.docs.find(d => {
+                const data = d.data();
+                return d.id === teamId || data.id === teamId || data.teamName === teamId;
+            });
+            if (foundDoc) {
+                teamRef = db.collection('users').doc(foundDoc.id);
+                teamSnap = await teamRef.get();
+            }
+        }
+
+        if (!teamSnap.exists) {
+            throw new HttpsError('not-found', `Team doc not found for teamId: ${teamId}`);
+        }
+
+        const freshTeam = teamSnap.data() || {};
+
+        const cleanStr = (s: string) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
+        const normalizeHebrew = (s: string) => cleanStr(s).replace(/א+/g, 'א').replace(/ו+/g, 'ו').replace(/י+/g, 'י');
+
+        const isSameP = (a: any, b: any) => {
+            if (!a || !b) return false;
+            if (a.id && b.id && a.id === b.id) return true;
+            const cA = cleanStr(a.name);
+            const cB = cleanStr(b.name);
+            if (!cA || !cB) return false;
+            const nA = normalizeHebrew(a.name);
+            const nB = normalizeHebrew(b.name);
+            return cA === cB || cA.includes(cB) || cB.includes(cA) || nA === nB || nA.includes(nB) || nB.includes(nA);
+        };
+
+        const updatePlayerInList = (list: any[]) => safeArray(list).map((p: any) =>
+            isSameP(p, player) ? { ...p, points: finalPoints, stats: cleanStats } : p
+        );
+
+        let updatedLineup = updatePlayerInList(freshTeam.published_lineup);
+        let updatedSubsOut = updatePlayerInList(freshTeam.published_subs_out);
+        let updatedSquad = updatePlayerInList(freshTeam.squad);
+
+        const foundInLineup = updatedLineup.some((p: any) => isSameP(p, player));
+        const foundInSubsOut = updatedSubsOut.some((p: any) => isSameP(p, player));
+        if (!foundInLineup && !foundInSubsOut) {
+            updatedSubsOut.push({ ...player, points: finalPoints, stats: cleanStats });
+        }
+
+        const selectedRound = round || 1;
+        const currentLineupsByRound = freshTeam.lineupsByRound || {};
+        const currentRData = currentLineupsByRound[selectedRound] || {};
+        let updatedRLineup = updatePlayerInList(currentRData.lineup || freshTeam.published_lineup || []);
+        let updatedRSubsOut = updatePlayerInList(currentRData.subsOut || freshTeam.published_subs_out || []);
+
+        const rFoundInLineup = updatedRLineup.some((p: any) => isSameP(p, player));
+        const rFoundInSubsOut = updatedRSubsOut.some((p: any) => isSameP(p, player));
+        if (!rFoundInLineup && !rFoundInSubsOut) {
+            updatedRSubsOut.push({ ...player, points: finalPoints, stats: cleanStats });
+        }
+
+        const updatedLineupsByRound = {
+            ...currentLineupsByRound,
+            [selectedRound]: {
+                ...currentRData,
+                lineup: updatedRLineup,
+                subsOut: updatedRSubsOut
+            }
+        };
+
+        const editLog = {
+            id: `var_${Date.now()}`,
+            type: 'VAR_POINTS_UPDATE',
+            round: selectedRound,
+            playerIn: player.name || 'שחקן',
+            playerOut: `${finalPoints} נק'`,
+            actionBy: actionBy || 'מנהל',
+            timestamp: new Date().toISOString()
+        };
+
+        const existingTransfers = safeArray(freshTeam.transfers).filter((t: any) => t && typeof t === 'object' && t.type);
+        const updatedTransfers = [...existingTransfers, editLog];
+
+        await teamRef.set({
+            published_lineup: updatedLineup,
+            published_subs_out: updatedSubsOut,
+            squad: updatedSquad,
+            lineup: updatedLineup,
+            players: updatedSquad,
+            lineupsByRound: updatedLineupsByRound,
+            transfers: updatedTransfers
+        }, { merge: true });
+
+        console.log(`[updateLivePlayerPoints] Successfully updated ${player.name} for team ${teamRef.id}!`);
+        return { success: true, teamId: teamRef.id, points: finalPoints };
+    } catch (err: any) {
+        console.error('[updateLivePlayerPoints] Error:', err);
+        throw new HttpsError('internal', err.message || 'Failed to update player points');
     }
 });
