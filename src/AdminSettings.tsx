@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth, functions } from './firebaseConfig'; 
-import { analyzeMatchImage, generateAISummary, generateRumors } from './geminiService'; 
+import { generateAISummary, generateRumors } from './geminiService'; 
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, getDoc, addDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
