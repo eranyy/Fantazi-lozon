@@ -73,7 +73,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [resetLoadingEmail, setResetLoadingEmail] = useState<string | null>(null);
   const [resetModalMsg, setResetModalMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [teamToDelete, setTeamToDelete] = useState<any | null>(null); 
   const [newUser, setNewUser] = useState({ teamName: '', manager: '', assistantName: '', email: '', assistantEmail: '', role: 'USER', isApproved: true, assistants: [] as any[] });
   
   const [showEndSeason, setShowEndSeason] = useState(false);
