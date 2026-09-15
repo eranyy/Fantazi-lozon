@@ -300,7 +300,7 @@ const AdminLeagueManager: React.FC<any> = ({ isAdmin, inline, initialSubTab }) =
           try {
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             showMessage('התמונה הועתקה! פתח ווצאפ והדבק (Ctrl+V) 📋', 'success');
-          } catch (err) {
+          } catch {
             const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'Luzon14_Table.png'; link.click();
             showMessage('התמונה ירדה למחשב! צרף אותה לווצאפ 📥', 'success');
           }
