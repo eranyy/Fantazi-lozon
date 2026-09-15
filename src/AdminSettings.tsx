@@ -36,21 +36,6 @@ const parseCsvRow = (str: string) => {
     return result.map(s => s.replace(/^"|"$/g, ''));
 };
 
-const getStadium = (homeTeam: string) => {
-    if (!homeTeam) return '';
-    const n = normalizeTeamName(homeTeam);
-    if (n.includes('חיפה')) return 'סמי עופר';
-    if (n.includes('בש') || n.includes('באר שבע')) return 'טרנר';
-    if (n.includes('תא') || n.includes('תל אביב') || n.includes('בני יהודה')) return 'בלומפילד';
-    if (n.includes('ביתר') || n.includes('ירושלים')) return 'טדי';
-    if (n.includes('פת') || n.includes('תקוה') || n.includes('תקווה')) return 'שלמה ביטוח';
-    if (n.includes('אשדוד')) return 'הי״א';
-    if (n.includes('סכנין')) return 'דוחא';
-    if (n.includes('נתניה') || n.includes('חדרה')) return 'אצטדיון נתניה';
-    if (n.includes('טבריה') || n.includes('ריינה') || n.includes('קש') || n.includes('שמונה')) return 'גרין';
-    return '';
-};
-
 const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdmin = false }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'deleted-logs' | 'radar'>('users');
   const [users, setUsers] = useState<any[]>([]);
