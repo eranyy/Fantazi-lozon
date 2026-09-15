@@ -198,7 +198,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       try {
           await setDoc(doc(db, 'leagueData', 'settings'), { globalUnlock: newUnlockState, globalLock: false }, { merge: true });
           showMessage(`✅ פתיחת מחזור (עוקף שעון) ${newUnlockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון מצב פתיחה', 'error'); }
       setLoading(false);
   };
 
@@ -209,7 +209,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
           await setDoc(doc(db, 'leagueData', 'settings'), { allowMidfielderAs5thFwd: nextVal }, { merge: true });
           setAllowMidfielderAs5thFwd(nextVal);
           showMessage(nextVal ? '⚡ חוק חלוץ 5 גמיש הופעל בהצלחה!' : '⚪ חוק חלוץ 5 גמיש כבוי כעת', 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
+      } catch { showMessage('❌ שגיאה בעדכון הגדרות', 'error'); }
       finally { setLoading(false); }
   };
 
@@ -222,7 +222,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
         triggeredBy: 'ערן'
       }, { merge: true });
       showMessage('⚡ רענון בלייב נשלח לכל המשתמשים בהצלחה!', 'success');
-    } catch (e) {
+    } catch {
       showMessage('❌ שגיאה בשליחת רענון בלייב', 'error');
     } finally {
       setLoading(false);
