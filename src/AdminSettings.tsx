@@ -192,16 +192,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'success') => { setToast({msg, type}); if (type !== 'info') setTimeout(() => setToast(null), 5000); };
 
-  const toggleGlobalLock = async () => {
-      setLoading(true);
-      const newLockState = !globalLock;
-      try {
-          await setDoc(doc(db, 'leagueData', 'settings'), { globalLock: newLockState, globalUnlock: false }, { merge: true });
-          showMessage(`✅ נעילת המחזור ${newLockState ? 'הופעלה' : 'בוטלה'}!`, 'success');
-      } catch (e) { showMessage('❌ שגיאה בעדכון מצב הנעילה', 'error'); }
-      setLoading(false);
-  };
-
   const toggleGlobalUnlock = async () => {
       setLoading(true);
       const newUnlockState = !globalUnlock;
