@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebaseConfig';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { Trophy, ScrollText, Medal, Flame, Crown, Star, ShieldAlert, TrendingUp, Info, X, LayoutTemplate, UserCheck, Image as ImageIcon, Sparkles, Target } from 'lucide-react';
@@ -49,6 +49,14 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
   const [topPlayers, setTopPlayers] = useState<any[]>([]); 
   const [allPlayersDB, setAllPlayersDB] = useState<any[]>([]); 
   const [kingsFilter, setKingsFilter] = useState<'points' | 'goals' | 'assists'>('points');
+
+  const playersMapByName = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const p of allPlayersDB) {
+      if (p.name) map.set(cleanStr(p.name), p);
+    }
+    return map;
+  }, [allPlayersDB]);
   const [predictorStandings, setPredictorStandings] = useState<any[]>([]);
   const [whatsappPolls, setWhatsappPolls] = useState<any[]>([]);
   const [selectedPredictorRound, setSelectedPredictorRound] = useState<number>(2);
@@ -471,7 +479,7 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
                   const isTop2 = idx === 1;
                   const isTop3 = idx === 2;
                   
-                  const matchedPlayer = allPlayersDB.find(dbP => cleanStr(dbP.name) === cleanStr(player.name));
+                  const matchedPlayer = playersMapByName.get(cleanStr(player.name));
                   const displayPosition = matchedPlayer ? matchedPlayer.position : 'N/A';
                   const isGK = ['GK', 'שוער'].includes(displayPosition);
 

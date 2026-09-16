@@ -723,12 +723,23 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         const roundSubsToCreate: any[] = []; let teamPointsSum = 0; let mode = 'starters';
         const endRowIdx = Math.min(teamRowIdx + 25, rows.length);
 
+        const squadNameMap = new Map<string, any>();
+        if (team?.squad && Array.isArray(team.squad)) {
+          for (const p of team.squad) {
+            if (p.name) squadNameMap.set(cleanStr(p.name), p);
+          }
+        }
+
         const findMatchOrCreate = (nameStr: string, posHint: string) => {
           if (!nameStr) return null; const cleanName = cleanStr(nameStr); if (cleanName.length < 2) return null;
-          let matchedPlayer = team.squad.find((p: any) => {
-             if (foundPlayerIds.has(p.id)) return false; const pNameClean = cleanStr(p.name);
-             return cleanName === pNameClean || cleanName.includes(pNameClean) || pNameClean.includes(cleanName);
-          });
+          let matchedPlayer = squadNameMap.get(cleanName);
+          if (matchedPlayer && foundPlayerIds.has(matchedPlayer.id)) matchedPlayer = null;
+          if (!matchedPlayer) {
+              matchedPlayer = team.squad?.find((p: any) => {
+                 if (foundPlayerIds.has(p.id)) return false; const pNameClean = cleanStr(p.name);
+                 return cleanName === pNameClean || cleanName.includes(pNameClean) || pNameClean.includes(cleanName);
+              });
+          }
           if (!matchedPlayer) {
               let pos = 'קשר';
               if (posHint.includes('שוער')) pos = 'שוער'; if (posHint.includes('הגנה') || posHint.includes('בלם')) pos = 'הגנה'; if (posHint.includes('חלוץ') || posHint.includes('התקפה')) pos = 'חלוץ';
