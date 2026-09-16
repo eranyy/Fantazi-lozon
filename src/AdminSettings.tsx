@@ -347,13 +347,19 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
     try {
         const batch = writeBatch(db);
         const emptyStats = { started: false, played60: false, notInSquad: false, won: false, goals: 0, assists: 0, cleanSheet: false, conceded: 0, yellow: false, secondYellow: false, red: false, penaltyWon: 0, penaltyMissed: 0, penaltySaved: 0, ownGoals: 0, assistOwnGoal: 0 };
-        
+        const resetArray = (arr?: any[]) => {
+            if (!arr || arr.length === 0) return [];
+            return arr.map((p: any) => ({ ...p, points: 0, stats: emptyStats }));
+        };
+
         users.forEach(u => {
             if (u.id !== 'admin' && u.id !== 'system') {
-                const resetArray = (arr: any[]) => (arr || []).map((p:any) => ({...p, points: 0, stats: emptyStats}));
                 batch.update(doc(db, 'users', u.id), {
-                    squad: resetArray(u.squad), players: resetArray(u.players), published_lineup: resetArray(u.published_lineup),
-                    published_subs_out: resetArray(u.published_subs_out), lineup: resetArray(u.lineup)
+                    squad: resetArray(u.squad),
+                    players: resetArray(u.players),
+                    published_lineup: resetArray(u.published_lineup),
+                    published_subs_out: resetArray(u.published_subs_out),
+                    lineup: resetArray(u.lineup)
                 });
             }
         });
