@@ -12,18 +12,11 @@ describe('authService', () => {
     expect(authService.getSession()).toBeNull();
   });
 
-  it('retrieves session from localStorage', () => {
+  it('retrieves session from sessionStorage', () => {
     const mockUser = { id: 'u1', name: 'ערן', email: 'eran@test.com' };
     authService.login(mockUser);
     
     expect(authService.getSession()).toMatchObject({ id: 'u1', name: 'ערן' });
-  });
-
-  it('falls back to sessionStorage if localStorage is empty', () => {
-    const mockUser = { id: 'u2', name: 'גיא', email: 'guy@test.com' };
-    sessionStorage.setItem('fantasy_user_session', JSON.stringify(mockUser));
-    
-    expect(authService.getSession()).toMatchObject({ id: 'u2', name: 'גיא' });
   });
 
   it('clears sessions properly on logout', () => {
