@@ -16,14 +16,24 @@ describe('authService', () => {
     const mockUser = { id: 'u1', name: 'ערן', email: 'eran@test.com' };
     authService.login(mockUser);
     
-    expect(authService.getSession()).toMatchObject({ id: 'u1', name: 'ערן' });
+    expect(authService.getSession()).toMatchObject({ id: 'u1', email: 'eran@test.com' });
   });
 
   it('falls back to sessionStorage if localStorage is empty', () => {
     const mockUser = { id: 'u2', name: 'גיא', email: 'guy@test.com' };
-    sessionStorage.setItem('fantasy_user_session', JSON.stringify(mockUser));
+    // The previous test manually set the session storage
+    sessionStorage.setItem('fantasy_user_session', JSON.stringify({ id: 'u2', email: 'guy@test.com' }));
     
-    expect(authService.getSession()).toMatchObject({ id: 'u2', name: 'גיא' });
+    expect(authService.getSession()).toMatchObject({ id: 'u2', email: 'guy@test.com' });
+  });
+
+  it('stores in sessionStorage if rememberMe is false', () => {
+    const mockUser = { id: 'u5', name: 'יוסי', email: 'yossi@test.com' };
+    authService.login(mockUser, false);
+
+    expect(localStorage.getItem('fantasy_user_session')).toBeNull();
+    expect(sessionStorage.getItem('fantasy_user_session')).toBeTruthy();
+    expect(authService.getSession()).toMatchObject({ id: 'u5', email: 'yossi@test.com' });
   });
 
   it('clears sessions properly on logout', () => {

@@ -297,12 +297,13 @@ const App: React.FC = () => {
 
                    // Always return the secure rehydrated object to ensure role and other details are from the server
                    return {
-                       ...userToRehydrate,
+                       id: userToRehydrate.id,
+                       email: userToRehydrate.email,
                        name: newName,
                        teamName: newTeamName,
                        role: newRole,
                        teamId: newTeamId
-                   };
+                   } as User;
                }
            }
 
