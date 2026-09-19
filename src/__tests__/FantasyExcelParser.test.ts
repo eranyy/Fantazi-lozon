@@ -28,6 +28,12 @@ describe('FantasyExcelParser', () => {
       expect(mapPosition('התקפה')).toBe('FWD');
     });
 
+    it('maps dual-role (midfielder-forward / קשר - חלוץ) positions correctly', () => {
+      expect(mapPosition('קשר - חלוץ')).toBe('MID');
+      expect(mapPosition('קשר/חלוץ')).toBe('MID');
+      expect(mapPosition('MID/FWD')).toBe('MID');
+    });
+
     it('defaults to DEF for empty, null or unrecognized position strings', () => {
       expect(mapPosition('')).toBe('DEF');
       expect(mapPosition(null as any)).toBe('DEF');

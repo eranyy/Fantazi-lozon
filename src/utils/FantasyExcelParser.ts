@@ -45,6 +45,7 @@ export const mapPosition = (pos: string): string => {
   if (!pos) return 'DEF';
   const p = pos.trim().toUpperCase();
   if (p.includes('שוער') || p === 'GK') return 'GK';
+  if (p.includes('/') || (p.includes('MID') && p.includes('FWD')) || (p.includes('חלוץ') && p.includes('קשר'))) return 'MID';
   if (p.includes('הגנה') || p.includes('בלם') || p.includes('מגן') || p === 'DEF') return 'DEF';
   if (p.includes('קישור') || p.includes('קשר') || p === 'MID') return 'MID';
   if (p.includes('התקפה') || p.includes('חלוץ') || p === 'FWD') return 'FWD';
