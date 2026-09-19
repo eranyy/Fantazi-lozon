@@ -17,6 +17,13 @@ import { getTeamColors } from '../utils/teamUtils';
 
 const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
 
+const getPlayerName = (p: any): string => {
+  if (!p) return '';
+  if (typeof p === 'string') return p.trim();
+  const val = p.name || p.player || p.playerName || p.label || p.playerIn || p.playerOut || p.title || p.id || '';
+  return typeof val === 'string' ? val.trim() : String(val).trim();
+};
+
 const getNormalizedTeamId = (nameOrId: string) => {
     const s = cleanStr(nameOrId);
     if (!s) return 'unknown';
@@ -492,11 +499,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const isSamePlayer = (a: any, b: any) => {
     if (!a || !b) return false;
     if (a.id && b.id && a.id === b.id) return true;
-    const cA = cleanStr(a.name);
-    const cB = cleanStr(b.name);
+    const aStr = getPlayerName(a);
+    const bStr = getPlayerName(b);
+    const cA = cleanStr(aStr);
+    const cB = cleanStr(bStr);
     if (!cA || !cB) return false;
-    const nA = normalizeHebrewName(a.name);
-    const nB = normalizeHebrewName(b.name);
+    const nA = normalizeHebrewName(aStr);
+    const nB = normalizeHebrewName(bStr);
     const nameMatch = cA === cB || cA.includes(cB) || cB.includes(cA) || nA === nB || nA.includes(nB) || nB.includes(nA);
     if (!nameMatch) return false;
 
@@ -536,11 +545,14 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const roundSubs = safeArray(team.transfers).filter((t: any) => isSubLog(t) && (!t.round || Number(t.round) === Number(selectedRound)));
     const sortedSubs = roundSubs.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     sortedSubs.forEach((sub: any) => {
-      const outIndex = currentLineup.findIndex(p => isSamePlayer(p, { name: sub.playerOut }));
-      let inPlayer = allPool.find((p: any) => isSamePlayer(p, { name: sub.playerIn }));
+      const subOutName = getPlayerName(sub.playerOut || sub.out || sub);
+      const subInName = getPlayerName(sub.playerIn || sub.in || sub);
+      const outIndex = currentLineup.findIndex(p => isSamePlayer(p, { name: subOutName }));
+      let inPlayer = allPool.find((p: any) => isSamePlayer(p, { name: subInName }));
       if (!inPlayer) {
         inPlayer = {
-          name: sub.playerIn,
+          name: subInName || 'שחקן',
+          player: subInName || 'שחקן',
           team: sub.playerInTeam || 'Unknown',
           position: sub.playerInPos || 'MID',
           points: 0
@@ -1098,8 +1110,8 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
             excelSyncRows.push({ syncId: `R${currentRound}_${hTeam.id}_${player.id}`, date: new Date().toISOString().split('T')[0], round: currentRound, fantasyTeam: TEAM_NAMES[hTeam.id] || hTeam.id, player: player.name, points: player.points || 0 });
           });
           const resetSquad = safeArray(hTeam.squad).map((p:any) => ({...p, points: 0, stats: emptyStats}));
-          const newHForm = [...safeArray(hTeam.form), hResult].slice(-5);
-          await updateDoc(doc(db, 'users', hTeam.id), { points: (hTeam.points || 0) + hPts, gf: (hTeam.gf || 0) + homeScore, ga: (hTeam.ga || 0) + awayScore, wins: (hTeam.wins || 0) + hW, draws: (hTeam.draws || 0) + hD, losses: (hTeam.losses || 0) + hL, played: (hTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newHForm });
+          const newHForm = [...safeArray(hTeam.form || hTeam.recentForm), hResult].slice(-5);
+          await updateDoc(doc(db, 'users', hTeam.id), { points: (hTeam.points || 0) + hPts, gf: (hTeam.gf || 0) + homeScore, ga: (hTeam.ga || 0) + awayScore, wins: (hTeam.wins || 0) + hW, draws: (hTeam.draws || 0) + hD, losses: (hTeam.losses || 0) + hL, played: (hTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newHForm, recentForm: newHForm });
         }
 
         if(aTeam) {
@@ -1108,8 +1120,8 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
             excelSyncRows.push({ syncId: `R${currentRound}_${aTeam.id}_${player.id}`, date: new Date().toISOString().split('T')[0], round: currentRound, fantasyTeam: TEAM_NAMES[aTeam.id] || aTeam.id, player: player.name, points: player.points || 0 });
           });
           const resetSquad = safeArray(aTeam.squad).map((p:any) => ({...p, points: 0, stats: emptyStats}));
-          const newAForm = [...safeArray(aTeam.form), aResult].slice(-5);
-          await updateDoc(doc(db, 'users', aTeam.id), { points: (aTeam.points || 0) + aPts, gf: (aTeam.gf || 0) + awayScore, ga: (aTeam.ga || 0) + homeScore, wins: (aTeam.wins || 0) + aW, draws: (aTeam.draws || 0) + aD, losses: (aTeam.losses || 0) + aL, played: (aTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newAForm });
+          const newAForm = [...safeArray(aTeam.form || aTeam.recentForm), aResult].slice(-5);
+          await updateDoc(doc(db, 'users', aTeam.id), { points: (aTeam.points || 0) + aPts, gf: (aTeam.gf || 0) + awayScore, ga: (aTeam.ga || 0) + homeScore, wins: (aTeam.wins || 0) + aW, draws: (aTeam.draws || 0) + aD, losses: (aTeam.losses || 0) + aL, played: (aTeam.played || 0) + 1, published_lineup: [], published_subs_out: resetSquad, lineup: [], squad: resetSquad, form: newAForm, recentForm: newAForm });
         }
       }
 
@@ -1229,7 +1241,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                       <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
                     </div>
                     <span className="text-[10px] font-bold text-slate-300 truncate max-w-[60px]">
-                      {u.name ? u.name.split(' ')[0] : 'אורח'}
+                      {u.name ? u.name.trim().split(/\s+/)[0] : 'אורח'}
                     </span>
                   </div>
                 ))
@@ -1623,9 +1635,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
                             return (
                               <div key={pos} className="flex justify-center flex-wrap gap-2 sm:gap-4 md:gap-8">
-                                {posPlayers.map((p: any) => {
-                                  const nameParts = p.name.split(' '); const lastName = nameParts[nameParts.length - 1];
-                                  const isSubIn = safeArray(expandedTeamObj?.transfers).some((t:any) => t && (t.type === 'HALFTIME_SUB' || t.type === 'HALFTIME') && (!t.round || Number(t.round) === Number(selectedRound)) && (t.status || '').toUpperCase() !== 'CANCELLED' && (t.playerIn === p.name || isSamePlayer({ name: t.playerIn }, p)));
+                                  {posPlayers.map((p: any) => {
+                                    const rawPName = getPlayerName(p);
+                                    const cleanPlayerName = (rawPName || '').trim();
+                                    const nameParts = cleanPlayerName.split(/\s+/);
+                                    let lastName = nameParts.length > 0 && nameParts[nameParts.length - 1] ? nameParts[nameParts.length - 1] : cleanPlayerName;
+                                    if (!lastName) lastName = p.position || 'שחקן';
+                                  const isSubIn = safeArray(expandedTeamObj?.transfers).some((t:any) => t && (t.type === 'HALFTIME_SUB' || t.type === 'HALFTIME') && (!t.round || Number(t.round) === Number(selectedRound)) && (t.status || '').toUpperCase() !== 'CANCELLED' && isSamePlayer({ name: t.playerIn || t.in }, p));
                                   const colors = getTeamColors(expandedTeamObj?.teamName || '', p.position === 'GK');
                                   const playerPoints = getPlayerPointsForRound(p, expandedTeamObj, selectedRound);
                                   const hasPlayed = (p.stats && Object.values(p.stats).some(v => v === true || (typeof v === 'number' && v > 0))) || (playerPoints !== 0);

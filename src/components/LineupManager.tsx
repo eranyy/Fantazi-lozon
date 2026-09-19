@@ -669,12 +669,15 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     const playerInName = subToCancel.playerIn;
 
     const allPlayers = [...lineup, ...bench];
-    const pOut = allPlayers.find(p => p.name === playerOutName);
-    const pIn = allPlayers.find(p => p.name === playerInName);
+    const pOut = allPlayers.find(p => isSamePlayer(p, { name: playerOutName }));
+    const pIn = allPlayers.find(p => isSamePlayer(p, { name: playerInName }));
+
+    let currentLineup = [...lineup];
+    let currentBench = [...bench];
 
     if (pOut && pIn) {
-        let currentLineup = [...lineup].filter(p => p.id !== pIn.id && p.id !== pOut.id);
-        let currentBench = [...bench].filter(p => p.id !== pIn.id && p.id !== pOut.id);
+        currentLineup = currentLineup.filter(p => !isSamePlayer(p, pIn) && !isSamePlayer(p, pOut));
+        currentBench = currentBench.filter(p => !isSamePlayer(p, pIn) && !isSamePlayer(p, pOut));
 
         const pOutRestored = { ...pOut, isStarting: true };
         const pInRestored = { ...pIn, isStarting: false };
@@ -685,31 +688,29 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
 
         setLineup(currentLineup);
         setBench(currentBench);
+    }
 
-        const updatedSquad = (myTeam.squad || []).map(p => {
-            if (p.id === pOut.id) return { ...p, isStarting: true };
-            if (p.id === pIn.id) return { ...p, isStarting: false };
-            return p;
+    const updatedSquad = (myTeam.squad || []).map(p => {
+        if (pOut && isSamePlayer(p, pOut)) return { ...p, isStarting: true };
+        if (pIn && isSamePlayer(p, pIn)) return { ...p, isStarting: false };
+        return p;
+    });
+
+    const updatedTransfers = transfersLog.map(t => t.id === subId ? { ...t, status: 'CANCELLED' } : t);
+    setTransfersLog(updatedTransfers);
+
+    try {
+        await updateDoc(doc(db, 'users', myTeam.id), {
+            transfers: updatedTransfers,
+            published_lineup: currentLineup,
+            published_subs_out: currentBench,
+            lineup: currentLineup,
+            squad: updatedSquad,
+            players: updatedSquad
         });
-
-        const updatedTransfers = transfersLog.map(t => t.id === subId ? { ...t, status: 'CANCELLED' } : t);
-        const cancelLog = createCancelLog(currentRound, playerInName, playerOutName);
-        updatedTransfers.push(cancelLog);
-
-        try {
-            await updateDoc(doc(db, 'users', myTeam.id), {
-                published_lineup: currentLineup,
-                published_subs_out: currentBench,
-                lineup: currentLineup,
-                squad: updatedSquad,
-                players: updatedSquad,
-                transfers: updatedTransfers
-            });
-            setTransfersLog(updatedTransfers);
-            showToast('החילוף בוטל בהצלחה והשחקן חזר למגרש!', 'success');
-        } catch (e) { showToast('שגיאה בביטול החילוף', 'error'); }
-    } else {
-        showToast('שגיאה: לא הצלחנו למצוא את השחקנים בסגל.', 'error');
+        showToast('❌ החילוף בוטל והשחקנים הוחזרו', 'info');
+    } catch (e) {
+        showToast('שגיאה בביטול החילוף', 'error');
     }
   };
 

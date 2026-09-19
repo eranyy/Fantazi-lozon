@@ -224,8 +224,9 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
           const ptsScore = (t.points / maxPts) * 45; 
           
           let formScore = 12.5;
-          if (t.recentForm && t.recentForm.length > 0) {
-              const last5 = t.recentForm.slice(-5);
+          const rawForm = (t.recentForm && t.recentForm.length > 0) ? t.recentForm : (t.form || []);
+          if (rawForm.length > 0) {
+              const last5 = rawForm.slice(-5);
               let fPts = 0;
               last5.forEach((res: string) => {
                   if (res === 'W') fPts += 5;
@@ -246,7 +247,8 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
           pScore = Math.max(1, Math.min(99, pScore)); 
       }
       
-      const formStr = t.recentForm ? t.recentForm.slice(-5) : [];
+      const rawForm = (t.recentForm && t.recentForm.length > 0) ? t.recentForm : (t.form || []);
+      const formStr = rawForm.slice(-5);
       return { ...t, powerScore: pScore, formStr };
   }).sort((a, b) => b.powerScore - a.powerScore);
 
@@ -809,7 +811,7 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
                   {sortedTable.map((t, i) => {
                     const gd = (t.gf || 0) - (t.ga || 0); const isTop1 = i === 0; const isTop2 = i === 1; const isTop3 = i === 2; const isRelegation = i >= sortedTable.length - 2; 
                     
-                    const rf = t.recentForm || [];
+                    const rf = (t.recentForm && t.recentForm.length > 0) ? t.recentForm : (t.form || []);
                     const isFire = rf.length >= 3 && rf.slice(-3).every((r: string) => r === 'W');
                     const isClown = rf.length >= 3 && rf.slice(-3).every((r: string) => r === 'L');
                     const isWall = minGa !== -1 && (t.ga || 0) === minGa && (t.played || 0) > 0;

@@ -229,27 +229,20 @@ const App: React.FC = () => {
         else setDoc(doc(db, "leagueData", "settings"), { currentRound: 1 });
       });
 
-      const init = async () => {
-        try {
-          const usersSnap = await getDocs(collection(db, "users"));
-          if (usersSnap.empty) {
-            const batch = writeBatch(db);
-            for (const team of MOCK_TEAMS) {
-              batch.set(doc(db, "users", team.id), team);
-            }
-            await batch.commit();
+      const unsubTeams = onSnapshot(collection(db, "users"), (snapshot) => {
+        if (snapshot.empty) {
+          const batch = writeBatch(db);
+          for (const team of MOCK_TEAMS) {
+            batch.set(doc(db, "users", team.id), team);
           }
-        } catch (err) {
-          console.error("Error initializing teams:", err);
+          batch.commit().catch(err => console.error("Error initializing mock teams:", err));
         }
+
+        const loadedTeams = snapshot.docs.map(d => ({ ...d.data(), id: (d.data() as any)?.id || d.id, docId: d.id }) as unknown as Team);
+        setTeams(loadedTeams);
+
         clearTimeout(fallbackTimer);
         setIsInitializing(false);
-      };
-      init();
-
-      const unsubTeams = onSnapshot(collection(db, "users"), (snapshot) => {
-        const loadedTeams = snapshot.docs.map(d => d.data() as Team);
-        setTeams(loadedTeams);
 
         const sessionUser = authService.getSession();
 
