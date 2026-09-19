@@ -229,25 +229,27 @@ const App: React.FC = () => {
         else setDoc(doc(db, "leagueData", "settings"), { currentRound: 1 });
       });
 
-      const init = async () => {
-        try {
-          const usersSnap = await getDocs(collection(db, "users"));
-          if (usersSnap.empty) {
-            const batch = writeBatch(db);
-            for (const team of MOCK_TEAMS) {
-              batch.set(doc(db, "users", team.id), team);
-            }
-            await batch.commit();
-          }
-        } catch (err) {
-          console.error("Error initializing teams:", err);
-        }
-        clearTimeout(fallbackTimer);
-        setIsInitializing(false);
-      };
-      init();
-
+      let isFirstSnapshot = true;
       const unsubTeams = onSnapshot(collection(db, "users"), (snapshot) => {
+        if (isFirstSnapshot) {
+          isFirstSnapshot = false;
+          (async () => {
+            try {
+              if (snapshot.empty) {
+                const batch = writeBatch(db);
+                for (const team of MOCK_TEAMS) {
+                  batch.set(doc(db, "users", team.id), team);
+                }
+                await batch.commit();
+              }
+            } catch (err) {
+              console.error("Error initializing teams:", err);
+            }
+            clearTimeout(fallbackTimer);
+            setIsInitializing(false);
+          })();
+        }
+
         const loadedTeams = snapshot.docs.map(d => d.data() as Team);
         setTeams(loadedTeams);
 
