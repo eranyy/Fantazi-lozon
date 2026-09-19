@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Trophy, Flame, UserCheck, ShieldAlert, Star, Filter } from 'lucide-react';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { buildDraftedPlayersIndex } from '../utils/playerUtils';
 
 interface FreeAgentPlayer {
   id: string;
@@ -117,39 +118,18 @@ export const FreeAgentsTab: React.FC<{ users?: any[]; isAdmin?: boolean }> = ({ 
     return `${day}/${month}/${year} בשעה ${hours}:${mins}`;
   };
 
+  const draftedIndex = useMemo(() => buildDraftedPlayersIndex(users), [users]);
+
   useEffect(() => {
     // 1. Listen to real_league_players_scoring from Firestore
     const unsub = onSnapshot(collection(db, 'real_league_players_scoring'), snap => {
       const list: FreeAgentPlayer[] = [];
 
-      // Collect all drafted player names/IDs across all fantasy managers
-      const draftedSet = new Map<string, { team: string; manager: string }>();
-      users.forEach(u => {
-        const squad = u.published_lineup || u.lineup || u.squad || [];
-        if (Array.isArray(squad)) {
-          squad.forEach((pl: any) => {
-            const normName = String(pl.name || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
-            draftedSet.set(normName, {
-              team: u.teamName || u.name || 'קבוצת פנטזי',
-              manager: u.manager || u.assistantName || ''
-            });
-          });
-        }
-      });
-
       snap.docs.forEach(docSnap => {
         const data = docSnap.data();
         const normName = String(data.name || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
         
-        let draftInfo = draftedSet.get(normName);
-        if (!draftInfo) {
-          for (const [k, v] of draftedSet.entries()) {
-            if (k.length >= 3 && (normName.includes(k) || k.includes(normName))) {
-              draftInfo = v;
-              break;
-            }
-          }
-        }
+        const draftInfo = draftedIndex.lookup(normName);
 
         const isDrafted = Boolean(data.isDrafted || draftInfo);
         const ownerTeam = data.ownerTeam || draftInfo?.team;
