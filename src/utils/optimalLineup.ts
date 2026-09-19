@@ -75,16 +75,18 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   mids.sort(sortByPts);
   fwds.sort(sortByPts);
 
+  const createFallbackResult = (): OptimalLineupResult => ({
+    optimalLineup: squad.slice(0, 11),
+    optimalBench: squad.slice(11),
+    optimalFormation: '4-4-2',
+    optimalPoints: actualPoints,
+    actualPoints,
+    potentialGain: 0
+  });
+
   const bestGK = gks[0] || null;
   if (!bestGK) {
-    return {
-      optimalLineup: squad.slice(0, 11),
-      optimalBench: squad.slice(11),
-      optimalFormation: '4-4-2',
-      optimalPoints: actualPoints,
-      actualPoints,
-      potentialGain: 0
-    };
+    return createFallbackResult();
   }
 
   // Precompute prefix sums for O(1) totalPoints lookup per formation
@@ -138,14 +140,7 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   }
 
   if (!bestResult) {
-    return {
-      optimalLineup: squad.slice(0, 11),
-      optimalBench: squad.slice(11),
-      optimalFormation: '4-4-2',
-      optimalPoints: actualPoints,
-      actualPoints,
-      potentialGain: 0
-    };
+    return createFallbackResult();
   }
 
   return {
