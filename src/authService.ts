@@ -17,26 +17,24 @@ export const authService = {
     return null;
   },
   login: (user: any, _rememberMe: boolean = true) => {
-    // Save full user data so mobile rehydrates instantly without password prompt
+    // Save only non-sensitive identifiers so mobile rehydrates safely
     const sessionData = {
       id: user.id,
-      email: user.email,
-      name: user.name,
-      teamName: user.teamName,
-      role: user.role,
-      teamId: user.teamId || user.id
+      email: user.email
     };
 
-    try {
-      localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
-    } catch (e) {
-      /* ignore storage quota/security error */
-    }
-
-    try {
-      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
-    } catch (e) {
-      /* ignore storage quota/security error */
+    if (_rememberMe) {
+      try {
+        localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+      } catch (e) {
+        /* ignore storage quota/security error */
+      }
+    } else {
+      try {
+        sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+      } catch (e) {
+        /* ignore storage quota/security error */
+      }
     }
 
     try {
