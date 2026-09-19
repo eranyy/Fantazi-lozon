@@ -652,7 +652,7 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
                 
                 <div className="flex gap-3 md:gap-4">
                   <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-black text-lg md:text-xl text-white shadow-inner shrink-0 border border-white/5 ${post.type === 'article' ? 'bg-gradient-to-tr from-purple-600 to-red-600' : 'bg-zinc-800'}`}>
-                    {post.type === 'article' ? '📰' : post.authorName.charAt(0)}
+                    {post.type === 'article' ? '📰' : (post.authorName || '?').charAt(0)}
                   </div>
                   
                   <div className="flex-1 min-w-0">
