@@ -13,6 +13,11 @@ db.settings({ ignoreUndefinedProperties: true });
 
 setGlobalOptions({ region: 'us-west1' });
 
+// module-level caching for player ownership fallback lookup
+let cachedPlayerOwnership: { [playerNameLower: string]: { player: any, teamName: string, manager: string } } | null = null;
+let lastOwnershipCacheTime = 0;
+const OWNERSHIP_CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+
 // region --- Copied Types from src/types.ts ---
 enum UserRole {
     USER = 'USER',
@@ -1665,13 +1670,28 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
                 return `⚽ *בנסון* (מכבי חיפה) משחק במציאות במכבי חיפה, ובפנטזי לוזון הוא שייך לקבוצת *חולוניה* (מנג'ר: ארז)! 🛡️`;
             }
             try {
-                const usersSnap = await db.collection('users').get();
-                for (const d of usersSnap.docs) {
-                    const u = d.data();
-                    const squad = u.squad || [];
-                    const found = squad.find((pl: any) => pl.name && p.includes(String(pl.name).toLowerCase()));
-                    if (found) {
-                        return `⚽ *${found.name}* (${found.realTeam || found.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${u.teamName || u.name}* (מנג'ר: ${u.manager || ''})! 🏆`;
+                const now = Date.now();
+                if (!cachedPlayerOwnership || (now - lastOwnershipCacheTime > OWNERSHIP_CACHE_TTL)) {
+                    const usersSnap = await db.collection('users').get();
+                    const newCache: { [playerNameLower: string]: { player: any, teamName: string, manager: string } } = {};
+                    for (const d of usersSnap.docs) {
+                        const u = d.data();
+                        const squad = u.squad || [];
+                        const tName = u.teamName || u.name;
+                        const mgr = u.manager || '';
+                        for (const pl of squad) {
+                            if (pl.name) {
+                                newCache[String(pl.name).toLowerCase()] = { player: pl, teamName: tName, manager: mgr };
+                            }
+                        }
+                    }
+                    cachedPlayerOwnership = newCache;
+                    lastOwnershipCacheTime = now;
+                }
+
+                for (const [plNameLower, data] of Object.entries(cachedPlayerOwnership)) {
+                    if (p.includes(plNameLower)) {
+                        return `⚽ *${data.player.name}* (${data.player.realTeam || data.player.team || ''}) משחק במציאות בליגת העל, ובפנטזי לוזון הוא שייך לקבוצת *${data.teamName}* (מנג'ר: ${data.manager})! 🏆`;
                     }
                 }
             } catch (uErr) {
