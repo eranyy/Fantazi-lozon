@@ -41,7 +41,7 @@ const cleanTeamName = (teamName: string): string => {
   return cleaned;
 };
 
-const mapPosition = (pos: string): string => {
+export const mapPosition = (pos: string): string => {
   if (!pos) return 'DEF';
   const p = pos.trim().toUpperCase();
   if (p.includes('שוער') || p === 'GK') return 'GK';

@@ -1,7 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { parseFantasyExcel } from '../utils/FantasyExcelParser';
+import { parseFantasyExcel, mapPosition } from '../utils/FantasyExcelParser';
 
 describe('FantasyExcelParser', () => {
+  describe('mapPosition', () => {
+    it.each([
+      ['שוער', 'GK'],
+      [' GK ', 'GK'],
+      ['gk', 'GK'],
+      ['הגנה', 'DEF'],
+      ['בלם', 'DEF'],
+      ['מגן', 'DEF'],
+      ['DEF', 'DEF'],
+      [' def ', 'DEF'],
+      ['קישור', 'MID'],
+      ['קשר', 'MID'],
+      ['MID', 'MID'],
+      [' mid ', 'MID'],
+      ['התקפה', 'FWD'],
+      ['חלוץ', 'FWD'],
+      ['FWD', 'FWD'],
+      [' fwd ', 'FWD'],
+      ['', 'DEF'],
+      ['unknown', 'DEF'],
+      [null as unknown as string, 'DEF'],
+      [undefined as unknown as string, 'DEF'],
+    ])('maps "%s" to "%s"', (input, expected) => {
+      expect(mapPosition(input)).toBe(expected);
+    });
+  });
+
   it('normalizes various team names correctly', () => {
     const csvContent = `עמדה,שם שחקן,קבוצה במציאות,קבוצת פנטזי
 חלוץ,ערן זהבי,ביתר,חמסילי
