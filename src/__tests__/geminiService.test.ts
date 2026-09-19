@@ -237,6 +237,16 @@ describe('geminiService', () => {
       expect(res.confidenceScore).toBe(92);
     });
 
+    it('should throw error when getTacticalAdvice fails', async () => {
+      const apiError = new Error('API failure');
+      mockGenerateContent.mockRejectedValue(apiError);
+
+      const squad = [{ name: 'Player 1', position: 'FWD', points: 10 }];
+      const promise = getTacticalAdvice(squad, 'Team B');
+
+      await expect(promise).rejects.toThrow('API failure');
+    });
+
     it('should analyze draft JSON successfully', async () => {
       mockGenerateContent.mockResolvedValue({
         text: JSON.stringify({
