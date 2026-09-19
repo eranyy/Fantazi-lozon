@@ -46,6 +46,7 @@ const https_1 = require("firebase-functions/v2/https");
 const v2_1 = require("firebase-functions/v2");
 const axios_1 = __importDefault(require("axios"));
 const cheerio = __importStar(require("cheerio"));
+const playerUtils_1 = require("./utils/playerUtils");
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true });
@@ -3056,37 +3057,21 @@ exports.updateLivePlayerPoints = (0, https_1.onCall)({ region: 'us-west1' }, asy
             throw new https_1.HttpsError('not-found', `Team doc not found for teamId: ${teamId}`);
         }
         const freshTeam = teamSnap.data() || {};
-        const cleanStr = (s) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
-        const normalizeHebrew = (s) => cleanStr(s).replace(/א+/g, 'א').replace(/ו+/g, 'ו').replace(/י+/g, 'י');
-        const isSameP = (a, b) => {
-            if (!a || !b)
-                return false;
-            if (a.id && b.id && a.id === b.id)
-                return true;
-            const cA = cleanStr(a.name);
-            const cB = cleanStr(b.name);
-            if (!cA || !cB)
-                return false;
-            const nA = normalizeHebrew(a.name);
-            const nB = normalizeHebrew(b.name);
-            return cA === cB || cA.includes(cB) || cB.includes(cA) || nA === nB || nA.includes(nB) || nB.includes(nA);
-        };
-        const updatePlayerInList = (list) => safeArray(list).map((p) => isSameP(p, player) ? { ...p, points: finalPoints, stats: cleanStats } : p);
-        let updatedLineup = updatePlayerInList(freshTeam.published_lineup);
-        let updatedSubsOut = updatePlayerInList(freshTeam.published_subs_out);
-        let updatedSquad = updatePlayerInList(freshTeam.squad);
-        const foundInLineup = updatedLineup.some((p) => isSameP(p, player));
-        const foundInSubsOut = updatedSubsOut.some((p) => isSameP(p, player));
+        let updatedLineup = (0, playerUtils_1.updatePlayerInList)(freshTeam.published_lineup, player, finalPoints, cleanStats);
+        let updatedSubsOut = (0, playerUtils_1.updatePlayerInList)(freshTeam.published_subs_out, player, finalPoints, cleanStats);
+        let updatedSquad = (0, playerUtils_1.updatePlayerInList)(freshTeam.squad, player, finalPoints, cleanStats);
+        const foundInLineup = updatedLineup.some((p) => (0, playerUtils_1.isSamePlayer)(p, player));
+        const foundInSubsOut = updatedSubsOut.some((p) => (0, playerUtils_1.isSamePlayer)(p, player));
         if (!foundInLineup && !foundInSubsOut) {
             updatedSubsOut.push({ ...player, points: finalPoints, stats: cleanStats });
         }
         const selectedRound = round || 1;
         const currentLineupsByRound = freshTeam.lineupsByRound || {};
         const currentRData = currentLineupsByRound[selectedRound] || {};
-        let updatedRLineup = updatePlayerInList(currentRData.lineup || freshTeam.published_lineup || []);
-        let updatedRSubsOut = updatePlayerInList(currentRData.subsOut || freshTeam.published_subs_out || []);
-        const rFoundInLineup = updatedRLineup.some((p) => isSameP(p, player));
-        const rFoundInSubsOut = updatedRSubsOut.some((p) => isSameP(p, player));
+        let updatedRLineup = (0, playerUtils_1.updatePlayerInList)(currentRData.lineup || freshTeam.published_lineup || [], player, finalPoints, cleanStats);
+        let updatedRSubsOut = (0, playerUtils_1.updatePlayerInList)(currentRData.subsOut || freshTeam.published_subs_out || [], player, finalPoints, cleanStats);
+        const rFoundInLineup = updatedRLineup.some((p) => (0, playerUtils_1.isSamePlayer)(p, player));
+        const rFoundInSubsOut = updatedRSubsOut.some((p) => (0, playerUtils_1.isSamePlayer)(p, player));
         if (!rFoundInLineup && !rFoundInSubsOut) {
             updatedRSubsOut.push({ ...player, points: finalPoints, stats: cleanStats });
         }
