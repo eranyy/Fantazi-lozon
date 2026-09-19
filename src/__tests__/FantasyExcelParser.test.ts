@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFantasyExcel } from '../utils/FantasyExcelParser';
+import { parseFantasyExcel, cleanTeamName } from '../utils/FantasyExcelParser';
 
 describe('FantasyExcelParser', () => {
   it('normalizes various team names correctly', () => {
@@ -55,5 +55,39 @@ describe('FantasyExcelParser', () => {
     const parsed = parseFantasyExcel(csvContent);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].name).toBe('ערן זהבי');
+  });
+});
+
+describe('cleanTeamName', () => {
+  it('returns "לא ידוע" for falsy or empty strings', () => {
+    expect(cleanTeamName('')).toBe('לא ידוע');
+    expect(cleanTeamName(null as unknown as string)).toBe('לא ידוע');
+    expect(cleanTeamName(undefined as unknown as string)).toBe('לא ידוע');
+  });
+
+  it('removes quotes, apostrophes, and trims whitespace', () => {
+    expect(cleanTeamName('  "קבוצה"  ')).toBe('קבוצה');
+    expect(cleanTeamName("'קבוצה'")).toBe('קבוצה');
+    expect(cleanTeamName('קבו״צה')).toBe('קבוצה');
+    expect(cleanTeamName('קבו׳צה')).toBe('קבוצה');
+  });
+
+  it('resolves team aliases correctly', () => {
+    expect(cleanTeamName('הפ חיפה')).toBe('הפועל חיפה');
+    expect(cleanTeamName('מכבי ת"א')).toBe('מכבי תל אביב');
+    expect(cleanTeamName('ב"ש')).toBe('הפועל באר שבע');
+    expect(cleanTeamName('קש')).toBe('עירוני קרית שמונה');
+  });
+
+  it('handles "ביתר" variants and returns "בית"ר ירושלים"', () => {
+    expect(cleanTeamName('ביתר')).toBe('בית"ר ירושלים');
+    expect(cleanTeamName('בית״ר')).toBe('בית"ר ירושלים');
+    expect(cleanTeamName('בית"ר')).toBe('בית"ר ירושלים');
+    expect(cleanTeamName('משהו עם ביתר בתוכו')).toBe('בית"ר ירושלים');
+  });
+
+  it('returns the cleaned string if no alias or special match is found', () => {
+    expect(cleanTeamName('  מכבי חיפה  ')).toBe('מכבי חיפה');
+    expect(cleanTeamName('מ.ס אשדוד')).toBe('מ.ס אשדוד');
   });
 });
