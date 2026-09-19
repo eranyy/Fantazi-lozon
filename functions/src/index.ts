@@ -3500,27 +3500,31 @@ export const updateLivePlayerPoints = onCall({ region: 'us-west1' }, async (requ
             isSameP(p, player) ? { ...p, points: finalPoints, stats: cleanStats } : p
         );
 
-        let updatedLineup = updatePlayerInList(freshTeam.published_lineup);
-        let updatedSubsOut = updatePlayerInList(freshTeam.published_subs_out);
-        let updatedSquad = updatePlayerInList(freshTeam.squad);
+        const updateLineupAndSubs = (rawLineup: any[], rawSubsOut: any[]) => {
+            const lineup = updatePlayerInList(rawLineup);
+            const subsOut = updatePlayerInList(rawSubsOut);
+            const foundInLineup = lineup.some((p: any) => isSameP(p, player));
+            const foundInSubsOut = subsOut.some((p: any) => isSameP(p, player));
+            if (!foundInLineup && !foundInSubsOut) {
+                subsOut.push({ ...player, points: finalPoints, stats: cleanStats });
+            }
+            return { lineup, subsOut };
+        };
 
-        const foundInLineup = updatedLineup.some((p: any) => isSameP(p, player));
-        const foundInSubsOut = updatedSubsOut.some((p: any) => isSameP(p, player));
-        if (!foundInLineup && !foundInSubsOut) {
-            updatedSubsOut.push({ ...player, points: finalPoints, stats: cleanStats });
-        }
+        const { lineup: updatedLineup, subsOut: updatedSubsOut } = updateLineupAndSubs(
+            freshTeam.published_lineup,
+            freshTeam.published_subs_out
+        );
+        let updatedSquad = updatePlayerInList(freshTeam.squad);
 
         const selectedRound = round || 1;
         const currentLineupsByRound = freshTeam.lineupsByRound || {};
         const currentRData = currentLineupsByRound[selectedRound] || {};
-        let updatedRLineup = updatePlayerInList(currentRData.lineup || freshTeam.published_lineup || []);
-        let updatedRSubsOut = updatePlayerInList(currentRData.subsOut || freshTeam.published_subs_out || []);
 
-        const rFoundInLineup = updatedRLineup.some((p: any) => isSameP(p, player));
-        const rFoundInSubsOut = updatedRSubsOut.some((p: any) => isSameP(p, player));
-        if (!rFoundInLineup && !rFoundInSubsOut) {
-            updatedRSubsOut.push({ ...player, points: finalPoints, stats: cleanStats });
-        }
+        const { lineup: updatedRLineup, subsOut: updatedRSubsOut } = updateLineupAndSubs(
+            currentRData.lineup || freshTeam.published_lineup || [],
+            currentRData.subsOut || freshTeam.published_subs_out || []
+        );
 
         const updatedLineupsByRound = {
             ...currentLineupsByRound,
