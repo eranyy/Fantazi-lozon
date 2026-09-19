@@ -1,6 +1,6 @@
 const sanitizeUser = (user: any) => {
   if (!user || typeof user !== 'object') return null;
-  const { password, apiKey, pass, secret, token, geminiKey, ...safeUser } = user;
+  const { password, apiKey, pass, secret, token, geminiKey, credentials, authKey, privateKey, accessToken, ...safeUser } = user;
   return safeUser;
 };
 
