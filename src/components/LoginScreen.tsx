@@ -47,7 +47,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     console.log(`[Processing Auth User] Email: ${inputEmail}, UID: ${user.uid}`);
     let foundUser: any = null;
 
-    // 1. Direct document lookup by Firebase Auth UID first (O(1) fast path)
     if (user?.uid) {
       try {
         const userDocRef = doc(db, 'users', user.uid);
@@ -72,7 +71,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       }
     }
 
-    // 2. Targeted Firestore queries by email if not found by UID (parallel with limit(1))
     if (!foundUser && inputEmail) {
       try {
         const qMain = query(collection(db, 'users'), where('email', '==', inputEmail), limit(1));
@@ -93,7 +91,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       }
     }
 
-    // 3. Fallback: Full collection scan if user was not found by UID or direct query
     if (!foundUser) {
       const usersSnap = await getDocs(collection(db, 'users'));
       usersSnap.forEach(docSnap => {
@@ -153,7 +150,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     const inputPassword = password.trim();
 
     try {
-      // 1. Try Firebase Authentication
       const userCredential = await signInWithEmailAndPassword(auth, inputEmail, inputPassword);
       await processAuthenticatedUser(userCredential.user, inputEmail, 'email');
     } catch (err: any) {
