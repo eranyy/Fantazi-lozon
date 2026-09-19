@@ -2,10 +2,10 @@ export const MOCK_TEAMS: any[] = [
   {
     id: 'harale',
     teamName: 'חראלה',
-    manager: 'ערן',
-    email: 'eranyy@gmail.com',
-    role: 'SUPER_ADMIN',
-    points: 35,
+    manager: 'גיא',
+    email: 'guya32@gmail.com',
+    role: 'ARENA_MANAGER',
+    points: 6,
     squad: [],
     lineup: []
   }
