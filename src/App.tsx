@@ -225,8 +225,9 @@ const App: React.FC = () => {
     const fallbackTimer = setTimeout(() => setIsInitializing(false), 2000);
     try {
       const unsubSettings = onSnapshot(doc(db, "leagueData", "settings"), (docSnap) => {
-        if(docSnap.exists() && docSnap.data().currentRound) setCurrentRound(docSnap.data().currentRound);
-        else setDoc(doc(db, "leagueData", "settings"), { currentRound: 1 });
+        if (docSnap.exists() && docSnap.data()?.currentRound) {
+          setCurrentRound(docSnap.data().currentRound);
+        }
       });
 
       const unsubTeams = onSnapshot(collection(db, "users"), (snapshot) => {
