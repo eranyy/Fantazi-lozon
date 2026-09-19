@@ -7,7 +7,7 @@ async function fixOwusuAndCortezData() {
   console.log('--- FIXING OWUSU & CORTEZ FIRESTORE DATA ---');
 
   // 1. Fix Tampa's Owusu (הפועל ת"א) in Round 1: set points to 0
-  const tampaRef = db.collection('users').doc('tampa');
+  const tampaRef = db.doc('users/hE5K1F6jP7Wv3e7L1mZ0');
   const tampaSnap = await tampaRef.get();
   if (tampaSnap.exists) {
     const tData = tampaSnap.data();
@@ -20,12 +20,9 @@ async function fixOwusuAndCortezData() {
         }
         return p;
       });
-      await tampaRef.set({
-        lineupsByRound: {
-          ...lByR,
-          1: { ...lByR[1], lineup: fixedR1Lineup }
-        }
-      }, { merge: true });
+      await tampaRef.update({
+        'lineupsByRound.1.lineup': fixedR1Lineup
+      });
       console.log('✅ Tampa Round 1 Owusu fixed!');
     }
   }
