@@ -7,83 +7,11 @@ import { httpsCallable } from 'firebase/functions';
 import { UserRole } from '../types';
 import html2canvas from 'html2canvas';
 
-interface LiveArenaProps { teams?: any[]; currentRound?: number; isModerator?: boolean; loggedInUser?: any; isAdmin?: boolean; }
-
-const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
-
-const POS_ORDER: Record<string, number> = { 'GK': 1, 'שוער': 1, 'DEF': 2, 'הגנה': 2, 'בלם': 2, 'מגן': 2, 'MID': 3, 'קשר': 3, 'קישור': 3, 'FWD': 4, 'חלוץ': 4, 'התקפה': 4 };
-
 import { getTeamColors } from '../utils/teamUtils';
-
-const cleanStr = (s?: string | null) => String(s || '').toLowerCase().replace(/['"״׳`\-\s()]/g, '');
-
-const getNormalizedTeamId = (nameOrId: string) => {
-    const s = cleanStr(nameOrId);
-    if (!s) return 'unknown';
-    if (s.includes('חרא') || s.includes('וסילי') || s === 'harale') return 'harale';
-    if (s.includes('חולו') || s.includes('holonia')) return 'holonia';
-    if (s.includes('תומ') || s.includes('tumali')) return 'tumali';
-    if (s.includes('טמפ') || s.includes('tampa')) return 'tampa';
-    if (s.includes('חמס') || s.includes('hamsili')) return 'hamsili';
-    if (s.includes('פיצ') || s.includes('pichichi')) return 'pichichi';
-    return s; 
-};
-
 import { parseCsvRow } from '../utils/csvUtils';
+import { TEAM_NAMES, POS_ORDER, cleanStr, getNormalizedTeamId, isPosMatch, getFormation, safeArray, isSubLog, LiveArenaProps } from './LiveArena/utils';
 
-const Jersey = ({ primary, secondary, textColor, text }: { primary: string, secondary: string, textColor: string, text: string }) => {
-  const gradId = `grad-arena-${primary.replace('#', '')}-${secondary.replace('#', '')}`;
-  return (
-    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_8px_8px_rgba(0,0,0,0.7)]">
-      <defs>
-        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={primary} />
-          <stop offset="100%" stopColor={secondary} />
-        </linearGradient>
-      </defs>
-      <path d="M 35 10 C 35 25, 65 25, 65 10 L 90 20 L 95 45 L 75 50 L 75 95 C 75 98, 25 98, 25 95 L 25 50 L 5 45 L 10 20 Z" fill={`url(#${gradId})`} stroke="rgba(255,255,255,0.4)" strokeWidth="3" />
-      <text x="50" y="62" fontSize="26" fontFamily="system-ui, sans-serif" fontWeight="900" fill={textColor} textAnchor="middle" dominantBaseline="middle" style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.5)' }}>{text}</text>
-    </svg>
-  );
-};
-
-const isPosMatch = (pPos: string, category: string) => {
-  if (!pPos) return false;
-  if (category === 'GK') return ['GK', 'שוער'].includes(pPos);
-  if (category === 'DEF') return ['DEF', 'הגנה', 'בלם', 'מגן'].includes(pPos);
-  if (category === 'MID') return ['MID', 'קשר', 'קישור'].includes(pPos);
-  if (category === 'FWD') return ['FWD', 'חלוץ', 'התקפה'].includes(pPos);
-  return false;
-};
-
-const getFormation = (lineup: any[]) => {
-    if (!lineup || lineup.length !== 11) return '';
-    const def = lineup.filter(p => ['DEF', 'הגנה', 'בלם', 'מגן'].includes(p.position)).length;
-    const mid = lineup.filter(p => ['MID', 'קשר', 'קישור'].includes(p.position)).length;
-    const fwd = lineup.filter(p => ['FWD', 'חלוץ', 'התקפה'].includes(p.position)).length;
-    return `${def}-${mid}-${fwd}`;
-};
-
-const safeArray = (val: any): any[] => {
-  if (!val) return [];
-  if (Array.isArray(val)) return val;
-  if (typeof val === 'object') {
-    if (Array.isArray(val.Ku)) return val.Ku;
-    for (const key of Object.keys(val)) {
-      if (Array.isArray(val[key])) return val[key];
-    }
-    const vals = Object.values(val).filter(x => x && typeof x === 'object');
-    if (vals.length > 0) return vals;
-  }
-  return [];
-};
-
-const isSubLog = (t: any) => {
-  if (!t || typeof t !== 'object') return false;
-  const type = (t.type || '').toUpperCase();
-  if (type === 'CANCELLED_SUB' || (t.status || '').toUpperCase() === 'CANCELLED') return false;
-  return type === 'HALFTIME_SUB' || type === 'HALFTIME' || type === 'ADMIN_MANUAL_SUB' || type === 'MANUAL_SUB' || (type.includes('SUB') && !type.includes('VAR') && !type.includes('REGULAR'));
-};
+import { Jersey } from './LiveArena/Jersey';
 
 const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isModerator, loggedInUser, isAdmin }) => {
   
