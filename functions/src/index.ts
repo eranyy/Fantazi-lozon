@@ -3313,6 +3313,9 @@ export const checkMatchDeadlinesAndNotify = onSchedule({ region: 'us-west1', sch
             if (!logDoc.exists) {
                 console.log(`[checkMatchDeadlinesAndNotify] Checking user lineups and sending 2h deadline push for round ${currentRound}...`);
                 const usersSnap = await db.collection('users').get();
+
+                const pushPromises: Promise<any>[] = [];
+
                 for (const uDoc of usersSnap.docs) {
                     if (uDoc.id === 'admin' || uDoc.id === 'system') continue;
                     const uData = uDoc.data();
@@ -3320,19 +3323,26 @@ export const checkMatchDeadlinesAndNotify = onSchedule({ region: 'us-west1', sch
                     const startingCount = Array.isArray(lineup) ? lineup.filter((p: any) => p.isStarting).length : 0;
 
                     if (startingCount < 11) {
-                        await sendPushNotificationHelper(
+                        pushPromises.push(sendPushNotificationHelper(
                             `⚠️ הרכב חסר לפני שריקת הפתיחה!`,
                             `שים לב! חסר לך שחקן בהרכב הפותח או שיש לך שחקן שלא משחק השבוע. כנס לעדכן!`,
                             uDoc.id
-                        );
+                        ));
                     } else {
-                        await sendPushNotificationHelper(
+                        pushPromises.push(sendPushNotificationHelper(
                             `🚨 שעתיים בלבד לסגירת החלון!`,
                             `שעתיים בלבד לסגירת החלון! כנס לנעול את 11 השחקנים שלך לפני שהמשחק הראשון יוצא לדרך.`,
                             uDoc.id
-                        );
+                        ));
                     }
                 }
+
+                // Execute promises concurrently in batches of 100 to avoid rate limits/memory exhaustion
+                const chunkSize = 100;
+                for (let i = 0; i < pushPromises.length; i += chunkSize) {
+                    await Promise.all(pushPromises.slice(i, i + chunkSize));
+                }
+
                 await logRef.set({ sentAt: new Date().toISOString() });
             }
         }
