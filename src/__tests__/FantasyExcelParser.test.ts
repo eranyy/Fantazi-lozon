@@ -1,7 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { parseFantasyExcel, mapPosition } from '../utils/FantasyExcelParser';
+import { parseFantasyExcel, mapPosition, cleanTeamName } from '../utils/FantasyExcelParser';
 
 describe('FantasyExcelParser', () => {
+  describe('cleanTeamName', () => {
+    it('returns "לא ידוע" for empty or null inputs', () => {
+      expect(cleanTeamName('')).toBe('לא ידוע');
+      expect(cleanTeamName(null as any)).toBe('לא ידוע');
+    });
+
+    it('maps team aliases correctly', () => {
+      expect(cleanTeamName('הפ חיפה')).toBe('הפועל חיפה');
+      expect(cleanTeamName('הפ תא')).toBe('הפועל תל אביב');
+      expect(cleanTeamName('מכבי ת"א')).toBe('מכבי תל אביב');
+      expect(cleanTeamName('בש')).toBe('הפועל באר שבע');
+      expect(cleanTeamName('הפועל ב"ש')).toBe('הפועל באר שבע');
+      expect(cleanTeamName('הפ פת')).toBe('הפועל פתח תקווה');
+      expect(cleanTeamName('ק"ש')).toBe('עירוני קרית שמונה');
+    });
+
+    it('handles Beitar Jerusalem variations', () => {
+      expect(cleanTeamName('ביתר')).toBe('בית"ר ירושלים');
+      expect(cleanTeamName('בית״ר')).toBe('בית"ר ירושלים');
+      expect(cleanTeamName('"בית"ר"')).toBe('בית"ר ירושלים');
+    });
+
+    it('strips quotes and trims whitespace for un-aliased teams', () => {
+      expect(cleanTeamName(' "מכבי חיפה" ')).toBe('מכבי חיפה');
+    });
+  });
+
   describe('mapPosition', () => {
     it('maps goalkeeper positions correctly', () => {
       expect(mapPosition('GK')).toBe('GK');

@@ -32,7 +32,7 @@ const TEAM_ALIAS_MAP: Record<string, string> = {
   'עירוני קש': 'עירוני קרית שמונה',
 };
 
-const cleanTeamName = (teamName: string): string => {
+export const cleanTeamName = (teamName: string): string => {
   if (!teamName) return 'לא ידוע';
   const cleaned = teamName.replace(/["'״׳]/g, '').trim();
   if (TEAM_ALIAS_MAP[cleaned]) return TEAM_ALIAS_MAP[cleaned];
