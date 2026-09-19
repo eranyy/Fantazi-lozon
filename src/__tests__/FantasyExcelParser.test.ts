@@ -1,7 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import { parseFantasyExcel } from '../utils/FantasyExcelParser';
+import { parseFantasyExcel, mapPosition } from '../utils/FantasyExcelParser';
 
 describe('FantasyExcelParser', () => {
+  describe('mapPosition', () => {
+    it('maps goalkeeper positions correctly', () => {
+      expect(mapPosition('GK')).toBe('GK');
+      expect(mapPosition('שוער')).toBe('GK');
+      expect(mapPosition(' שוער ')).toBe('GK');
+    });
+
+    it('maps defender positions correctly', () => {
+      expect(mapPosition('DEF')).toBe('DEF');
+      expect(mapPosition('הגנה')).toBe('DEF');
+      expect(mapPosition('בלם')).toBe('DEF');
+      expect(mapPosition('מגן')).toBe('DEF');
+    });
+
+    it('maps midfielder positions correctly', () => {
+      expect(mapPosition('MID')).toBe('MID');
+      expect(mapPosition('קשר')).toBe('MID');
+      expect(mapPosition('קישור')).toBe('MID');
+    });
+
+    it('maps forward positions correctly', () => {
+      expect(mapPosition('FWD')).toBe('FWD');
+      expect(mapPosition('חלוץ')).toBe('FWD');
+      expect(mapPosition('התקפה')).toBe('FWD');
+    });
+
+    it('defaults to DEF for empty, null or unrecognized position strings', () => {
+      expect(mapPosition('')).toBe('DEF');
+      expect(mapPosition(null as any)).toBe('DEF');
+      expect(mapPosition('UNKNOWN')).toBe('DEF');
+    });
+  });
+
   it('normalizes various team names correctly', () => {
     const csvContent = `עמדה,שם שחקן,קבוצה במציאות,קבוצת פנטזי
 חלוץ,ערן זהבי,ביתר,חמסילי
