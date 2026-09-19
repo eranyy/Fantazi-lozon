@@ -20,6 +20,32 @@ describe('authService', () => {
     expect(sessionStorage.getItem('fantasy_user_session')).toBeTruthy();
   });
 
+  it('sanitizes sensitive fields like password, apiKey, or token during login and getSession', () => {
+    const unsafeUser = {
+      id: 'u_secret',
+      name: 'מנהל סודי',
+      email: 'admin@test.com',
+      password: 'super_secret_password',
+      apiKey: 'AIzaSy12345',
+      token: 'jwt_secret_token',
+      geminiKey: 'gemini_123'
+    };
+
+    authService.login(unsafeUser, true);
+
+    const session = authService.getSession();
+    expect(session).toMatchObject({ id: 'u_secret', name: 'מנהל סודי', email: 'admin@test.com' });
+    expect(session?.password).toBeUndefined();
+    expect(session?.apiKey).toBeUndefined();
+    expect(session?.token).toBeUndefined();
+    expect(session?.geminiKey).toBeUndefined();
+
+    // Verify storage contents also do not contain password or keys
+    const storedStr = sessionStorage.getItem('fantasy_user_session') || '';
+    expect(storedStr).not.toContain('super_secret_password');
+    expect(storedStr).not.toContain('AIzaSy12345');
+  });
+
   it('migrates legacy session from localStorage to sessionStorage if missing in sessionStorage', () => {
     const mockUser = { id: 'u2', name: 'גיא', email: 'guy@test.com' };
     localStorage.setItem('fantasy_user_session', JSON.stringify(mockUser));

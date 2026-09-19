@@ -1,8 +1,17 @@
+const sanitizeUser = (user: any) => {
+  if (!user || typeof user !== 'object') return null;
+  const { password, apiKey, pass, secret, token, geminiKey, ...safeUser } = user;
+  return safeUser;
+};
+
 export const authService = {
   getSession: () => {
     try {
       const session = sessionStorage.getItem('fantasy_user_session');
-      if (session) return JSON.parse(session);
+      if (session) {
+        const parsed = JSON.parse(session);
+        return sanitizeUser(parsed);
+      }
     } catch (e) {
       /* ignore storage error */
     }
@@ -10,12 +19,16 @@ export const authService = {
     try {
       const local = localStorage.getItem('fantasy_user_session');
       if (local) {
+        const parsed = JSON.parse(local);
+        const safe = sanitizeUser(parsed);
         try {
-          sessionStorage.setItem('fantasy_user_session', local);
+          if (safe) {
+            sessionStorage.setItem('fantasy_user_session', JSON.stringify(safe));
+          }
         } catch (e) {
           /* ignore storage error */
         }
-        return JSON.parse(local);
+        return safe;
       }
     } catch (e) {
       /* ignore storage error */
@@ -24,7 +37,8 @@ export const authService = {
     return null;
   },
   login: (user: any, rememberMe: boolean = true) => {
-    // Save full user data so mobile rehydrates instantly without password prompt
+    if (!user) return;
+    // Save non-sensitive user data so mobile rehydrates instantly without password prompt
     const sessionData = {
       id: user.id,
       email: user.email,
@@ -34,15 +48,17 @@ export const authService = {
       teamId: user.teamId || user.id
     };
 
+    const sanitized = sanitizeUser(sessionData);
+
     try {
-      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sanitized));
     } catch (e) {
       /* ignore storage quota/security error */
     }
 
     if (rememberMe) {
       try {
-        localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+        localStorage.setItem('fantasy_user_session', JSON.stringify(sanitized));
       } catch (e) {
         /* ignore storage quota/security error */
       }
