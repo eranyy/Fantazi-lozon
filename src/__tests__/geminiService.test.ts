@@ -237,6 +237,16 @@ describe('geminiService', () => {
       expect(res.confidenceScore).toBe(92);
     });
 
+    it('should throw error when getTacticalAdvice times out or fails', async () => {
+      mockGenerateContent.mockRejectedValue(new Error('Network error'));
+
+      const squad = [{ name: 'Player 1', position: 'FWD', points: 10 }];
+      const promise = getTacticalAdvice(squad, 'Team B');
+      vi.runAllTimers();
+
+      await expect(promise).rejects.toThrow('Network error');
+    });
+
     it('should analyze draft JSON successfully', async () => {
       mockGenerateContent.mockResolvedValue({
         text: JSON.stringify({
