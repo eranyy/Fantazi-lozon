@@ -12,22 +12,34 @@ describe('authService', () => {
     expect(authService.getSession()).toBeNull();
   });
 
-  it('retrieves session from localStorage', () => {
+  it('retrieves session from sessionStorage when present', () => {
     const mockUser = { id: 'u1', name: 'ערן', email: 'eran@test.com' };
-    authService.login(mockUser);
+    authService.login(mockUser, true);
     
     expect(authService.getSession()).toMatchObject({ id: 'u1', name: 'ערן' });
+    expect(sessionStorage.getItem('fantasy_user_session')).toBeTruthy();
   });
 
-  it('falls back to sessionStorage if localStorage is empty', () => {
+  it('migrates legacy session from localStorage to sessionStorage if missing in sessionStorage', () => {
     const mockUser = { id: 'u2', name: 'גיא', email: 'guy@test.com' };
-    sessionStorage.setItem('fantasy_user_session', JSON.stringify(mockUser));
+    localStorage.setItem('fantasy_user_session', JSON.stringify(mockUser));
     
-    expect(authService.getSession()).toMatchObject({ id: 'u2', name: 'גיא' });
+    expect(sessionStorage.getItem('fantasy_user_session')).toBeNull();
+    const retrieved = authService.getSession();
+    expect(retrieved).toMatchObject({ id: 'u2', name: 'גיא' });
+    expect(sessionStorage.getItem('fantasy_user_session')).toBeTruthy();
+  });
+
+  it('only stores in sessionStorage if rememberMe is false', () => {
+    const mockUser = { id: 'u3', name: 'דני', email: 'dani@test.com' };
+    authService.login(mockUser, false);
+
+    expect(sessionStorage.getItem('fantasy_user_session')).toBeTruthy();
+    expect(localStorage.getItem('fantasy_user_session')).toBeNull();
   });
 
   it('clears sessions properly on logout', () => {
-    const mockUser = { id: 'u3', name: 'ארז', email: 'erez@test.com' };
+    const mockUser = { id: 'u4', name: 'ארז', email: 'erez@test.com' };
     authService.login(mockUser);
     authService.logout();
     
@@ -39,7 +51,7 @@ describe('authService', () => {
       throw new Error('QuotaExceededError');
     });
 
-    const mockUser = { id: 'u4', name: 'אסף', email: 'asaf@test.com' };
+    const mockUser = { id: 'u5', name: 'אסף', email: 'asaf@test.com' };
     expect(() => authService.login(mockUser)).not.toThrow();
   });
 

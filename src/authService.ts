@@ -1,22 +1,29 @@
 export const authService = {
   getSession: () => {
     try {
-      const local = localStorage.getItem('fantasy_user_session');
-      if (local) return JSON.parse(local);
-    } catch (e) {
-      /* ignore storage error */
-    }
-
-    try {
       const session = sessionStorage.getItem('fantasy_user_session');
       if (session) return JSON.parse(session);
     } catch (e) {
       /* ignore storage error */
     }
 
+    try {
+      const local = localStorage.getItem('fantasy_user_session');
+      if (local) {
+        try {
+          sessionStorage.setItem('fantasy_user_session', local);
+        } catch (e) {
+          /* ignore storage error */
+        }
+        return JSON.parse(local);
+      }
+    } catch (e) {
+      /* ignore storage error */
+    }
+
     return null;
   },
-  login: (user: any, _rememberMe: boolean = true) => {
+  login: (user: any, rememberMe: boolean = true) => {
     // Save full user data so mobile rehydrates instantly without password prompt
     const sessionData = {
       id: user.id,
@@ -28,15 +35,23 @@ export const authService = {
     };
 
     try {
-      localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
     } catch (e) {
       /* ignore storage quota/security error */
     }
 
-    try {
-      sessionStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
-    } catch (e) {
-      /* ignore storage quota/security error */
+    if (rememberMe) {
+      try {
+        localStorage.setItem('fantasy_user_session', JSON.stringify(sessionData));
+      } catch (e) {
+        /* ignore storage quota/security error */
+      }
+    } else {
+      try {
+        localStorage.removeItem('fantasy_user_session');
+      } catch (e) {
+        /* ignore storage errors */
+      }
     }
 
     try {
