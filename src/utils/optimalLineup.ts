@@ -28,16 +28,21 @@ const getNormalizedPos = (posStr: string): 'GK' | 'DEF' | 'MID' | 'FWD' => {
   return 'MID';
 };
 
+const createFallbackResult = (squad: Player[] = [], actualPoints = 0): OptimalLineupResult => {
+  const safeSquad = Array.isArray(squad) ? squad : [];
+  return {
+    optimalLineup: safeSquad.slice(0, 11),
+    optimalBench: safeSquad.slice(11),
+    optimalFormation: '4-4-2',
+    optimalPoints: actualPoints,
+    actualPoints,
+    potentialGain: 0
+  };
+};
+
 export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[]): OptimalLineupResult {
   if (!Array.isArray(squad) || squad.length === 0) {
-    return {
-      optimalLineup: [],
-      optimalBench: [],
-      optimalFormation: '4-4-2',
-      optimalPoints: 0,
-      actualPoints: 0,
-      potentialGain: 0
-    };
+    return createFallbackResult();
   }
 
   // Calculate actual points if actualLineup provided
@@ -75,18 +80,9 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   mids.sort(sortByPts);
   fwds.sort(sortByPts);
 
-  const createFallbackResult = (): OptimalLineupResult => ({
-    optimalLineup: squad.slice(0, 11),
-    optimalBench: squad.slice(11),
-    optimalFormation: '4-4-2',
-    optimalPoints: actualPoints,
-    actualPoints,
-    potentialGain: 0
-  });
-
   const bestGK = gks[0] || null;
   if (!bestGK) {
-    return createFallbackResult();
+    return createFallbackResult(squad, actualPoints);
   }
 
   // Precompute prefix sums for O(1) totalPoints lookup per formation
@@ -140,7 +136,7 @@ export function calculateOptimalLineup(squad: Player[], actualLineup?: Player[])
   }
 
   if (!bestResult) {
-    return createFallbackResult();
+    return createFallbackResult(squad, actualPoints);
   }
 
   return {
