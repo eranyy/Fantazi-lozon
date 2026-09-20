@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3, Lock, Unlock, Trash2 } from 'lucide-react';
-import { db, functions } from '../firebaseConfig';
+import { db, functions, storage } from '../firebaseConfig';
 import { doc, onSnapshot, updateDoc, addDoc, collection, getDoc, getDocs, setDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { UserRole } from '../types';
 import html2canvas from 'html2canvas';
 
@@ -1111,11 +1112,28 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           console.log('✅ Round close push notification sent successfully!');
       } catch (pushErr) { console.error("Round close push notification error:", pushErr); }
 
-      // 🟢 שידור הודעת סיכום וסקרים לקבוצת הווצאפ בלייב 🟢
+      // 🟢 שידור הודעת סיכום, תמונת טבלה מעוצבת וסקרים לקבוצת הווצאפ בלייב 🟢
       try {
+          let imageUrl: string | null = null;
+          try {
+            const captureEl = document.getElementById('arena-capture-area') || document.getElementById('league-table-capture');
+            if (captureEl) {
+              const canvas = await html2canvas(captureEl, { backgroundColor: '#0f172a', scale: 2, useCORS: true });
+              const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+              if (blob) {
+                const storageRef = ref(storage, `round_summaries/Round_${currentRound}_${Date.now()}.png`);
+                await uploadBytes(storageRef, blob);
+                imageUrl = await getDownloadURL(storageRef);
+                console.log('✅ Round summary graphic table image uploaded:', imageUrl);
+              }
+            }
+          } catch (imgErr) {
+            console.error('Error generating/uploading round summary image:', imgErr);
+          }
+
           const broadcastWaFunc = httpsCallable(functions, 'broadcastRoundCloseToWhatsApp');
-          await broadcastWaFunc({ round: currentRound });
-          console.log('✅ WhatsApp group round summary broadcasted successfully!');
+          await broadcastWaFunc({ round: currentRound, imageUrl });
+          console.log('✅ WhatsApp group round summary broadcasted successfully with graphic table image!');
       } catch (waErr) { console.error("WhatsApp group broadcast error:", waErr); }
 
       const updatedRounds = fixtures.map(r => {

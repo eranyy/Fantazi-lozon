@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { CalendarDays, Flame, CheckCircle2, Clock, ChevronRight, ChevronLeft, MapPin, Tv } from 'lucide-react';
+import { CalendarDays, Flame, CheckCircle2, Clock, ChevronRight, ChevronLeft, MapPin, Tv, RefreshCw } from 'lucide-react';
 import { sortMatchesChronologically, formatMatchDateDisplay, formatMatchTime } from '../utils/dateUtils';
+import { syncRealFixturesFromSheet } from '../utils/realFixturesUtils';
 
 const TEAM_NAMES: Record<string, string> = { tumali: 'תומאלי', tampa: 'טמפה', pichichi: "פיצ'יצ'י", hamsili: 'חמסילי', harale: 'חראלה', holonia: 'חולוניה' };
 
@@ -87,7 +88,21 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
   const currentViewedData = rounds.find(r => r.round === viewedRound);
   const isCurrentLive = viewedRound === currentRound;
   const filterRoundName = `מחזור ${viewedRound}`;
-  const currentRealMatches = sortMatchesChronologically(realMatches.filter(m => m.roundStage === filterRoundName || m.roundStage === `מחזור ${viewedRound}`));
+  const currentRealMatches = sortMatchesChronologically(
+    realMatches.filter(m => 
+      Number(m.round) === viewedRound || 
+      m.roundStage === filterRoundName || 
+      m.roundStage === `מחזור ${viewedRound}` ||
+      String(m.round) === String(viewedRound)
+    )
+  );
+  const [isSyncing, setIsSyncing] = useState(false);
+  const handleRefreshFromSheet = async () => {
+    setIsSyncing(true);
+    const res = await syncRealFixturesFromSheet();
+    alert(res.message);
+    setIsSyncing(false);
+  };
 
   return (
     <div className="max-w-4xl mx-auto pb-32 font-sans animate-in fade-in slide-in-from-bottom-4 duration-500" dir="rtl">
@@ -106,7 +121,7 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
         <p className="text-xs text-zinc-400 font-bold uppercase tracking-[0.2em] mb-6 relative z-10">מועדים, אצטדיונים וערוצי שידור בלייב</p>
 
         {/* 🟢 מתג בחירה בין משחקי ליגת העל המציאותיים לבין משחקי הפנטזי 🟢 */}
-        <div className="flex items-center gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800 mb-6 relative z-10">
+        <div className="flex items-center gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800 mb-6 relative z-10 flex-wrap justify-center">
           <button 
             onClick={() => setSubTab('real')} 
             className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'real' ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-amber-500/20' : 'text-zinc-400 hover:text-white'}`}
@@ -118,6 +133,16 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
             className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'fantasy' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-zinc-400 hover:text-white'}`}
           >
             🏆 משחקי הפנטזי בליגה
+          </button>
+
+          <button 
+            onClick={handleRefreshFromSheet}
+            disabled={isSyncing}
+            className="bg-blue-600/20 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 font-bold px-3 py-2 rounded-xl transition-all shadow-xl disabled:opacity-50 text-xs flex items-center gap-1.5 active:scale-95 mr-2"
+            title="סנכרן לוח משחקים ישירות מקובץ ה-Google Sheet"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'מסנכרן...' : 'רענן מהאקסל 🔄'}
           </button>
         </div>
         

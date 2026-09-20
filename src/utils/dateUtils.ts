@@ -11,23 +11,40 @@ export const parseMatchDateTime = (m?: MatchDateTimeInfo | null): number => {
   if (typeof m.timestamp === 'number' && m.timestamp > 0) return m.timestamp;
 
   const dateStr = String(m.date || '').trim();
-  const timeStr = String(m.time || '').trim();
+  const timeStr = String(m.time || m.matchTime || '').trim();
   const statusStr = String(m.status || '').trim();
 
-  if (!dateStr || dateStr.includes('נדחה') || dateStr.includes('טרם') || dateStr.includes('ייקבע') || statusStr.includes('נדחה')) {
+  if (!dateStr || dateStr.includes('נדחה') || statusStr.includes('נדחה')) {
+    return Infinity + 100000;
+  }
+  if (dateStr.includes('טרם') || dateStr.includes('ייקבע')) {
     return Infinity;
   }
 
-  const dateMatch = dateStr.match(/(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?/);
-  if (!dateMatch) return Infinity;
+  let year = new Date().getFullYear();
+  let month = 0;
+  let day = 0;
 
-  const day = parseInt(dateMatch[1], 10);
-  const month = parseInt(dateMatch[2], 10) - 1;
-  let year = dateMatch[3] ? parseInt(dateMatch[3], 10) : new Date().getFullYear();
-  if (year < 100) year += 2000;
+  // 1. ISO format: YYYY-MM-DD or YYYY/MM/DD
+  const isoMatch = dateStr.match(/^(\d{4})[-/. ](\d{1,2})[-/. ](\d{1,2})/);
+  if (isoMatch) {
+    year = parseInt(isoMatch[1], 10);
+    month = parseInt(isoMatch[2], 10) - 1;
+    day = parseInt(isoMatch[3], 10);
+  } else {
+    // 2. DMY format: DD/MM/YYYY or DD.MM.YYYY or DD-MM-YYYY (e.g., 18/09/2026 (יום שישי))
+    const dmyMatch = dateStr.match(/(\d{1,2})[-/. ](\d{1,2})(?:[-/. ](\d{2,4}))?/);
+    if (!dmyMatch) return Infinity;
+    day = parseInt(dmyMatch[1], 10);
+    month = parseInt(dmyMatch[2], 10) - 1;
+    if (dmyMatch[3]) {
+      year = parseInt(dmyMatch[3], 10);
+      if (year < 100) year += 2000;
+    }
+  }
 
-  let hours = 19;
-  let minutes = 0;
+  let hours = 23;
+  let minutes = 59;
   const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
   if (timeMatch) {
     hours = parseInt(timeMatch[1], 10);
@@ -103,4 +120,3 @@ export const formatTimeWithUS = (ilTime: string): string => {
 
   return `${hStr}:${m} | ${usHStr}:${m} 🇺🇸`;
 };
-

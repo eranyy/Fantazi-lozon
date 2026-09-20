@@ -5,6 +5,7 @@ import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, order
 import { Heart, MessageCircle, Share2, Trash2, Image as ImageIcon, Send, Trophy, Shield, Goal, CalendarDays, BarChart2, Plus, X, ChevronRight, ChevronLeft, MapPin, Tv, Clock, RefreshCw, Edit2, Users } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { sortMatchesChronologically, formatMatchDateDisplay } from '../utils/dateUtils';
+import { syncRealFixturesFromSheet } from '../utils/realFixturesUtils';
 
 interface SocialFeedProps { teams: any[]; currentRound: number; loggedInUser: any; onNavigate?: (tab: string) => void; }
 
@@ -214,78 +215,8 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
     setIsFetchingApi(true);
     setApiMessage({ text: "סורק ומסנכרן מול קובץ ה-Google Sheet...", type: 'info' });
     try {
-      const spreadsheetId = '14kSevz6bRm_4xX1jGxGztB0ZDVm8po01tXujvZBgf-s';
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=0`;
-      
-      const response = await fetch(csvUrl);
-      if (!response.ok) throw new Error('נכשלה התחברות לקובץ האקסל');
-      const csvText = await response.text();
-      
-      const lines = csvText.split('\n').map(l => l.trim());
-      const parsedMatches: any[] = [];
-
-      for (let i = 0; i < lines.length; i++) {
-        const cols = parseCsvLine(lines[i]);
-        if (!cols || cols.length < 6) continue;
-        if (!cols[0].includes('מחזור')) continue;
-        if (cols[0].includes('#VALUE') || cols[0].includes('סחזור')) continue;
-
-        const homeTeam = cols[4] || '';
-        const awayTeam = cols[5] || '';
-        if (!homeTeam || !awayTeam || homeTeam === 'קבוצת בית' || awayTeam === 'קבוצת חוץ') continue;
-
-        const roundNum = parseInt(cols[0].replace(/[^\d]/g, ''), 10) || 1;
-        const dateStr = formatMatchDateDisplay(cols[1] || '');
-        const dayStr = cols[2] || '';
-        const timeStr = cols[3] || '';
-        const competition = cols[6] || 'ליגת WINNER';
-        const stadium = cols[7] || '';
-        const tvChannel = cols[8] || '';
-        const statusRaw = cols[9] || 'עתידי';
-
-        let status = statusRaw;
-        let homeScore: number | undefined = undefined;
-        let awayScore: number | undefined = undefined;
-
-        const scoreMatch = statusRaw.match(/\((\d+)\s*[-\u2013]\s*(\d+)\)/) || statusRaw.match(/(\d+)\s*[-\u2013]\s*(\d+)/);
-        if (scoreMatch) {
-          homeScore = parseInt(scoreMatch[1], 10);
-          awayScore = parseInt(scoreMatch[2], 10);
-          status = 'הסתיים';
-        } else if (statusRaw.includes('הסתיים')) {
-          status = 'הסתיים';
-        }
-
-        const matchId = `sheet_match_${roundNum}_${homeTeam.replace(/\s+/g, '_')}_${awayTeam.replace(/\s+/g, '_')}`;
-
-        const matchItem: any = {
-          id: matchId,
-          round: roundNum,
-          date: dateStr,
-          day: dayStr,
-          time: timeStr,
-          homeTeam,
-          awayTeam,
-          competition,
-          stadium,
-          tvChannel,
-          status,
-          homeScore: homeScore !== undefined ? homeScore : null,
-          awayScore: awayScore !== undefined ? awayScore : null,
-          hs: homeScore !== undefined ? homeScore : null,
-          as: awayScore !== undefined ? awayScore : null
-        };
-
-        parsedMatches.push(matchItem);
-      }
-
-      if (parsedMatches.length > 0) {
-        await updateDoc(doc(db, 'leagueData', 'real_fixtures'), { matches: parsedMatches });
-        setRealFixtures(parsedMatches);
-        setApiMessage({ text: `✓ סונכרנו בהצלחה ${parsedMatches.length} משחקים מקובץ ה-Google Sheet!`, type: 'success' });
-      } else {
-        setApiMessage({ text: 'לא נגרסו משחקים חדשים מהקובץ', type: 'error' });
-      }
+      const res = await syncRealFixturesFromSheet();
+      setApiMessage({ text: res.message, type: res.success ? 'success' : 'error' });
       setTimeout(() => setApiMessage(null), 4000);
       setIsFetchingApi(false);
     } catch (error: any) {

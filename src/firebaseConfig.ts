@@ -4,6 +4,8 @@ import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth"
 import { getMessaging } from "firebase/messaging";
 import { getFunctions } from "firebase/functions";
 
+import { getStorage } from "firebase/storage";
+
 const firebaseConfig = {
   apiKey: import.meta.env?.VITE_FIREBASE_API_KEY || "AIzaSyAYU35Cc-mewf1WAHjHUAcmq1ATntoU9YI",
   authDomain: import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || "fantasy-luzon.firebaseapp.com",
@@ -17,6 +19,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 setPersistence(auth, browserLocalPersistence).catch(console.error);
 
 export const VAPID_KEY = import.meta.env?.VITE_FIREBASE_VAPID_KEY || "BELPkm_Y6IgLW-atBkxPKAyXnUbMagpKIuNF7oQkPLu8XdtzYXcUWD6yGIgqdLguY-OAOyZbJKV8Usm5Yi89emQ";

@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateLivePlayerPoints = exports.checkMatchDeadlinesAndNotify = exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.triggerFridayReminder = exports.scheduledFridayReminder = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.onUserTransfersUpdated = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
+exports.updateLivePlayerPoints = exports.checkMatchDeadlinesAndNotify = exports.triggerLiveScraper = exports.scheduledLiveScraper = exports.triggerSheetSync = exports.scheduledSheetSync = exports.scheduledCalendarSync = exports.triggerFridayReminder = exports.scheduledFridayReminder = exports.triggerPredictorChaser = exports.trigger1HourReminder = exports.scheduled1HourReminder = exports.runOneHourPreMatchReminder = exports.triggerRoundReminder = exports.syncMatchToExcel = exports.broadcastRoundCloseToWhatsApp = exports.updateRealFixtures = exports.whatsappWebhook = exports.onUserTransfersUpdated = exports.sendCustomPushNotification = exports.fetchLiveFixtures = exports.scheduledSync = exports.onFixturesChangeSync = exports.onUserChangeSync = void 0;
 exports.sendPushNotificationHelper = sendPushNotificationHelper;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
@@ -1459,8 +1459,21 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
             const injuries = (rData?.playerInjuries || []).map((i) => `- ${i.name} (${i.team}): ${i.status}`).join('\n');
             realWorldContext = `📰 **עדכוני מציאות, חדשות ופציעות בלייב מליגת העל והדראפט:**\n${headlines || 'סגלי הקבוצות ולוח המשחקים מעודכנים ב-100%!'}\n${injuries ? `\n🚑 **פציעות והיעדרויות קריטיות במציאות:**\n${injuries}` : ''}`;
         }
+        const promptLower = userPrompt.toLowerCase();
+        let dynamicPersonaRule = '';
+        if (promptLower.includes('פטריוטים') || promptLower.includes('ינון מגל') || promptLower.includes('אלדד יניב')) {
+            dynamicPersonaRule = `\n🚨 הנחיית פרסונה מיוחדת לסגנון "הפטריוטים" (ערוץ 14) 🚨:\n` +
+                `הגש את הסיכום/תשובה במבנה פאנל סוער, מצחיק ודרמטי של תוכנית "הפטריוטים"! \n` +
+                `פתח ב-"ערב טוב לציבור הפנטזי היקר ולצופים בבית!", השתמש במטבעות לשון כמו "תפתחו את המיקרופון!", "שערורייה בתקשורת!", "דרמה בפאנל", ותבל בהומור פטריוטי סוער ומצחיק מבוסס על תוצאות הליגה והטבלה!`;
+        }
+        else if (promptLower.includes('רז זהבי') || promptLower.includes('זהבי') || promptLower.includes('בובה של לילה')) {
+            dynamicPersonaRule = `\n🚨 הנחיית פרסונה מיוחדת לסגנון "רז זהבי" (בובה של לילה / ספורט 5) 🚨:\n` +
+                `הגש את הסיכום/תשובה בסגנון הדרמטי, הצעקני והמטורף של הפרשן רז זהבי!\n` +
+                `פתח ב-"רבותיי, איזה דרמה! מה קורה פה בלוזון 14?!", השתמש במילים כמו "שערררייה!", "הילד ענק!", "ליגה א' צפון!", "צ'רלי!", צעק בהתלהבות מטורפת ותבל בהומור ספורטיבי ישראני עצבני ומצחיק עד דמעות!`;
+        }
         const systemInstruction = `אתה לוזון Bot – עוזר ה-AI הרשמי, הטקטיקן, הפרשן והסטטיסטיקאי הבכיר והשנון של ליגת "פנטזי לוזון 14" (Fantasy Luzon).
 תפקידך להשיב בשפה עברית קולחת, טבעית, מצחיקה, ספורטיבית ומדויקת לחלוטין למנג'רים בליגה ב-WhatsApp.
+${dynamicPersonaRule}
 
 🚨 חוקי תגובה ואינטליגנציה 🚨:
 1. **התנהג כ-AI חכם וטבעי לחלוטין!** אל תענה בתבניות מתוכנתות מראש. ענה במדויק ובטבעיות למה שהמנג'ר שואל או אומר!
@@ -1955,7 +1968,16 @@ exports.broadcastRoundCloseToWhatsApp = (0, https_1.onCall)({ region: 'us-west1'
                     if (tableIdx !== -1) {
                         cleanContent = cleanContent.substring(0, tableIdx).trim();
                     }
-                    analystText = `\n🎙️ *תמצית טור האנליסט AI:* \n${cleanContent}\n`;
+                    const altTableIdx = cleanContent.indexOf('* 🥇 מקום 1');
+                    if (altTableIdx !== -1) {
+                        cleanContent = cleanContent.substring(0, altTableIdx).trim();
+                    }
+                    // Format markdown headers into WhatsApp bold styling
+                    cleanContent = cleanContent
+                        .replace(/#{1,6}\s*(.*)/g, '*$1*')
+                        .replace(/---\s*/g, '')
+                        .trim();
+                    analystText = `\n🎙️ *טור האנליסט AI למחזור ${round}:*\n${cleanContent}\n`;
                 }
             }
         }
@@ -2101,11 +2123,32 @@ exports.broadcastRoundCloseToWhatsApp = (0, https_1.onCall)({ region: 'us-west1'
             `${predictorText}\n` +
             `📱 לצפייה בניקוד המלא והרכבי המחזור הבא:\nhttps://fantasy-luzon.web.app`;
         // 5. Send via Green API to Group Chat (120363412136780106@g.us)
-        await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
-            chatId: groupChatId,
-            message: fullMessage
-        });
-        console.log(`[broadcastRoundCloseToWhatsApp] Sent round ${round} summary to Green API group chatId ${groupChatId}!`);
+        const imageUrl = request.data?.imageUrl;
+        if (imageUrl) {
+            try {
+                await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendFileByUrl/${greenToken}`, {
+                    chatId: groupChatId,
+                    urlFile: imageUrl,
+                    fileName: `Table_Round_${round}.png`,
+                    caption: fullMessage
+                });
+                console.log(`[broadcastRoundCloseToWhatsApp] Sent graphic table image with summary caption for round ${round}!`);
+            }
+            catch (imgSendErr) {
+                console.error('[broadcastRoundCloseToWhatsApp] Image send failed, falling back to text:', imgSendErr?.message);
+                await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+                    chatId: groupChatId,
+                    message: fullMessage
+                });
+            }
+        }
+        else {
+            await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+                chatId: groupChatId,
+                message: fullMessage
+            });
+            console.log(`[broadcastRoundCloseToWhatsApp] Sent round ${round} text summary to Green API group chatId ${groupChatId}!`);
+        }
         return { success: true, message: `Round ${round} summary broadcasted to WhatsApp group!` };
     }
     catch (err) {
@@ -2622,6 +2665,15 @@ const runFridayPreRoundReminder = async (force = false) => {
             }
         }
     }
+    // Initialize/Ensure whatsapp_polls doc exists for this round
+    if (fantasyRound && Array.isArray(fantasyRound.matches)) {
+        await db.doc(`whatsapp_polls/round_${currentRound}`).set({
+            round: currentRound,
+            matches: fantasyRound.matches,
+            isLocked: false,
+            createdAt: new Date().toISOString()
+        }, { merge: true });
+    }
     await db.doc('leagueData/reminders').set({
         [`sent_friday_round_${currentRound}`]: true,
         lastSentAt: new Date().toISOString()
@@ -2629,6 +2681,139 @@ const runFridayPreRoundReminder = async (force = false) => {
     console.log(`[FridayReminder] Sent Friday pre-round reminder & polls for round ${currentRound}.`);
     return { success: true, round: currentRound, missingTeamsCount: missingTeams.length, message: fullMessage };
 };
+// 🟢 2.6 Predictor Chaser Engine (תזכורת ומרדף ממוקד למצביעי הסקרים לפני שריקה) 🟢
+const runPredictorChaserLogic = async () => {
+    console.log('[PredictorChaser] Checking unvoted managers for active round...');
+    const settingsSnap = await db.doc('leagueData/settings').get();
+    const currentRound = (settingsSnap.exists ? settingsSnap.data()?.currentRound : 1) || 1;
+    // Check poll doc for current round
+    const pollDocSnap = await db.doc(`whatsapp_polls/round_${currentRound}`).get();
+    const pollData = pollDocSnap.exists ? pollDocSnap.data() : null;
+    if (pollData?.isLocked) {
+        return { success: false, reason: `Poll for round ${currentRound} is already locked` };
+    }
+    // Check earliest kickoff time from real_fixtures
+    const realSnap = await db.doc('leagueData/real_fixtures').get();
+    if (!realSnap.exists)
+        return { success: false, reason: 'real_fixtures not found' };
+    const realMatches = realSnap.data()?.matches || [];
+    const upcoming = realMatches.filter((m) => (m.round === currentRound || !m.round) && !String(m.status || '').includes('הסתיים'));
+    if (upcoming.length === 0)
+        return { success: false, reason: 'No upcoming real matches' };
+    // Calculate earliest kickoff timestamp
+    let earliestKickoffMs = Infinity;
+    upcoming.forEach((m) => {
+        if (m.date && m.time) {
+            const parts = String(m.date).split(/[/.]/);
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parseInt(parts[2], 10);
+                const [h, min] = String(m.time).split(':');
+                const tMs = new Date(year, month, day, parseInt(h || '20', 10), parseInt(min || '0', 10)).getTime();
+                if (!isNaN(tMs) && tMs < earliestKickoffMs) {
+                    earliestKickoffMs = tMs;
+                }
+            }
+        }
+    });
+    const now = Date.now();
+    // If kickoff has already passed, lock polls automatically!
+    if (now >= earliestKickoffMs) {
+        await db.doc(`whatsapp_polls/round_${currentRound}`).set({ isLocked: true }, { merge: true });
+        console.log(`[PredictorChaser] Kickoff passed! Locked poll for round ${currentRound}.`);
+        return { success: true, isLocked: true, message: `Poll locked for round ${currentRound}` };
+    }
+    // Read registered managers and votes
+    const votesMap = pollData?.votes || {};
+    const usersSnap = await db.collection('users').get();
+    const missingVoters = [];
+    const canonicalTeamNames = {
+        'hamsili': 'חמסילי',
+        'harale': 'חראלה',
+        'holonia': 'חולוניה',
+        'pichichi': 'פיציצי',
+        'tampa': 'טמפה',
+        'tumali': 'תומאלי'
+    };
+    usersSnap.forEach(docSnap => {
+        const u = docSnap.data();
+        if (docSnap.id === 'admin' || docSnap.id === 'system')
+            return;
+        if (!u.manager && !canonicalTeamNames[docSnap.id])
+            return;
+        const teamId = docSnap.id;
+        const teamName = u.teamName || canonicalTeamNames[teamId] || teamId;
+        const managerName = u.manager || u.name || teamName;
+        // Check if user voted (either by teamId, managerName, or teamName key)
+        const hasVoted = Boolean(votesMap[teamId] ||
+            votesMap[managerName] ||
+            votesMap[teamName] ||
+            Object.keys(votesMap).some(k => k.includes(teamId) || k.includes(managerName) || k.includes(teamName)));
+        if (!hasVoted) {
+            const phonesList = [];
+            if (u.phone)
+                phonesList.push(u.phone);
+            if (u.assistantPhone)
+                phonesList.push(u.assistantPhone);
+            if (Array.isArray(u.phones))
+                phonesList.push(...u.phones);
+            missingVoters.push({
+                teamId,
+                teamName,
+                managerName,
+                phones: Array.from(new Set(phonesList))
+            });
+        }
+    });
+    if (missingVoters.length === 0) {
+        console.log(`[PredictorChaser] All managers voted for round ${currentRound}!`);
+        return { success: true, missingCount: 0, message: 'All managers voted' };
+    }
+    // Format time left string
+    const diffMs = earliestKickoffMs - now;
+    const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+    const diffMins = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
+    const timeStr = (diffHours > 0 ? `${diffHours} שעות ו-` : '') + `${diffMins} דקות`;
+    // 1. Send Target WhatsApp Group Mentions
+    const mentionsLines = missingVoters.map(t => {
+        const mentionsStr = t.phones.map((p) => `@${p.replace(/\D/g, '')}`).join(' ');
+        return `▫️ *${t.teamName}* (${t.managerName})${mentionsStr ? ': ' + mentionsStr : ''}`;
+    }).join('\n');
+    const chaserMsg = `🔮 *מרדף נביאים – נותרו כ-${timeStr} לנעילת הסקרים!* ⏰⚽\n\n` +
+        `סקר הנביאים למחזור ${currentRound} יינעל בדיוק בשריקת הפתיחה הראשונה!\n\n` +
+        `⚠️ *טרם הצביעו בסקר:* \n` +
+        `${mentionsLines}\n\n` +
+        `🏆 *רוצו להצביע בסקרים למעלה בקבוצה לצבירת נקודות בטבלת הנביאים!* 🔮`;
+    const groupChatId = '120363412136780106@g.us';
+    const greenHost = 'https://7107.api.greenapi.com';
+    const greenId = '710722713612';
+    const greenToken = '4c1d55acf6d44149bbd1b515ae065b5131f83be1761a435e97';
+    await axios_1.default.post(`${greenHost}/waInstance${greenId}/sendMessage/${greenToken}`, {
+        chatId: groupChatId,
+        message: chaserMsg
+    });
+    // 2. Send Personal Push Notifications to unvoted managers
+    for (const v of missingVoters) {
+        try {
+            await sendPushNotificationHelper(`🔮 אל תשכח להצביע בסקר הנביאים!`, `סקר הנביאים למחזור ${currentRound} ננעל בעוד ${timeStr}! כנס לווצאפ להצביע.`, v.teamId);
+        }
+        catch (pushErr) {
+            console.error(`Push notification chaser error for ${v.teamId}:`, pushErr);
+        }
+    }
+    console.log(`[PredictorChaser] Sent chaser notification for ${missingVoters.length} unvoted managers in round ${currentRound}.`);
+    return { success: true, missingCount: missingVoters.length, message: chaserMsg };
+};
+exports.triggerPredictorChaser = (0, https_1.onRequest)({ region: 'us-west1', cors: true }, async (req, res) => {
+    try {
+        const result = await runPredictorChaserLogic();
+        res.status(200).json(result);
+    }
+    catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 // Friday at 12:00 PM Jerusalem time
 exports.scheduledFridayReminder = (0, scheduler_1.onSchedule)({ schedule: '0 12 * * 5', timeZone: 'Asia/Jerusalem' }, async () => {
     try {
