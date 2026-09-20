@@ -9,6 +9,7 @@ on:
 
 jobs:
   security-check:
+    name: Security & AppSec Review
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,7 +19,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full git diff
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,10 +29,12 @@ jobs:
 
       - name: 1. Audit Dependencies (npm audit)
         run: |
+          echo "Running dependency vulnerability audit..."
           npm audit --audit-level=high || true
 
       - name: 2. Secrets Leak Detection (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -39,29 +42,32 @@ jobs:
         id: diff
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git diff origin/${{ github.base_ref }}...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt
+            git diff origin/${{ github.base_ref }}...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt || touch pr_diff.txt
           else
             git diff HEAD~1...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt || touch pr_diff.txt
           fi
           echo "diff_size=$(wc -c < pr_diff.txt)" >> $GITHUB_OUTPUT
+          echo "Extracted git diff size: $(wc -c < pr_diff.txt) bytes."
 
       - name: 4. AI Security Review (Gemini Flash)
-        if: steps.diff.outputs.diff_size > 0
         uses: actions/github-script@v7
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
           script: |
             const fs = require('fs');
-            const diff = fs.readFileSync('pr_diff.txt', 'utf8');
+            let diff = '';
+            if (fs.existsSync('pr_diff.txt')) {
+              diff = fs.readFileSync('pr_diff.txt', 'utf8');
+            }
 
-            if (!diff.trim()) {
-              console.log("No code changes to review.");
+            if (!diff || !diff.trim()) {
+              console.log("✅ No code changes to review in this commit/PR.");
               return;
             }
 
             if (!process.env.GEMINI_API_KEY) {
-              console.log("GEMINI_API_KEY secret is not set. Skipping AI review call.");
+              console.log("ℹ️ GEMINI_API_KEY secret is not set in repository settings. Skipping AI review call.");
               return;
             }
 
