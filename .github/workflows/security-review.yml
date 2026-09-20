@@ -1,0 +1,96 @@
+name: Security Scan & AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  security-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full git diff for PR
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 1. Audit Dependencies (npm audit)
+        run: |
+          npm audit --audit-level=high || true
+
+      - name: 2. Secrets Leak Detection (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 3. Extract Git Diff
+        id: diff
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt
+          echo "diff_size=$(wc -c < pr_diff.txt)" >> $GITHUB_OUTPUT
+
+      - name: 4. AI Security Review (Gemini Flash)
+        if: steps.diff.outputs.diff_size > 0
+        uses: actions/github-script@v7
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        with:
+          script: |
+            const fs = require('fs');
+            const diff = fs.readFileSync('pr_diff.txt', 'utf8');
+
+            if (!diff.trim()) {
+              console.log("No code changes to review.");
+              return;
+            }
+
+            const prompt = `אתה סוכן AppSec בכיר. ערוך בדיקת אבטחה תמציתית על שינויי הקוד הבאים.
+            
+התמקד ב:
+- חשיפת מפתחות/סודות (.env / API keys)
+- בעיות OWASP (XSS, SQLi, אימות קלט, הרשאות)
+- שמירת מידע רגיש לא מאובטח
+
+עבור כל ממצא ציין:
+1. רמת חומרה [Critical / High / Medium / Low]
+2. קובץ ושורה
+3. הסבר קצר על הסיכון
+4. קוד מתוקן מוצע
+
+אם אין בעיות אבטחה, רשום רק: "✅ לא זוהו בעיות אבטחה בשינויים אלה."
+
+שינויי הקוד (Git Diff):
+\`\`\`diff
+${diff.slice(0, 30000)}
+\`\`\``;
+
+            try {
+              const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }]
+                })
+              });
+
+              const data = await response.json();
+              const reviewText = data.candidates?.[0]?.content?.parts?.[0]?.text || "לא התקבלה תשובה מהמודל.";
+
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `### 🛡️ דוח אבטחה אוטומטי (AI Security Review)\n\n${reviewText}`
+              });
+            } catch (err) {
+              console.error("שגיאה בהפעלת סקירת ה-AI:", err);
+            }
