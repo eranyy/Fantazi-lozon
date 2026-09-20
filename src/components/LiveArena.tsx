@@ -20,6 +20,7 @@ import {
   safeArray,
   isSubLog
 } from '../utils/liveArenaUtils';
+import { syncRealFixturesFromSheet } from '../utils/realFixturesUtils';
 
 interface LiveArenaProps { teams?: any[]; currentRound?: number; isModerator?: boolean; loggedInUser?: any; isAdmin?: boolean; }
 
@@ -1079,6 +1080,13 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
           console.log('✅ Data synced to Google Sheets successfully!');
       } catch (excelError) { console.error('❌ Failed to sync to Google Sheets:', excelError); }
 
+      try {
+        await syncRealFixturesFromSheet();
+        console.log('✅ Real fixtures updated from Google Sheet on round close!');
+      } catch (realFixErr) {
+        console.error('❌ Failed to sync real fixtures from sheet on round close:', realFixErr);
+      }
+
       const activeApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
       if (activeApiKey) {
         try {
@@ -1090,22 +1098,25 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
               const aiPostRef = await addDoc(collection(db, 'social_posts'), { authorName: 'האנליסט AI 🤖', handle: '@luzon_analyst', teamId: 'system', isVerified: true, type: 'article', content: aiText, likes: Math.floor(Math.random() * 20) + 10, likedBy: [], comments: [], timestamp: new Date(Date.now() + 2000).toISOString() });
               backupData.generatedPostIds.push(aiPostRef.id);
           }
-
-          try {
-              const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
-              await sendPushFunc({
-                  title: `סיום מחזור ${currentRound} ⚽`,
-                  message: `סיום דרמטי למחזור ${currentRound}! פוסט הסיכום של האנליסט והטבלה המעודכנת עלו עכשיו לאפליקציה.`
-              });
-          } catch (pushErr) { console.error("Round close push notification error:", pushErr); }
-
-          try {
-              const broadcastWaFunc = httpsCallable(functions, 'broadcastRoundCloseToWhatsApp');
-              await broadcastWaFunc({ round: currentRound });
-              console.log('✅ WhatsApp group round summary broadcasted successfully!');
-          } catch (waErr) { console.error("WhatsApp group broadcast error:", waErr); }
         } catch (aiErr) { console.error("AI Summary failed:", aiErr); }
       }
+
+      // 🟢 התראת פוש לכל המשתמשים בסגירת מחזור 🟢
+      try {
+          const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
+          await sendPushFunc({
+              title: `סיום מחזור ${currentRound} ⚽`,
+              message: `סיום דרמטי למחזור ${currentRound}! פוסט הסיכום והטבלה המעודכנת עלו עכשיו לאפליקציה.`
+          });
+          console.log('✅ Round close push notification sent successfully!');
+      } catch (pushErr) { console.error("Round close push notification error:", pushErr); }
+
+      // 🟢 שידור הודעת סיכום וסקרים לקבוצת הווצאפ בלייב 🟢
+      try {
+          const broadcastWaFunc = httpsCallable(functions, 'broadcastRoundCloseToWhatsApp');
+          await broadcastWaFunc({ round: currentRound });
+          console.log('✅ WhatsApp group round summary broadcasted successfully!');
+      } catch (waErr) { console.error("WhatsApp group broadcast error:", waErr); }
 
       const updatedRounds = fixtures.map(r => {
         if(r.round === currentRound) return { ...r, isPlayed: true, matches: r.matches.map((m:any) => ({ ...m, hs: calculateTeamScore(m.h), as: calculateTeamScore(m.a) })) } 
