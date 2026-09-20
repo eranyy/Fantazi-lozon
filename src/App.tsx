@@ -12,6 +12,7 @@ import LoginScreen from './components/LoginScreen';
 import SocialFeed from './components/SocialFeed'; 
 import CupTab from './components/CupTab';
 import FreeAgentsTab from './components/FreeAgentsTab';
+import { VersionUpdateBanner } from './components/VersionUpdateBanner';
 import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell, Search } from 'lucide-react'; // 🟢 הוספנו את Bell ו-Search
 import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion, writeBatch } from 'firebase/firestore'; 
 import { getToken, onMessage } from 'firebase/messaging'; 
@@ -407,6 +408,9 @@ const App: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* 🔔 באנר התראה על עדכון גרסה 🔔 */}
+      <VersionUpdateBanner />
 
       {/* 🔔 טואסט התראה כשהאפליקציה פתוחה 🔔 */}
       {toast && (
