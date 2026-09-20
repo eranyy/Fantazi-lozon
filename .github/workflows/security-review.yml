@@ -1,8 +1,11 @@
 name: Security Scan & AI Code Review
 
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [opened, synchronize]
+  workflow_dispatch:
 
 jobs:
   security-check:
@@ -15,7 +18,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full git diff for PR
+          fetch-depth: 0 # Full git diff
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,7 +38,11 @@ jobs:
       - name: 3. Extract Git Diff
         id: diff
         run: |
-          git diff origin/${{ github.base_ref }}...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff origin/${{ github.base_ref }}...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt
+          else
+            git diff HEAD~1...HEAD -- . ':(exclude)package-lock.json' ':(exclude)*.lock' > pr_diff.txt || touch pr_diff.txt
+          fi
           echo "diff_size=$(wc -c < pr_diff.txt)" >> $GITHUB_OUTPUT
 
       - name: 4. AI Security Review (Gemini Flash)
@@ -50,6 +57,11 @@ jobs:
 
             if (!diff.trim()) {
               console.log("No code changes to review.");
+              return;
+            }
+
+            if (!process.env.GEMINI_API_KEY) {
+              console.log("GEMINI_API_KEY secret is not set. Skipping AI review call.");
               return;
             }
 
@@ -85,12 +97,16 @@ ${diff.slice(0, 30000)}
               const data = await response.json();
               const reviewText = data.candidates?.[0]?.content?.parts?.[0]?.text || "לא התקבלה תשובה מהמודל.";
 
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `### 🛡️ דוח אבטחה אוטומטי (AI Security Review)\n\n${reviewText}`
-              });
+              if (context.issue && context.issue.number) {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `### 🛡️ דוח אבטחה אוטומטי (AI Security Review)\n\n${reviewText}`
+                });
+              } else {
+                console.log("### 🛡️ דוח אבטחה אוטומטי (AI Security Review)\n\n" + reviewText);
+              }
             } catch (err) {
               console.error("שגיאה בהפעלת סקירת ה-AI:", err);
             }
