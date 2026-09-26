@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "version:gen": "node -e \"import('fs').then(fs => fs.writeFileSync('public/version.json', JSON.stringify({ version: Date.now().toString(), timestamp: new Date().toISOString() }, null, 2)))\"",
+    "build": "npm run version:gen && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "vitest run",

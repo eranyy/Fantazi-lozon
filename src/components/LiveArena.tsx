@@ -471,18 +471,34 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
 
   const getRoundLineup = (team: any, rNum: number = selectedRound) => {
     if (!team) return [];
-    if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].lineup) && team.lineupsByRound[rNum].lineup.length > 0) {
-      return team.lineupsByRound[rNum].lineup;
+    const rObj = team.lineupsByRound?.[rNum] || team.lineupsByRound?.[String(rNum)];
+    if (rObj && Array.isArray(rObj.lineup) && rObj.lineup.length > 0) {
+      return rObj.lineup;
     }
-    return safeArray(team.published_lineup || team.lineup).length > 0 ? safeArray(team.published_lineup || team.lineup) : safeArray(team.squad).slice(0, 11);
+    const isRoundPlayed = fixtures.find(f => f.round === rNum)?.isPlayed;
+    if (rNum < currentRound || isRoundPlayed) {
+      const pub = safeArray(team.published_lineup || team.lineup);
+      if (pub.length > 0) return pub;
+      return safeArray(team.squad).slice(0, 11);
+    }
+    return [];
   };
 
   const getRoundBench = (team: any, rNum: number = selectedRound) => {
     if (!team) return [];
-    if (team.lineupsByRound && team.lineupsByRound[rNum] && Array.isArray(team.lineupsByRound[rNum].subsOut)) {
-      return team.lineupsByRound[rNum].subsOut;
+    const rObj = team.lineupsByRound?.[rNum] || team.lineupsByRound?.[String(rNum)];
+    if (rObj && Array.isArray(rObj.subsOut)) {
+      return rObj.subsOut;
     }
-    return safeArray(team.published_subs_out).length > 0 ? safeArray(team.published_subs_out) : safeArray(team.squad).slice(11);
+    const isRoundPlayed = fixtures.find(f => f.round === rNum)?.isPlayed;
+    if (rNum < currentRound || isRoundPlayed) {
+      const pubBench = safeArray(team.published_subs_out);
+      if (pubBench.length > 0) return pubBench;
+      const roundLineup = getRoundLineup(team, rNum);
+      if (roundLineup.length === 0) return safeArray(team.squad);
+      return safeArray(team.squad).slice(11);
+    }
+    return [];
   };
 
   const applySubstitutionsToLineup = (team: any) => {

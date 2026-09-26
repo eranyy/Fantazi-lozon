@@ -1471,15 +1471,16 @@ const askGeminiFantasyAI = async (userPrompt, senderPhone = '', chatId = '') => 
                 `הגש את הסיכום/תשובה בסגנון הדרמטי, הצעקני והמטורף של הפרשן רז זהבי!\n` +
                 `פתח ב-"רבותיי, איזה דרמה! מה קורה פה בלוזון 14?!", השתמש במילים כמו "שערררייה!", "הילד ענק!", "ליגה א' צפון!", "צ'רלי!", צעק בהתלהבות מטורפת ותבל בהומור ספורטיבי ישראני עצבני ומצחיק עד דמעות!`;
         }
-        const systemInstruction = `אתה לוזון Bot – עוזר ה-AI הרשמי, הטקטיקן, הפרשן והסטטיסטיקאי הבכיר והשנון של ליגת "פנטזי לוזון 14" (Fantasy Luzon).
-תפקידך להשיב בשפה עברית קולחת, טבעית, מצחיקה, ספורטיבית ומדויקת לחלוטין למנג'רים בליגה ב-WhatsApp.
-${dynamicPersonaRule}
+        const systemInstruction = `אתה לוזון Bot – עוזר ה-AI הרשמי, הטקטיקן, הפרשן והסטטיסטיקאי הבכיר, השנון והמבריק של ליגת "פנטזי לוזון 14" (Fantasy Luzon).
+תפקידך להשיב בשפה עברית קולחת, טבעית, אנושית, מצחיקה, ספורטיבית ומדויקת לחלוטין למנג'רים בליגה ב-WhatsApp.
 
 🚨 חוקי תגובה ואינטליגנציה 🚨:
-1. **התנהג כ-AI חכם וטבעי לחלוטין!** אל תענה בתבניות מתוכנתות מראש. ענה במדויק ובטבעיות למה שהמנג'ר שואל או אומר!
-2. אם מברכים מישהו (כמו "תגיד מזל טוב לתום"), ברך בחום ובסגנון ספורטיבי!
-3. אם שואלים "איפה X משחק?" או "של מי X?", חפש בסגלי הקבוצות ובליגת העל הרשומים למטה וענה בדיוק נחרץ (למשל: בנסון משחק במכבי חיפה במציאות ושייך לחולוניה בפנטזי!).
-4. אם שואלים שאלה טקטית, תחזית או דעה ("מי יקח אליפות?"), תן ניתוח שנון, חד ומעניין שמבוסס על הנתונים!
+1. **התנהג כ-AI אנושי, חכם, שנון ומקצוען לחלוטין!** אל תשתמש לעולם בתבניות מתוכנתות, יבשות או חוזרות על עצמן. ענה ישירות, בטבעיות ובחדות למה ששאלו!
+2. **ללא פתיחות רובוטיות**: אל תפתח ב-"אהלן [שם], שמעתי אותך" או משפטים בנאליים. ענה מיד לעניין עם טון של פרשן כדורגל ישראלי מקצועי ושנון.
+3. אם מברכים או חוגגים (כמו "מזל טוב לתום" או "ניצחון ענק"), ברך בחום ובסגנון ספורטיבי נלהב!
+4. אם שואלים "איפה X משחק?" או "של מי X?", חפש בסגלי הקבוצות ובליגת העל הרשומים למטה וענה בדיוק נחרץ (למשל: בנסון משחק במכבי חיפה במציאות ושייך לחולוניה בפנטזי!).
+5. אם שואלים שאלה טקטית, תחזית או דעה ("מי יקח אליפות?", "את מי להציב?"), תן ניתוח שנון, חד ומעניין שמבוסס על הנתונים, הסטטיסטיקות וכושר השחקנים!
+${dynamicPersonaRule}
 
 ${managerInfo ? `👤 מנג'ר נוכחי שפונה אליך כרגע ב-WhatsApp: ${managerInfo}\nפנה אליו בשמו הפרטי בחמימות ובסגנון ספורטיבי!` : ''}
 
@@ -1517,7 +1518,7 @@ ${chatHistoryContext ? `${chatHistoryContext}\n` : ''}`;
         const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (reply)
             return reply.trim();
-        return `⚽ **פנטזי לוזון 14:**\nאהלן ${managerName}! ⚽ שמעתי אותך, מה אתם אומרים בקבוצה?`;
+        return `⚽ *לוזון Bot:* איתכם כאן בקבוצה! מה תרצו לבדוק – ניקוד בזירה, הרכבים לסיבוב או ניתוח טקטי? 🔥`;
     }
     catch (e) {
         console.error('Error querying Gemini AI:', e?.message || e);
@@ -2321,20 +2322,44 @@ exports.syncMatchToExcel = (0, https_1.onCall)({ region: 'us-west1' }, async (re
         const webhookUrl = 'https://script.google.com/macros/s/AKfycbxl5IFlmuqfk_CZ4fMBuPDLMQ7GHTp8dwPxNmTJYqSzDho2_qFz-K0lnjB1Vy-6GlTl/exec';
         if (rows && rows.length > 0) {
             try {
-                const sheetRows = rows.map((r) => [
-                    `R${roundNum}_${r.userId || r.fantasyTeamName}_${r.name}`,
-                    new Date().toISOString().split('T')[0],
-                    roundNum,
-                    r.fantasyTeamName || r.userId,
-                    r.name,
-                    Number(r.points || 0)
+                // 1. Post Standings ('טבלת הליגה') with exactly 6 teams
+                const usersSnap = await db.collection('users').get();
+                const standings = [];
+                usersSnap.forEach((uDoc) => {
+                    if (TEAM_NAMES[uDoc.id]) {
+                        const u = uDoc.data();
+                        standings.push({
+                            name: TEAM_NAMES[uDoc.id],
+                            played: u.played || 0,
+                            wins: u.wins || 0,
+                            draws: u.draws || 0,
+                            losses: u.losses || 0,
+                            gf: u.gf || 0,
+                            ga: u.ga || 0,
+                            gd: (u.gf || 0) - (u.ga || 0),
+                            points: u.points || 0
+                        });
+                    }
+                });
+                standings.sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+                const standingsRows = standings.map((t, idx) => [
+                    idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : `${idx + 1}`,
+                    t.name,
+                    t.played,
+                    t.wins,
+                    t.draws,
+                    t.losses,
+                    t.gf,
+                    t.ga,
+                    t.gd > 0 ? `+${t.gd}` : `${t.gd}`,
+                    t.points
                 ]);
                 await axios_1.default.post(webhookUrl, JSON.stringify({
-                    sheetName: 'ארכיון ניקוד מחזורים',
-                    headers: ['מזהה סנכרון', 'תאריך', 'מחזור', 'קבוצת פנטזי', 'שם שחקן', 'ניקוד'],
-                    rows: sheetRows
+                    sheetName: 'טבלת הליגה',
+                    headers: ['מיקום', 'קבוצת פנטזי', 'משחקים', 'נצחונות', 'תיקו', 'הפסדים', 'שערי זכות (ניקוד שנצבר)', 'שערי חובה (ניקוד שיריב צבר)', 'הפרש שערים', 'נקודות ליגה'],
+                    rows: standingsRows
                 }), { headers: { 'Content-Type': 'text/plain;charset=utf-8' }, maxRedirects: 10, timeout: 30000 });
-                // Send H2H rows for closed round
+                // 2. Send H2H rows for closed round
                 const roundH2H = h2hArchive.filter((m) => m.round === roundNum).map((m) => {
                     const hs = Number(m.homeScore);
                     const as = Number(m.awayScore);
@@ -2368,7 +2393,85 @@ exports.syncMatchToExcel = (0, https_1.onCall)({ region: 'us-west1' }, async (re
                         rows: roundH2H
                     }), { headers: { 'Content-Type': 'text/plain;charset=utf-8' }, maxRedirects: 10, timeout: 30000 });
                 }
-                console.log(`[syncMatchToExcel] Successfully posted player scores and H2H results to Google Sheet Webhook for round ${roundNum}!`);
+                // Send Predictor Standings tab ('טבלת הנביאים')
+                try {
+                    const predSnap = await db.doc('leagueData/predictor_standings').get();
+                    if (predSnap.exists) {
+                        const pList = predSnap.data()?.standings || [];
+                        const predRows = pList.map((p, idx) => [
+                            idx + 1,
+                            p.name,
+                            p.hits || 0,
+                            p.totalVotes || 0,
+                            p.accuracy || '0%',
+                            p.points || 0
+                        ]);
+                        if (predRows.length > 0) {
+                            await axios_1.default.post(webhookUrl, JSON.stringify({
+                                sheetName: 'טבלת הנביאים',
+                                headers: ['מיקום', 'נביא / קבוצה', 'פגיעות מדויקות', 'סך הכל ניחושים', 'אחוזי הצלחה', 'נקודות נביאים'],
+                                rows: predRows
+                            }), { headers: { 'Content-Type': 'text/plain;charset=utf-8' }, maxRedirects: 10, timeout: 30000 });
+                        }
+                    }
+                }
+                catch (pErr) {
+                    console.error('[syncMatchToExcel] Predictor sheet sync error:', pErr);
+                }
+                // Send Dedicated Side-by-Side Round Tab (e.g., 'מחזור 6')
+                try {
+                    const roundFixtures = (rounds || []).find((r) => r.round === roundNum);
+                    if (roundFixtures && roundFixtures.matches) {
+                        const teamLineups = {};
+                        Object.keys(TEAM_NAMES).forEach(tId => { teamLineups[tId] = []; });
+                        (rows || []).forEach((r) => {
+                            let tId = r.userId || r.fantasyTeamId;
+                            if (!tId) {
+                                const found = Object.entries(TEAM_NAMES).find(([id, name]) => name === r.fantasyTeam || name === r.fantasyTeamName);
+                                if (found)
+                                    tId = found[0];
+                            }
+                            if (tId && teamLineups[tId]) {
+                                teamLineups[tId].push({
+                                    name: r.player || r.name,
+                                    points: Number(r.points || 0),
+                                    position: r.position || r.pos || 'MID',
+                                    realTeam: r.realTeam || r.team || ''
+                                });
+                            }
+                        });
+                        const individualRoundRows = [];
+                        individualRoundRows.push(['קבוצת בית', 'קבוצת חוץ', 'קבוצה', 'שחקן בית', 'עמדה', 'ניקוד בית', 'קבוצה', 'שחקן חוץ', 'עמדה', 'ניקוד חוץ']);
+                        roundFixtures.matches.forEach((m) => {
+                            const hId = m.h;
+                            const aId = m.a;
+                            const hTeamName = TEAM_NAMES[hId] || hId;
+                            const aTeamName = TEAM_NAMES[aId] || aId;
+                            const hPlayers = teamLineups[hId] || [];
+                            const aPlayers = teamLineups[aId] || [];
+                            const hTotal = m.hs !== undefined ? m.hs : hPlayers.reduce((sum, p) => sum + p.points, 0);
+                            const aTotal = m.as !== undefined ? m.as : aPlayers.reduce((sum, p) => sum + p.points, 0);
+                            individualRoundRows.push([hTeamName, `VS ${aTeamName}`, 'קבוצה', 'הרכב', 'עמדה', 'ניקוד', '', 'סך הכל', hTotal, aTotal]);
+                            const maxP = Math.max(11, hPlayers.length, aPlayers.length);
+                            for (let i = 0; i < maxP; i++) {
+                                const hP = hPlayers[i] || {};
+                                const aP = aPlayers[i] || {};
+                                individualRoundRows.push(['', '', hP.realTeam || '', hP.name || '', hP.position || '', hP.name ? Number(hP.points || 0) : '', aP.realTeam || '', aP.name || '', aP.position || '', aP.name ? Number(aP.points || 0) : '']);
+                            }
+                            individualRoundRows.push(['', '', 'סיכום', '', '', hTotal, 'סיכום', '', '', aTotal]);
+                            individualRoundRows.push(['', '', '', '', '', '', '', '', '', '']);
+                        });
+                        await axios_1.default.post(webhookUrl, JSON.stringify({
+                            sheetName: `מחזור ${roundNum}`,
+                            headers: individualRoundRows[0],
+                            rows: individualRoundRows.slice(1)
+                        }), { headers: { 'Content-Type': 'text/plain;charset=utf-8' }, maxRedirects: 10, timeout: 30000 });
+                    }
+                }
+                catch (indErr) {
+                    console.error('[syncMatchToExcel] Individual round tab sync error:', indErr);
+                }
+                console.log(`[syncMatchToExcel] Successfully posted player scores, H2H results, predictor standings & round ${roundNum} tab to Google Sheet Webhook!`);
             }
             catch (wErr) {
                 console.error('[syncMatchToExcel] Webhook Error:', wErr?.message || wErr);
@@ -2412,17 +2515,24 @@ const runOneHourPreMatchReminder = async (forceManual = false) => {
     const firstMatch = roundMatches[0];
     let kickoffTime = Date.now();
     if (firstMatch.date && firstMatch.time) {
-        const parts = firstMatch.date.split('/');
+        const cleanDateStr = String(firstMatch.date).replace(/\s*\(.*?\)/g, '').trim();
+        const parts = cleanDateStr.split('/');
         if (parts.length === 3) {
-            const isoStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}T${firstMatch.time}:00+03:00`;
-            kickoffTime = new Date(isoStr).getTime();
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2].trim();
+            const isoStr = `${year}-${month}-${day}T${firstMatch.time}:00+03:00`;
+            const parsed = new Date(isoStr).getTime();
+            if (!isNaN(parsed)) {
+                kickoffTime = parsed;
+            }
         }
     }
     const now = Date.now();
     const diffMs = kickoffTime - now;
     const diffHours = diffMs / (1000 * 60 * 60);
-    if (!forceManual && (diffHours > 1.25 || diffHours < 0)) {
-        return { success: false, reason: `Not in 1h window (kickoff in ${diffHours.toFixed(2)} hours)` };
+    if (isNaN(kickoffTime) || (!forceManual && (diffHours > 1.25 || diffHours < 0))) {
+        return { success: false, reason: `Not in 1h window (kickoff in ${isNaN(diffHours) ? 'unknown' : diffHours.toFixed(2)} hours)` };
     }
     const usersSnap = await db.collection('users').get();
     const missingTeams = [];
