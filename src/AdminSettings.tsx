@@ -4,7 +4,7 @@ import { generateAISummary, generateRumors } from './geminiService';
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDocs, writeBatch, getDoc, addDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { DownloadCloud, Users, RefreshCw, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Edit3, Plus, X, Server } from 'lucide-react';
+import { DownloadCloud, Users, RefreshCw, AlertTriangle, UploadCloud, CalendarDays, Camera, Sparkles, Trash2, Undo2, MessageSquare, Megaphone, Star, Eye, Monitor, Smartphone, Clock, Eraser, Calculator, Flame, Trophy, Bell, BellOff, Edit3, Plus, X, Server, Save, RotateCcw, ShieldCheck } from 'lucide-react';
 import { cleanStr, normalizeTeamName } from './utils/teamUtils';
 import { formatTimeWithUS } from './utils/dateUtils';
 
@@ -37,12 +37,68 @@ const parseCsvRow = (str: string) => {
 };
 
 const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdmin = false }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'deleted-logs' | 'radar'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'deleted-logs' | 'radar' | 'backups'>('users');
   const [users, setUsers] = useState<any[]>([]);
   const [deletedTeams, setDeletedTeams] = useState<any[]>([]); 
   const [fixtures, setFixtures] = useState<any[]>([]);
   const [deletedLogs, setDeletedLogs] = useState<any[]>([]);
-  const [loginLogs, setLoginLogs] = useState<any[]>([]); 
+  const [loginLogs, setLoginLogs] = useState<any[]>([]);
+
+  // 🟢 Backup & Restore state 🟢
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [backupsList, setBackupsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'backups'), (snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      docs.sort((a: any, b: any) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+      setBackupsList(docs);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleTriggerManualBackup = async () => {
+    setIsBackingUp(true);
+    showMessage('מבצע גיבוי ידני מלא ל-Firestore... 🛡️', 'info');
+    try {
+      const res = await fetch('https://us-west1-fantasy-luzon.cloudfunctions.net/triggerManualBackup');
+      const data = await res.json();
+      if (data.success) {
+        showMessage(`✅ הגיבוי נוצר בהצלחה!`, 'success');
+      } else {
+        showMessage(`❌ שגיאה בגיבוי: ${data.error}`, 'error');
+      }
+    } catch (e: any) {
+      showMessage(`❌ שגיאה בחיבור לשרת הגיבויים`, 'error');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreBackup = async (backupId: string, dateLabel: string) => {
+    if (!window.confirm(`⚠️ אזהרה: האם אתה בטוח שברצונך לשחזר את כל נתוני הליגה לגיבוי מתאריך ${dateLabel}? כל הנתונים הנוכחיים יוחלפו בנתונים מהגיבוי.`)) return;
+    
+    setIsRestoring(true);
+    showMessage(`משחזר את נתוני הליגה מגיבוי ${dateLabel}... 🔄`, 'info');
+    try {
+      const res = await fetch('https://us-west1-fantasy-luzon.cloudfunctions.net/restoreFromBackup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showMessage(`✅ השחזור הושלם בהצלחה! הנתונים מגיבוי ${dateLabel} נפרסו מחדש.`, 'success');
+      } else {
+        showMessage(`❌ שגיאה בשחזור: ${data.error}`, 'error');
+      }
+    } catch (e: any) {
+      showMessage(`❌ שגיאה בחיבור לשרת השחזור`, 'error');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
@@ -83,6 +139,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
   const [globalUnlock, setGlobalUnlock] = useState<boolean>(false);
   const [systemCurrentRound, setSystemCurrentRound] = useState<number>(1);
   const [scanRoundInput, setScanRoundInput] = useState<string>('');
+  const [globalFontScale, setGlobalFontScale] = useState<number>(100);
+  const [userFontScales, setUserFontScales] = useState<Record<string, number>>({});
+  const [liveBannerGlobalDefault, setLiveBannerGlobalDefault] = useState<boolean>(true);
+  const [userLiveBannerOverrides, setUserLiveBannerOverrides] = useState<Record<string, boolean>>({});
+  const [isBroadcastingBanner, setIsBroadcastingBanner] = useState<boolean>(false);
 
   const [topPlayersDriveUrl, setTopPlayersDriveUrl] = useState('');
   const sheetsApiKey = (import.meta.env && import.meta.env.VITE_SHEETS_API_KEY) || '';
@@ -122,6 +183,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             if (data.globalLock !== undefined) setGlobalLock(data.globalLock);
             if (data.globalUnlock !== undefined) setGlobalUnlock(data.globalUnlock);
             if (data.currentRound !== undefined) setSystemCurrentRound(data.currentRound);
+            setGlobalFontScale(Number(data.globalFontScale) || 100);
+            setUserFontScales(data.userFontScales || {});
+            setLiveBannerGlobalDefault(data.liveBannerGlobalDefault !== false);
+            setUserLiveBannerOverrides(data.userLiveBannerOverrides || {});
         }
     });
 
@@ -188,6 +253,179 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
       showMessage('❌ שגיאה בשליחת רענון בלייב', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateGlobalFontScale = async (newScale: number) => {
+    const clamped = Math.max(70, Math.min(130, Math.round(newScale)));
+    setGlobalFontScale(clamped);
+    try {
+      await setDoc(doc(db, 'leagueData', 'settings'), { globalFontScale: clamped }, { merge: true });
+      showMessage(`✅ גודל פונט גלובלי עודכן ל-${clamped}% לכולם!`, 'success');
+    } catch {
+      showMessage('❌ שגיאה בעדכון גודל פונט גלובלי', 'error');
+    }
+  };
+
+  const handleUpdateUserFontScale = async (keys: string[], displayName: string, newScale: number | null) => {
+    const updatedMap = { ...userFontScales };
+    const validKeys = keys.map(k => (k || '').trim()).filter(Boolean);
+    if (newScale === null) {
+      validKeys.forEach(k => {
+        delete updatedMap[k];
+        delete updatedMap[k.toLowerCase()];
+      });
+    } else {
+      const clamped = Math.max(70, Math.min(130, Math.round(newScale)));
+      validKeys.forEach(k => {
+        updatedMap[k] = clamped;
+        updatedMap[k.toLowerCase()] = clamped;
+      });
+    }
+    setUserFontScales(updatedMap);
+    try {
+      await setDoc(doc(db, 'leagueData', 'settings'), { userFontScales: updatedMap }, { merge: true });
+      showMessage(
+        newScale === null
+          ? `🔄 גודל הפונט של ${displayName} אופס לברירת המחדל (${globalFontScale}%)`
+          : `✅ גודל הפונט של ${displayName} עודכן בלייב ל-${Math.round(newScale)}%!`,
+        'success'
+      );
+    } catch {
+      showMessage('❌ שגיאה בעדכון גודל הפונט למשתמש', 'error');
+    }
+  };
+
+  const handleToggleGlobalLiveBannerDefault = async () => {
+    const nextVal = !liveBannerGlobalDefault;
+    setLiveBannerGlobalDefault(nextVal);
+    try {
+      await setDoc(doc(db, 'leagueData', 'settings'), { liveBannerGlobalDefault: nextVal }, { merge: true });
+      showMessage(
+        nextVal
+          ? '✅ באנר לייב במסך הנעילה הוגדר כפעיל לכולם כברירת מחדל!'
+          : '🔕 באנר לייב במסך הנעילה הוגדר ככבוי כברירת מחדל!',
+        'success'
+      );
+    } catch {
+      showMessage('❌ שגיאה בעדכון הגדרת באנר לייב', 'error');
+    }
+  };
+
+  const handleToggleUserLiveBanner = async (teamId: string, currentVal: boolean) => {
+    const nextVal = !currentVal;
+    const updated = { ...userLiveBannerOverrides, [teamId]: nextVal };
+    setUserLiveBannerOverrides(updated);
+    try {
+      await setDoc(doc(db, 'leagueData', 'settings'), { userLiveBannerOverrides: updated }, { merge: true });
+      showMessage(`✅ הגדרת הבאנר לקבוצה עודכנה (${nextVal ? 'פעיל' : 'כבוי'})!`, 'success');
+    } catch {
+      showMessage('❌ שגיאה בעדכון הגדרת באנר לקבוצה', 'error');
+    }
+  };
+
+  const handleToggleUserPushPref = async (userId: string, prefKey: string, currentVal: boolean) => {
+    const targetUser = users.find(u => u.id === userId);
+    const existingPrefs = targetUser?.pushPreferences || {
+      liveScoreboardBanner: userLiveBannerOverrides[userId] !== undefined ? userLiveBannerOverrides[userId] : liveBannerGlobalDefault,
+      lineupReminders: true,
+      rivalLineups: true,
+      transfers: true,
+      matchResults: true
+    };
+
+    const nextVal = !currentVal;
+    const updatedPrefs = {
+      ...existingPrefs,
+      [prefKey]: nextVal
+    };
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        pushPreferences: updatedPrefs
+      });
+
+      if (prefKey === 'liveScoreboardBanner') {
+        const updatedOverrides = { ...userLiveBannerOverrides, [userId]: nextVal };
+        setUserLiveBannerOverrides(updatedOverrides);
+        await setDoc(doc(db, 'leagueData', 'settings'), { userLiveBannerOverrides: updatedOverrides }, { merge: true });
+      }
+
+      showMessage(`✅ עודכנה הגדרת התראות עבור ${targetUser?.teamName || userId}`, 'success');
+    } catch (e: any) {
+      console.error("Error toggling user push pref:", e);
+      showMessage('❌ שגיאה בעדכון הגדרת פוש למשתמש', 'error');
+    }
+  };
+
+  const handleMuteAllForUser = async (userId: string) => {
+    const targetUser = users.find(u => u.id === userId);
+    const mutedPrefs = {
+      liveScoreboardBanner: false,
+      lineupReminders: false,
+      rivalLineups: false,
+      transfers: false,
+      matchResults: false
+    };
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        pushPreferences: mutedPrefs
+      });
+
+      const updatedOverrides = { ...userLiveBannerOverrides, [userId]: false };
+      setUserLiveBannerOverrides(updatedOverrides);
+      await setDoc(doc(db, 'leagueData', 'settings'), { userLiveBannerOverrides: updatedOverrides }, { merge: true });
+
+      showMessage(`🔕 כל ההתראות כובו עבור ${targetUser?.teamName || userId}`, 'success');
+    } catch (e: any) {
+      console.error("Error muting all for user:", e);
+      showMessage('❌ שגיאה בהשתקת התראות למשתמש', 'error');
+    }
+  };
+
+  const handleEnableAllForUser = async (userId: string) => {
+    const targetUser = users.find(u => u.id === userId);
+    const enabledPrefs = {
+      liveScoreboardBanner: true,
+      lineupReminders: true,
+      rivalLineups: true,
+      transfers: true,
+      matchResults: true
+    };
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        pushPreferences: enabledPrefs
+      });
+
+      const updatedOverrides = { ...userLiveBannerOverrides, [userId]: true };
+      setUserLiveBannerOverrides(updatedOverrides);
+      await setDoc(doc(db, 'leagueData', 'settings'), { userLiveBannerOverrides: updatedOverrides }, { merge: true });
+
+      showMessage(`🔔 כל ההתראות הופעלו עבור ${targetUser?.teamName || userId}`, 'success');
+    } catch (e: any) {
+      console.error("Error enabling all for user:", e);
+      showMessage('❌ שגיאה בהפעלת התראות למשתמש', 'error');
+    }
+  };
+
+  const handleBroadcastLiveBannerNow = async () => {
+    setIsBroadcastingBanner(true);
+    showMessage('משדר עדכון באנר תוצאות חי לכל המכשירים ברשת... 📲', 'info');
+    try {
+      const triggerFunc = httpsCallable(functions, 'triggerLiveScoreboardBanner');
+      const res: any = await triggerFunc({ silent: false });
+      if (res.data && res.data.success) {
+        showMessage(`✅ באנר הלייב שודר בהצלחה ל-${res.data.count || 0} מכשירים/מנג'רים!`, 'success');
+      } else {
+        showMessage(`ℹ️ שידור הושלם (${res.data?.message || res.data?.reason || 'ללא נתונים'})`, 'info');
+      }
+    } catch (e: any) {
+      console.error(e);
+      showMessage('❌ שגיאה בשידור באנר לייב: ' + (e.message || 'שגיאה במערכת'), 'error');
+    } finally {
+      setIsBroadcastingBanner(false);
     }
   };
 
@@ -851,11 +1089,73 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
             <button onClick={() => setActiveTab('radar')} className={`flex-1 py-3 px-4 rounded-xl font-black transition-all whitespace-nowrap flex items-center justify-center gap-2 ${activeTab === 'radar' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
                 <Eye className="w-4 h-4" /> רדאר כניסות
             </button>
+            <button onClick={() => setActiveTab('backups')} className={`flex-1 py-3 px-4 rounded-xl font-black transition-all whitespace-nowrap flex items-center justify-center gap-2 ${activeTab === 'backups' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
+                <ShieldCheck className="w-4 h-4 text-amber-400" /> גיבוי ושחזור
+            </button>
           </div>
         )}
       </div>
 
       <div className="max-w-5xl mx-auto">
+        
+        {/* --- מסך גיבוי ושחזור --- */}
+        {activeTab === 'backups' && (
+          <div className="space-y-6 animate-in fade-in zoom-in-95">
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-amber-500/30 shadow-xl">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 border-b border-slate-700 pb-4 gap-4">
+                <div>
+                  <h3 className="text-2xl font-black text-amber-400 flex items-center gap-2">🛡️ מרכז גיבויים ושחזור נתונים</h3>
+                  <p className="text-sm text-slate-400 mt-1 font-bold">גיבוי אוטומטי יומי מתבצע ב-03:00 בלילה. כאן תוכל ללחוץ על גיבוי ידני או לשחזר מכל נקודת זמן.</p>
+                </div>
+                <button
+                  onClick={handleTriggerManualBackup}
+                  disabled={isBackingUp}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-5 py-3 rounded-2xl font-black flex items-center gap-2 shadow-lg transition-transform active:scale-95 shrink-0"
+                >
+                  <Save className="w-5 h-5" />
+                  <span>{isBackingUp ? 'יוצר גיבוי...' : '💾 צור גיבוי עכשיו'}</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-3">רשימת גיבויים זמינים לשחזור ({backupsList.length}):</h4>
+                {backupsList.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 font-bold bg-slate-900/50 rounded-2xl border border-slate-800">
+                    עדיין אין גיבויים במערכת. לחץ על "צור גיבוי עכשיו" ליצירת הגיבוי הראשון.
+                  </div>
+                ) : (
+                  backupsList.map((b) => {
+                    const dateStr = b.timestamp ? new Date(b.timestamp).toLocaleString('he-IL') : (b.date || b.id);
+                    const isManual = b.type === 'MANUAL';
+
+                    return (
+                      <div key={b.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-900/80 p-4 rounded-2xl border border-slate-700 gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase ${isManual ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                              {isManual ? 'גיבוי ידני' : 'גיבוי אוטומטי יומי'}
+                            </span>
+                            <span className="font-black text-white text-base">{dateStr}</span>
+                          </div>
+                          <div className="text-xs text-slate-400 font-mono mt-1">מזהה: {b.id}</div>
+                        </div>
+
+                        <button
+                          onClick={() => handleRestoreBackup(b.id, dateStr)}
+                          disabled={isRestoring}
+                          className="bg-red-500/10 hover:bg-red-500/30 text-red-400 hover:text-red-300 border border-red-500/30 px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm self-end sm:self-center"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>{isRestoring ? 'משחזר...' : '🔄 שחזר מגיבוי זה'}</span>
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* --- מסך הרדאר --- */}
         {activeTab === 'radar' && (
@@ -1110,6 +1410,344 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
               </div>
             </div>
 
+            {/* 🔠 2.5 שליטה בגודל הפונט והתצוגה (כללי או אישי לכל משתמש בלייב!) 🔠 */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-cyan-500/40 shadow-xl animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
+              <div className="absolute top-0 right-0 w-36 h-36 bg-cyan-500/10 blur-[55px] pointer-events-none rounded-full"></div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 relative z-10">
+                <div>
+                  <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                    <Smartphone className="text-cyan-400 w-6 h-6" /> שליטה בגודל הפונט והתצוגה 🔠
+                  </h3>
+                  <p className="text-slate-400 text-xs md:text-sm font-bold mt-1">
+                    שנה את גודל הפונט לכל הליגה או התאם גודל פונט אישי למשתמש ספציפי (כמו אליק) — מתעדכן אוטומטית ובלייב בנייד שלו!
+                  </p>
+                </div>
+                <span className="bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-3.5 py-1.5 rounded-xl font-black text-xs shrink-0 self-start sm:self-center">
+                  ברירת מחדל כעת: {globalFontScale}%
+                </span>
+              </div>
+
+              {/* שליטה גלובלית לכולם */}
+              <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-700 mb-5 relative z-10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-white">🌐 גודל פונט גלובלי (ברירת מחדל לכל המשתמשים)</div>
+                    <div className="text-[11px] font-bold text-slate-400">חל על כל משתמש שלא הוגדר לו גודל אישי נפרד למטה</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      onClick={() => handleUpdateGlobalFontScale(globalFontScale - 5)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs border border-slate-600 active:scale-95"
+                      title="הקטן ב-5%"
+                    >
+                      -5%
+                    </button>
+                    {[80, 85, 90, 95, 100, 105, 110].map(pct => (
+                      <button
+                        key={pct}
+                        onClick={() => handleUpdateGlobalFontScale(pct)}
+                        className={`px-2.5 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 border ${
+                          globalFontScale === pct
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                            : 'bg-slate-800/70 hover:bg-slate-700 text-slate-300 border-slate-700'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => handleUpdateGlobalFontScale(globalFontScale + 5)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs border border-slate-600 active:scale-95"
+                      title="הגדל ב-5%"
+                    >
+                      +5%
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* שליטה אישית לכל משתמש / מנג'ר */}
+              <div className="relative z-10">
+                <div className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">
+                  👤 התאמה אישית לפי משתמש / מנג'ר (מתעדכן אצלו במסך בזמן אמת):
+                </div>
+                <div className="space-y-2.5 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
+                  {users
+                    .filter(u => u.id !== 'system')
+                    .flatMap(u => {
+                      const entries: Array<{ rowId: string; name: string; teamName: string; roleLabel: string; keys: string[] }> = [];
+                      const mainName = (u.manager || u.name || '').trim();
+                      const mainEmail = (u.email || '').toLowerCase().trim();
+                      if (mainName || mainEmail) {
+                        entries.push({
+                          rowId: `${u.id}_main`,
+                          name: mainName || mainEmail,
+                          teamName: u.teamName || 'אדמין',
+                          roleLabel: u.id === 'admin' ? 'מנהל על' : "מנג'ר ראשי",
+                          keys: [mainEmail, mainName, u.id === 'admin' ? '' : `${u.id}_main`].filter(Boolean)
+                        });
+                      }
+                      const assistName = (u.assistantName || '').trim();
+                      const assistEmail = (u.assistantEmail || '').toLowerCase().trim();
+                      if (assistName || assistEmail) {
+                        entries.push({
+                          rowId: `${u.id}_assist`,
+                          name: assistName || assistEmail,
+                          teamName: u.teamName || '',
+                          roleLabel: "מנג'ר משנה",
+                          keys: [assistEmail, assistName, `${u.id}_assist`].filter(Boolean)
+                        });
+                      }
+                      if (Array.isArray(u.assistants)) {
+                        u.assistants.forEach((a: any, idx: number) => {
+                          const aName = (a?.name || '').trim();
+                          const aEmail = (a?.email || '').toLowerCase().trim();
+                          if ((aName || aEmail) && aEmail !== assistEmail && aName !== assistName) {
+                            entries.push({
+                              rowId: `${u.id}_assist_${idx}`,
+                              name: aName || aEmail,
+                              teamName: u.teamName || '',
+                              roleLabel: "מנג'ר משנה",
+                              keys: [aEmail, aName].filter(Boolean)
+                            });
+                          }
+                        });
+                      }
+                      return entries;
+                    })
+                    .map(person => {
+                      const customVal = person.keys
+                        .map(k => userFontScales[k] ?? userFontScales[k.toLowerCase()])
+                        .find(v => typeof v === 'number');
+                      const effectiveScale = customVal || globalFontScale;
+                      const hasCustom = typeof customVal === 'number';
+
+                      return (
+                        <div
+                          key={person.rowId}
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl border transition-all ${
+                            hasCustom
+                              ? 'bg-cyan-950/30 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.1)]'
+                              : 'bg-slate-900/70 border-slate-700/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-lg shrink-0">{hasCustom ? '✨' : '👤'}</span>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-black text-white text-sm">{person.name}</span>
+                                <span className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
+                                  {person.teamName} • {person.roleLabel}
+                                </span>
+                                {hasCustom && (
+                                  <span className="text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-md">
+                                    מותאם אישית: {customVal}%
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleUpdateUserFontScale(person.keys, person.name, effectiveScale - 5)}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[11px] border border-slate-600 active:scale-95"
+                              title="הקטן ב-5%"
+                            >
+                              -5%
+                            </button>
+                            {[80, 85, 90, 95, 100].map(pct => (
+                              <button
+                                key={pct}
+                                onClick={() => handleUpdateUserFontScale(person.keys, person.name, pct)}
+                                className={`px-2 py-1 rounded-lg font-black text-[11px] transition-all active:scale-95 border ${
+                                  effectiveScale === pct && (hasCustom || pct === globalFontScale)
+                                    ? hasCustom
+                                      ? 'bg-cyan-400 text-slate-950 border-cyan-300'
+                                      : 'bg-slate-700 text-white border-slate-500'
+                                    : 'bg-slate-950/60 hover:bg-slate-800 text-slate-400 border-slate-800'
+                                }`}
+                              >
+                                {pct}%
+                              </button>
+                            ))}
+                            <button
+                              onClick={() => handleUpdateUserFontScale(person.keys, person.name, effectiveScale + 5)}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-[11px] border border-slate-600 active:scale-95"
+                              title="הגדל ב-5%"
+                            >
+                              +5%
+                            </button>
+                            {hasCustom && (
+                              <button
+                                onClick={() => handleUpdateUserFontScale(person.keys, person.name, null)}
+                                className="px-2 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-300 font-black text-[10px] border border-red-500/30 active:scale-95 mr-1"
+                                title="אפס לברירת מחדל"
+                              >
+                                איפוס
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+
+            {/* 📲 2.6 ניהול באנר תוצאות חי במסך הנעילה (Live Scoreboard Banner) 📲 */}
+            <div className="bg-slate-800 p-6 md:p-8 rounded-[32px] border border-emerald-500/40 shadow-xl animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
+              <div className="absolute top-0 right-0 w-36 h-36 bg-emerald-500/10 blur-[55px] pointer-events-none rounded-full"></div>
+              
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 relative z-10 border-b border-slate-700 pb-4">
+                <div>
+                  <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                    <Smartphone className="text-emerald-400 w-6 h-6" /> ניהול באנר תוצאות לייב במסך הנעילה 📲
+                  </h3>
+                  <p className="text-slate-400 text-xs md:text-sm font-bold mt-1">
+                    באנר התוצאות משדר עדכון חי שקט למסך הנעילה/מרכז ההודעות של המשתמשים ברגע שמנוקדים שחקנים בזירה. כאן תוכל להגדיר האם הוא פעיל כברירת מחדל, להפעיל/לכבות פר קבוצה, או לשדר פוש רענון מיידי לכולם!
+                  </p>
+                </div>
+                
+                <button
+                  onClick={handleBroadcastLiveBannerNow}
+                  disabled={isBroadcastingBanner}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black px-5 py-3 rounded-2xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 shrink-0 self-start sm:self-center"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isBroadcastingBanner ? 'animate-spin' : ''}`} />
+                  <span>{isBroadcastingBanner ? 'משדר לכולם...' : '📲 שדר באנר מעודכן לכולם עכשיו'}</span>
+                </button>
+              </div>
+
+              {/* הגדרה ראשית לכל הליגה */}
+              <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-700 mb-5 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black text-white flex items-center gap-2">
+                    <span>🌐 הגדרת ברירת מחדל לכל המשתמשים</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-md font-black ${liveBannerGlobalDefault ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'}`}>
+                      {liveBannerGlobalDefault ? 'פעיל לכולם' : 'כבוי לכולם'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-bold text-slate-400 mt-0.5">
+                    {liveBannerGlobalDefault
+                      ? 'כל משתמש שמאשר התראות יקבל את באנר התוצאות אוטומטית (אלא אם ביטל ספציפית בכפתור בזירה)'
+                      : 'הבאנר כבוי עבור כולם אלא אם המשתמש מפעיל אותו עצמאית בכפתור "באנר לייב" בזירה'}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleToggleGlobalLiveBannerDefault}
+                  className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all active:scale-95 shrink-0 border ${
+                    liveBannerGlobalDefault
+                      ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/30'
+                      : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                  }`}
+                >
+                  {liveBannerGlobalDefault ? 'השבת כברירת מחדל 🔕' : 'הפעל כברירת מחדל לכולם 🔔'}
+                </button>
+              </div>
+
+              {/* שליטה ומעקב פושים פר קבוצה */}
+              <div className="relative z-10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <div>
+                    <div className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-emerald-400" />
+                      <span>👥 לוח מעקב ושליטה בהתראות המנג'רים:</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-bold mt-0.5">
+                      צפה בבחירות של כל מנג'ר בזמן אמת, לחץ על כל פוש כדי לשנות אותו, או השתק/הפעל הכל בלחיצה
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2.5 max-h-[450px] overflow-y-auto custom-scrollbar pr-1">
+                  {users
+                    .filter(u => u.id !== 'system' && u.teamName)
+                    .map(u => {
+                      const hasExplicit = userLiveBannerOverrides[u.id] !== undefined;
+                      const bannerOn = hasExplicit ? userLiveBannerOverrides[u.id] : (u.pushPreferences?.liveScoreboardBanner !== undefined ? u.pushPreferences.liveScoreboardBanner : liveBannerGlobalDefault);
+                      const lineupOn = u.pushPreferences?.lineupReminders !== false;
+                      const rivalOn = u.pushPreferences?.rivalLineups !== false;
+                      const transfersOn = u.pushPreferences?.transfers !== false;
+                      const resultsOn = u.pushPreferences?.matchResults !== false;
+
+                      const allMuted = !bannerOn && !lineupOn && !rivalOn && !transfersOn && !resultsOn;
+
+                      const pushItems = [
+                        { key: 'liveScoreboardBanner', label: 'באנר לייב', icon: '📱', isEnabled: bannerOn },
+                        { key: 'lineupReminders', label: 'תזכורות הרכב', icon: '⏰', isEnabled: lineupOn },
+                        { key: 'rivalLineups', label: 'הרכבי יריבים', icon: '⚔️', isEnabled: rivalOn },
+                        { key: 'transfers', label: 'שוק העברות', icon: '🔥', isEnabled: transfersOn },
+                        { key: 'matchResults', label: 'סיום מחזור', icon: '🏆', isEnabled: resultsOn }
+                      ];
+
+                      return (
+                        <div
+                          key={u.id}
+                          className="bg-slate-900/80 border border-slate-700/80 hover:border-slate-600 rounded-2xl p-3.5 transition-all space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-white text-sm truncate">{u.teamName}</span>
+                                <span className="text-xs text-slate-400 font-bold">({u.manager || u.name})</span>
+                                {allMuted && (
+                                  <span className="text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full font-black">
+                                    הכל מושתק 🔕
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() => handleMuteAllForUser(u.id)}
+                                title="כבה את כל ההתראות למשתמש זה"
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all active:scale-95"
+                              >
+                                השתק הכל 🔕
+                              </button>
+                              <button
+                                onClick={() => handleEnableAllForUser(u.id)}
+                                title="הפעל את כל ההתראות למשתמש זה"
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all active:scale-95"
+                              >
+                                הפעל הכל 🔔
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 5 Push Items Pills */}
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                            {pushItems.map(item => (
+                              <button
+                                key={item.key}
+                                onClick={() => handleToggleUserPushPref(u.id, item.key, item.isEnabled)}
+                                title={`לחץ לשינוי (${item.isEnabled ? 'פעיל - לחץ לכיבוי' : 'כבוי - לחץ להפעלה'})`}
+                                className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition-all active:scale-95 ${
+                                  item.isEnabled
+                                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50 shadow-sm'
+                                    : 'bg-slate-950/60 border-slate-800 text-slate-500 hover:text-slate-400 hover:border-slate-700 line-through opacity-75'
+                                }`}
+                              >
+                                <span className="flex items-center gap-1">
+                                  <span>{item.icon}</span>
+                                  <span className="truncate">{item.label}</span>
+                                </span>
+                                <span className="text-[10px] font-bold mr-1">
+                                  {item.isEnabled ? '✓' : '✕'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+
             {/* 🧮 3. חישוב טבלה ומומנטום 🧮 */}
             <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 md:p-8 rounded-[32px] border border-purple-400/50 shadow-[0_0_30px_rgba(168,85,247,0.15)] animate-in fade-in zoom-in-95 relative overflow-hidden mt-6">
               <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/10 blur-[60px] pointer-events-none rounded-full"></div>
@@ -1164,6 +1802,15 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onClose = () => {}, isAdm
                           ) : (
                             <span title="לא אישר התראות" className="bg-red-500/10 text-red-400/50 p-1.5 rounded-lg border border-red-500/20">
                               <BellOff className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                          {(u as any).isPwaInstalled ? (
+                            <span title="אפליקציה שמורה בנייד" className="bg-emerald-500/15 text-emerald-400 text-[10px] font-black px-2 py-1 rounded-md border border-emerald-500/30">
+                              📱 שמור בנייד
+                            </span>
+                          ) : (
+                            <span title="גולש מדפדפן רגיל" className="bg-amber-500/10 text-amber-400/70 text-[10px] font-bold px-2 py-1 rounded-md border border-amber-500/20">
+                              🌐 דפדפן
                             </span>
                           )}
                         </div>
