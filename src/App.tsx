@@ -13,13 +13,24 @@ import SocialFeed from './components/SocialFeed';
 import CupTab from './components/CupTab';
 import FreeAgentsTab from './components/FreeAgentsTab';
 import { VersionUpdateBanner } from './components/VersionUpdateBanner';
-import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell, Search } from 'lucide-react'; // 🟢 הוספנו את Bell ו-Search
+import { InstallPwaBanner } from './components/InstallPwaBanner';
+import { HeaderRoundBadge } from './components/RoundCountdown';
+import UserSettingsModal from './components/UserSettingsModal';
+import { FeatureSpotlight } from './components/FeatureSpotlight';
+import { Home, Users, Zap, Trophy, Calendar, Settings, BarChart3, RefreshCcw, Bell, Search, SlidersHorizontal } from 'lucide-react'; 
 import { collection, onSnapshot, doc, setDoc, getDocs, addDoc, serverTimestamp, arrayUnion, writeBatch } from 'firebase/firestore'; 
 import { getToken, onMessage } from 'firebase/messaging'; 
 
 const App: React.FC = () => {
   const [loggedInUser, setLoggedInUser] = useState<User | null>(() => authService.getSession());
-  const [activeTab, setActiveTab] = useState<'home' | 'live' | 'lineup' | 'table' | 'fixtures' | 'settings' | 'cup' | 'free_agents'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'live' | 'lineup' | 'table' | 'fixtures' | 'settings' | 'cup' | 'free_agents'>(() => {
+    const saved = localStorage.getItem('luzon_default_tab');
+    if (saved && ['home', 'live', 'lineup', 'table', 'fixtures', 'cup', 'free_agents'].includes(saved)) {
+      return saved as any;
+    }
+    return 'home';
+  });
+  const [isUserSettingsOpen, setIsUserSettingsOpen] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   
@@ -32,6 +43,11 @@ const App: React.FC = () => {
 
   // 🟢 סטייט ששומר את מצב ההתראות של המשתמש 🟢
   const [pushStatus, setPushStatus] = useState<'default' | 'granted' | 'denied' | 'unsupported'>('unsupported');
+  const [pushBannerDismissed, setPushBannerDismissed] = useState<boolean>(false);
+  const [fontSettings, setFontSettings] = useState<{ globalFontScale: number; userFontScales: Record<string, number> }>({
+    globalFontScale: 100,
+    userFontScales: {}
+  });
 
   const forceHardRefresh = () => {
     setIsRefreshing(true);
@@ -49,7 +65,7 @@ const App: React.FC = () => {
   const displayName = isEran ? 'ערן' : (loggedInUser?.name || '');
 
   // 🟢 1. מנגנון בדיקת גרסה אוטומטי - מרענן אוטומטית למשתמשים כשיוצא Build חדש 🟢
-  const LUZON_BUILD_VERSION = '14.0.20260922_v16';
+  const LUZON_BUILD_VERSION = '14.0.20261018_v36';
   useEffect(() => {
     const lastSeenVersion = localStorage.getItem('luzon_app_version');
     if (lastSeenVersion !== LUZON_BUILD_VERSION) {
@@ -91,8 +107,28 @@ const App: React.FC = () => {
         console.log("Foreground FCM Notification received:", payload);
         const title = payload.notification?.title || payload.data?.title || 'פנטזי לוזון ⚽';
         const body = payload.notification?.body || payload.data?.body || '';
+        const customTag = payload.data?.tag;
 
-        // 1. הקפצת באנר התראה של הדפדפן גם כשהאתר פתוח במסך
+        // אם מדובר בעדכון שקט של באנר לוח התוצאות בלייב במסך הנעילה - נעדכן רק את הבאנר בוילון ההתראות ללא הקפצת טואסט באתר
+        if (customTag === 'luzon-live-scoreboard') {
+          if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification(title, {
+                body,
+                icon: '/app-icon.png',
+                badge: '/app-icon.png',
+                tag: 'luzon-live-scoreboard',
+                dir: 'rtl',
+                lang: 'he',
+                silent: true,
+                ...( { renotify: false } as any )
+              }).catch(() => {});
+            });
+          }
+          return;
+        }
+
+        // 1. הקפצת באנר התראה של הדפדפן גם כשהאתר פתוח במסך (להתראות רגילות)
         if ('Notification' in window && Notification.permission === 'granted') {
           try {
             new Notification(title, {
@@ -226,8 +262,15 @@ const App: React.FC = () => {
     const fallbackTimer = setTimeout(() => setIsInitializing(false), 2000);
     try {
       const unsubSettings = onSnapshot(doc(db, "leagueData", "settings"), (docSnap) => {
-        if (docSnap.exists() && docSnap.data()?.currentRound) {
-          setCurrentRound(docSnap.data().currentRound);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data?.currentRound) {
+            setCurrentRound(data.currentRound);
+          }
+          setFontSettings({
+            globalFontScale: Number(data?.globalFontScale) || 100,
+            userFontScales: data?.userFontScales || {}
+          });
         }
       });
 
@@ -315,6 +358,35 @@ const App: React.FC = () => {
     } catch (e) { clearTimeout(fallbackTimer); setIsInitializing(false); }
   }, []);
 
+  // 🟢 החלת גודל פונט מותאם אישית למשתמש (או גלובלי) בזמן אמת מהגדרות האדמין 🟢
+  useEffect(() => {
+    const scales = fontSettings.userFontScales || {};
+    let resolvedScale = Number(fontSettings.globalFontScale) || 100;
+
+    if (loggedInUser) {
+      const emailKey = loggedInUser.email?.toLowerCase().trim() || '';
+      const nameKey = (loggedInUser.name || '').trim();
+      const teamIdKey = loggedInUser.id || (loggedInUser as any).teamId || '';
+
+      if (emailKey && scales[emailKey]) {
+        resolvedScale = Number(scales[emailKey]);
+      } else if (nameKey && scales[nameKey]) {
+        resolvedScale = Number(scales[nameKey]);
+      } else if (teamIdKey && scales[teamIdKey]) {
+        resolvedScale = Number(scales[teamIdKey]);
+      } else if (teamIdKey) {
+        const myTeamDoc = teams.find(t => t.id === teamIdKey) as any;
+        if (myTeamDoc?.fontScale) {
+          resolvedScale = Number(myTeamDoc.fontScale);
+        }
+      }
+    }
+
+    if (typeof (window as any).applyLuzonFontScale === 'function') {
+      (window as any).applyLuzonFontScale(resolvedScale);
+    }
+  }, [loggedInUser, teams, fontSettings]);
+
   const handleLogout = () => {
     if(window.confirm('להתנתק מהמערכת?')) {
       authService.logout();
@@ -336,7 +408,7 @@ const App: React.FC = () => {
       {id: 'table', icon: <BarChart3 className="w-6 h-6" />, label: 'טבלה'}, 
       {id: 'fixtures', icon: <Calendar className="w-6 h-6" />, label: 'משחקים'},
       {id: 'cup', icon: <Trophy className="w-6 h-6" />, label: 'גביע'}, 
-      ...(isEran ? [{id: 'settings', icon: <Settings className="w-6 h-6" />, label: 'הגדרות'}] : [])
+      ...(isEran ? [{id: 'settings', icon: <Settings className="w-6 h-6" />, label: 'הגדרות', hideOnMobileNav: true}] : [])
     ];
   }, [loggedInUser, isEran]);
 
@@ -344,22 +416,55 @@ const App: React.FC = () => {
   if (!loggedInUser) return <LoginScreen onLogin={setLoggedInUser} />;
 
   return (
-    <div className="min-h-screen text-slate-100 flex flex-col pb-28 font-sans bg-[#0B1120] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-[#020617]" dir="rtl">
-      
-      <header className="h-[72px] bg-[#0B1120]/70 backdrop-blur-2xl border-b border-white/5 flex items-center justify-between px-6 sticky top-0 z-[100] shadow-sm">
-        <div className="flex items-center gap-3">
-          <span className="font-black italic text-3xl tracking-tighter drop-shadow-lg text-white">LUZON <span className="text-green-500">14</span></span>
+    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden text-slate-100 flex flex-col pb-28 lg:pb-10 font-sans bg-[#0B1120] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-[#020617]" dir="rtl">
+      <InstallPwaBanner userId={loggedInUser.id} />
+      <header className="h-[64px] sm:h-[72px] w-full max-w-[100vw] bg-[#0B1120]/85 backdrop-blur-2xl border-b border-white/5 flex items-center justify-between px-3 sm:px-6 sticky top-0 z-[100] shadow-sm gap-2 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <span className="font-black italic text-2xl sm:text-3xl tracking-tighter drop-shadow-lg text-white">LUZON <span className="text-green-500">14</span></span>
           <div className="h-4 w-[1px] bg-white/20 hidden sm:block"></div>
-          <span className="text-[10px] font-black bg-green-500/10 border border-green-500/30 text-green-400 px-3 py-1 rounded-full uppercase tracking-widest hidden sm:flex items-center gap-1 shadow-inner">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]"></span>
-            מחזור {currentRound}
-          </span>
+          <HeaderRoundBadge currentRound={currentRound} />
         </div>
-        <div className="flex items-center gap-2 sm:gap-4">
+
+        {/* 🖥️ סרגל ניווט עליון למחשב בלבד (lg:flex) לחוויית Desktop מהירה ונוחה 🖥️ */}
+        <div className="hidden lg:flex items-center gap-1 bg-slate-900/90 p-1.5 rounded-2xl border border-white/10 shadow-inner">
+          {availableTabs.map((tab: any) => {
+            const isActive = activeTab === tab.id;
+            const isCup = tab.id === 'cup';
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-black text-xs transition-all duration-200 active:scale-95 ${
+                  isActive
+                    ? isCup
+                      ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 shadow-[0_0_12px_rgba(250,204,21,0.2)]'
+                      : 'bg-green-500/20 text-green-400 border border-green-500/40 shadow-[0_0_12px_rgba(34,197,94,0.2)]'
+                    : `text-slate-400 hover:bg-white/5 border border-transparent ${isCup ? 'hover:text-yellow-400' : 'hover:text-white'}`
+                }`}
+              >
+                <div className="scale-75 -mr-1">{tab.icon}</div>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-1.5 sm:gap-4 shrink-0">
           <div className="text-right hidden sm:block">
             <div className="text-sm font-black text-white leading-tight">{loggedInUser.teamName}</div>
             <div className="text-[11px] font-bold text-slate-400">{displayName}</div>
           </div>
+
+          {/* 🟢 בנייד: כפתור הגדרות מנהל בסרגל העליון כדי לפנות מקום בתפריט התחתון 🟢 */}
+          {isEran && (
+            <button
+              onClick={() => setActiveTab('settings')}
+              title="הגדרות מנהל"
+              className={`sm:hidden p-2 rounded-xl transition-all border flex items-center justify-center shadow-sm active:scale-95 ${activeTab === 'settings' ? 'bg-green-500/20 text-green-400 border-green-500/40' : 'bg-white/5 text-slate-300 border-white/10'}`}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          )}
           
           {/* 🟢 כפתור אישור התראות שמופיע רק למי שעוד לא אישר 🟢 */}
           {pushStatus !== 'granted' && pushStatus !== 'unsupported' && (
@@ -372,6 +477,24 @@ const App: React.FC = () => {
               <span className="hidden md:inline">הפעל התראות</span>
             </button>
           )}
+
+          {/* 🟢 כפתור הגדרות אישיות לכל המשתמשים עם הבלטה בכניסה ראשונה 🟢 */}
+          <FeatureSpotlight
+            featureId="user_settings_v1"
+            title="חדש! הגדרות אישיות"
+            description="הוספנו לכם כפתור הגדרות אישי! מעכשיו תוכלו לבחור בדיוק איזה פושים לקבל (או להשתיק הכל), להגדיר את גודל הטקסט ולהתאים את האפליקציה בדיוק בשבילכם."
+            actionLabel="פתח הגדרות ⚙️"
+            onAction={() => setIsUserSettingsOpen(true)}
+            placement="bottom-left"
+          >
+            <button
+              onClick={() => setIsUserSettingsOpen(true)}
+              title="הגדרות אישיות"
+              className="bg-white/5 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 p-2 rounded-xl transition-all border border-white/10 hover:border-emerald-500/30 flex items-center justify-center shadow-sm active:scale-95"
+            >
+              <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+            </button>
+          </FeatureSpotlight>
 
           <button 
              onClick={forceHardRefresh} 
@@ -388,24 +511,33 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* 🔔 באנר "להציק" ולהזכיר למנג'ר להפעיל התראות פוש 🔔 */}
-      {pushStatus !== 'granted' && pushStatus !== 'unsupported' && (
-        <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-6 md:w-96 bg-gradient-to-r from-slate-900 via-amber-950/90 to-slate-900 border-2 border-yellow-500/50 p-4 rounded-2xl shadow-[0_10px_30px_rgba(234,179,8,0.25)] z-[999] animate-in slide-in-from-bottom-5 duration-500 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+      {/* 🔔 באנר "להציק" ולהזכיר למנג'ר להפעיל התראות פוש (מוסתר בטאב הרכב כדי לא להסתיר את כפתור שמירת ההרכב) 🔔 */}
+      {pushStatus !== 'granted' && pushStatus !== 'unsupported' && !pushBannerDismissed && activeTab !== 'lineup' && (
+        <div className="fixed bottom-20 lg:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 bg-gradient-to-r from-slate-900 via-amber-950/90 to-slate-900 border-2 border-yellow-500/50 p-3.5 rounded-2xl shadow-[0_10px_30px_rgba(234,179,8,0.25)] z-[999] animate-in slide-in-from-bottom-5 duration-500 flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400 shrink-0 animate-bounce">
               <Bell className="w-5 h-5 fill-current" />
             </div>
-            <div>
-              <div className="text-sm font-black text-white leading-tight">אל תפספס שום שער! ⚽</div>
-              <div className="text-[11px] font-bold text-slate-300 mt-0.5">הפעל התראות פוש לקבלת עדכוני לייב.</div>
+            <div className="min-w-0">
+              <div className="text-sm font-black text-white leading-tight truncate">אל תפספס שום שער! ⚽</div>
+              <div className="text-[11px] font-bold text-slate-300 mt-0.5 truncate">הפעל התראות פוש לקבלת עדכוני לייב.</div>
             </div>
           </div>
-          <button 
-            onClick={handleRequestPush}
-            className="bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-black text-xs px-3.5 py-2 rounded-xl shadow-lg shrink-0 active:scale-95 transition-transform"
-          >
-            הפעל! 🔔
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button 
+              onClick={handleRequestPush}
+              className="bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-black text-xs px-3 py-2 rounded-xl shadow-lg shrink-0 active:scale-95 transition-transform"
+            >
+              הפעל! 🔔
+            </button>
+            <button
+              onClick={() => setPushBannerDismissed(true)}
+              className="text-slate-400 hover:text-white p-1.5 rounded-lg transition-colors"
+              title="סגור"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
@@ -420,31 +552,41 @@ const App: React.FC = () => {
         </div>
       )}
       
-      <main className="flex-1 overflow-x-hidden p-4 md:p-8 relative z-10">
-        {activeTab === 'home' && <SocialFeed teams={teams} currentRound={currentRound} loggedInUser={{...loggedInUser, name: displayName}} onNavigate={() => setActiveTab('table')} />}
-        {activeTab === 'live' && <LiveArena currentRound={currentRound} teams={teams} isModerator={isModerator} loggedInUser={{...loggedInUser, name: displayName}} isAdmin={isEran} />}
-        {activeTab === 'lineup' && <LineupManager teams={teams} loggedInUser={{...loggedInUser, name: displayName}} currentRound={currentRound} isAdmin={isEran} />}
-        {activeTab === 'fixtures' && <FixturesTab currentRound={currentRound} isAdmin={isEran} />}
-        {activeTab === 'table' && (
-          <div className="max-w-4xl mx-auto">
-            <React.Suspense fallback={<div className="p-12 text-center text-green-400 font-black animate-pulse text-lg">טוען טבלאות ליגה...</div>}>
-              <AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" />
-            </React.Suspense>
-          </div>
-        )}
+      <main className="flex-1 overflow-x-hidden p-3 sm:p-4 md:p-8 relative z-10">
+        <div className={activeTab === 'home' ? 'block' : 'hidden'}>
+          <SocialFeed teams={teams} currentRound={currentRound} loggedInUser={{...loggedInUser, name: displayName}} onNavigate={() => setActiveTab('table')} />
+        </div>
+        <div className={activeTab === 'live' ? 'block' : 'hidden'}>
+          <LiveArena currentRound={currentRound} teams={teams} isModerator={isModerator} loggedInUser={{...loggedInUser, name: displayName}} isAdmin={isEran} />
+        </div>
+        <div className={activeTab === 'lineup' ? 'block' : 'hidden'}>
+          <LineupManager teams={teams} loggedInUser={{...loggedInUser, name: displayName}} currentRound={currentRound} isAdmin={isEran} />
+        </div>
+        <div className={activeTab === 'fixtures' ? 'block' : 'hidden'}>
+          <FixturesTab currentRound={currentRound} isAdmin={isEran} />
+        </div>
+        <div className={activeTab === 'table' ? 'block max-w-4xl mx-auto' : 'hidden'}>
+          <React.Suspense fallback={<div className="p-12 text-center text-green-400 font-black animate-pulse text-lg">טוען טבלאות ליגה...</div>}>
+            <AdminLeagueManager isAdmin={isEran} inline={true} initialSubTab="table" />
+          </React.Suspense>
+        </div>
         {activeTab === 'settings' && (
           <React.Suspense fallback={<div className="p-12 text-center text-green-400 font-black animate-pulse text-lg">טוען הגדרות מנהל...</div>}>
             <AdminSettings onClose={() => setActiveTab('home')} isAdmin={isEran} />
           </React.Suspense>
         )}
-        {activeTab === 'cup' && <CupTab />}
-        {activeTab === 'free_agents' && <FreeAgentsTab users={teams} />}
+        <div className={activeTab === 'cup' ? 'block' : 'hidden'}>
+          <CupTab />
+        </div>
+        <div className={activeTab === 'free_agents' ? 'block' : 'hidden'}>
+          <FreeAgentsTab users={teams} />
+        </div>
       </main>
 
-      {/* 🟢 התפריט התחתון המעודכן לטובת המובייל 🟢 */}
-      <nav className="fixed bottom-0 left-0 right-0 w-full bg-[#0B1120]/95 backdrop-blur-2xl border-t border-white/5 pb-[env(safe-area-inset-bottom)] z-[100]">
-         <div className="max-w-lg mx-auto flex items-center justify-evenly h-[76px] sm:h-[84px] px-1 relative">
-            {availableTabs.map(tab => {
+      {/* 🟢 התפריט התחתון המעודכן והמרווח לטובת המובייל וטאבלטים (מוסתר ב-PC שם יש ניווט עליון) 🟢 */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 w-full bg-[#0B1120]/95 backdrop-blur-2xl border-t border-white/10 pb-[env(safe-area-inset-bottom)] z-[100] shadow-[0_-10px_25px_rgba(0,0,0,0.5)]">
+         <div className="max-w-lg mx-auto flex items-center justify-evenly h-[72px] sm:h-[84px] px-1.5 relative">
+            {availableTabs.map((tab: any) => {
               const isActive = activeTab === tab.id;
               const isCup = tab.id === 'cup';
 
@@ -452,20 +594,38 @@ const App: React.FC = () => {
                 <button 
                   key={tab.id} 
                   onClick={() => setActiveTab(tab.id as any)} 
-                  className="flex flex-1 flex-col items-center justify-center h-full transition-all duration-300 outline-none group gap-1 min-w-0"
+                  className={`${tab.hideOnMobileNav ? 'hidden sm:flex' : 'flex'} flex-1 flex-col items-center justify-center h-full transition-all duration-300 outline-none group gap-1 min-w-0 active:scale-95`}
                 >
-                  <div className={`transition-all duration-300 flex items-center justify-center ${isActive ? `-translate-y-1 scale-110 ${isCup ? 'text-yellow-400' : 'text-white'}` : `text-slate-500 group-hover:-translate-y-1 group-active:scale-90 ${isCup ? 'group-hover:text-yellow-400' : 'group-hover:text-slate-300'}`}`}>
-                    <div className="transform scale-90 sm:scale-100">{tab.icon}</div>
+                  <div className={`transition-all duration-300 flex items-center justify-center p-1 rounded-xl ${isActive ? `-translate-y-0.5 scale-110 ${isCup ? 'text-yellow-400 bg-yellow-500/10' : 'text-green-400 bg-green-500/10'}` : `text-slate-400 group-hover:-translate-y-1 group-active:scale-90 ${isCup ? 'group-hover:text-yellow-400' : 'group-hover:text-slate-300'}`}`}>
+                    <div className="transform scale-95 sm:scale-100">{tab.icon}</div>
                   </div>
-                  <span className={`text-[8.5px] sm:text-[9px] font-black uppercase tracking-wide truncate w-full text-center transition-all duration-300 ${isActive ? `opacity-100 -translate-y-0.5 ${isCup ? 'text-yellow-400' : 'text-green-400'}` : `opacity-60 text-slate-400 group-hover:opacity-100 ${isCup ? 'group-hover:text-yellow-400' : 'group-hover:text-white'}`}`}>
+                  <span className={`text-[10px] sm:text-[10px] font-black uppercase tracking-tight truncate w-full text-center transition-all duration-300 ${isActive ? `opacity-100 ${isCup ? 'text-yellow-400' : 'text-green-400'}` : `opacity-75 text-slate-400 group-hover:opacity-100 ${isCup ? 'group-hover:text-yellow-400' : 'group-hover:text-white'}`}`}>
                     {tab.label}
                   </span>
-                  {isActive && <div className={`absolute bottom-1 w-1 h-1 rounded-full ${isCup ? 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.8)]' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]'}`}></div>}
+                  {isActive && <div className={`absolute bottom-1 w-4 h-1 rounded-full ${isCup ? 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.8)]' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]'}`}></div>}
                 </button>
               );
             })}
-         </div>
+          </div>
       </nav>
+
+      {/* 🟢 חלון הגדרות אישיות לכל מנג'ר (פונט, פושים, העדפות) 🟢 */}
+      <UserSettingsModal
+        isOpen={isUserSettingsOpen}
+        onClose={() => setIsUserSettingsOpen(false)}
+        loggedInUser={loggedInUser}
+        onUpdateUser={(updated) => {
+          if (loggedInUser) {
+            setLoggedInUser({ ...loggedInUser, ...updated });
+          }
+        }}
+        currentFontScale={fontSettings.globalFontScale}
+        onApplyFontScale={(scale) => {
+          if (typeof (window as any).applyLuzonFontScale === 'function') {
+            (window as any).applyLuzonFontScale(scale);
+          }
+        }}
+      />
     </div>
   );
 };
