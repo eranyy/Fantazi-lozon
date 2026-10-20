@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3, Lock, Unlock, Trash2, Smartphone } from 'lucide-react';
+import { ChevronDown, Download, DownloadCloud, AlertTriangle, CheckCircle2, Trophy, Flame, RefreshCw, Undo2, ClipboardList, Globe2, Share2, Image as ImageIcon, Swords, CalendarDays, X, Users, Edit3, Lock, Unlock, Trash2, Smartphone, FileText, Copy } from 'lucide-react';
 import { db, functions, storage } from '../firebaseConfig';
 import { doc, onSnapshot, updateDoc, addDoc, collection, getDoc, getDocs, setDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -168,6 +168,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [driveUrlInput, setDriveUrlInput] = useState('');
   const [confirmCloseModalOpen, setConfirmCloseModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [logTeamId, setLogTeamId] = useState<string>('all'); 
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
@@ -633,6 +634,90 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     return total;
   };
 
+  const shareArenaAsText = async () => {
+    setIsShareModalOpen(false);
+    const roundToShare = selectedRound || currentRound;
+    const roundFixture = fixtures.find(r => r.round === roundToShare);
+    const matches = roundFixture?.matches || [];
+    if (matches.length === 0) {
+      showToast("אין משחקים לשיתוף במחזור זה", "error");
+      return;
+    }
+
+    const lines: string[] = [];
+    lines.push(`⚡ *תוצאות לייב • מחזור ${roundToShare}* ⚽\n`);
+    matches.forEach((m: any) => {
+      const hName = TEAM_NAMES[m.h] || m.h;
+      const aName = TEAM_NAMES[m.a] || m.a;
+      lines.push(`• *${hName}* ${calculateTeamScore(m.h)} - ${calculateTeamScore(m.a)} *${aName}*`);
+    });
+    lines.push(`\n📱 *לזירה החיה וטבלאות הלייב:*\nhttps://fantasy-luzon.web.app`);
+
+    const fullText = lines.join("\n");
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `תוצאות מחזור ${roundToShare} - פנטזי לוזון 14`,
+          text: fullText
+        });
+        showToast("שותף בהצלחה! 🚀", "success");
+        return;
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          console.warn("Share error:", err);
+        } else {
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(fullText);
+      showToast("התוצאות הועתקו ללוח! הדבק בווצאפ 📋", "success");
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(fullText)}`, "_blank");
+    } catch (e) {
+      const textArea = document.createElement("textarea");
+      textArea.value = fullText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      showToast("התוצאות הועתקו ללוח! הדבק בווצאפ 📋", "success");
+    }
+  };
+
+  const copyArenaTextOnly = async () => {
+    setIsShareModalOpen(false);
+    const roundToShare = selectedRound || currentRound;
+    const roundFixture = fixtures.find(r => r.round === roundToShare);
+    const matches = roundFixture?.matches || [];
+    if (matches.length === 0) return;
+
+    const lines: string[] = [];
+    lines.push(`⚡ *תוצאות לייב • מחזור ${roundToShare}* ⚽\n`);
+    matches.forEach((m: any) => {
+      const hName = TEAM_NAMES[m.h] || m.h;
+      const aName = TEAM_NAMES[m.a] || m.a;
+      lines.push(`• *${hName}* ${calculateTeamScore(m.h)} - ${calculateTeamScore(m.a)} *${aName}*`);
+    });
+    lines.push(`\n📱 https://fantasy-luzon.web.app`);
+
+    const fullText = lines.join("\n");
+    try {
+      await navigator.clipboard.writeText(fullText);
+      showToast("הטקסט הועתק בהצלחה ללוח! 📋", "success");
+    } catch (e) {
+      const textArea = document.createElement("textarea");
+      textArea.value = fullText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      showToast("הטקסט הועתק בהצלחה ללוח! 📋", "success");
+    }
+  };
+
   const shareArenaAsImage = async () => {
     const el = document.getElementById('arena-capture-area');
     if (!el) return;
@@ -1083,6 +1168,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
         else if (isLogModalOpen) setIsLogModalOpen(false);
         else if (driveModalOpen) setDriveModalOpen(false);
         else if (confirmCloseModalOpen) setConfirmCloseModalOpen(false);
+        else if (isShareModalOpen) setIsShareModalOpen(false);
       } else if (e.key === 'Enter' && editingPlayer) {
         const activeTag = (document.activeElement?.tagName || '').toLowerCase();
         if (activeTag !== 'input' && activeTag !== 'textarea' && activeTag !== 'select') {
@@ -1093,7 +1179,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingPlayer, stats, auditModal, untouchedModal, h2hModal, isLogModalOpen, driveModalOpen, confirmCloseModalOpen]);
+  }, [editingPlayer, stats, auditModal, untouchedModal, h2hModal, isLogModalOpen, driveModalOpen, confirmCloseModalOpen, isShareModalOpen]);
 
   const executeCloseRound = async () => {
     setConfirmCloseModalOpen(false); 
@@ -1733,8 +1819,8 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                   {hasAnyUnreadGlobal && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span></span>}
                 </button>
 
-                <button onClick={shareArenaAsImage} title="שתף תמונת זירה לווצאפ" className="flex-1 md:flex-none p-3 md:p-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl border border-blue-500/50 transition-all shadow-[0_0_15px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2 group relative active:scale-95">
-                  <ImageIcon className="w-5 h-5 group-active:scale-90 transition-transform" />
+                <button onClick={() => setIsShareModalOpen(true)} title="שתף לווצאפ (טקסט / תמונה)" className="flex-1 md:flex-none p-3 md:p-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl border border-blue-500/50 transition-all shadow-[0_0_15px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2 group relative active:scale-95">
+                  <Share2 className="w-5 h-5 group-active:scale-90 transition-transform" />
                   <span className="text-xs md:text-sm font-bold md:hidden">שתף</span>
                   <span className="hidden md:inline font-bold text-sm ml-1">שתף לווצאפ</span>
                 </button>
@@ -2603,6 +2689,103 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                     {isProcessingRound ? <><RefreshCw className="w-5 h-5 animate-spin" /> שואב נתונים...</> : 'סנכרן עכשיו ⚡'}
                 </button>
             </div>
+        </div>
+      )}
+
+            {isShareModalOpen && (
+        <div 
+          className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setIsShareModalOpen(false)}
+        >
+          <div 
+            className="w-full max-w-md bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl relative animate-in slide-in-from-bottom-5 duration-300"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-800 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white">שתף תוצאות לווצאפ 📲</h3>
+                  <p className="text-[11px] text-slate-400 font-medium">מחזור {selectedRound || currentRound} • בחר את אופן השיתוף</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsShareModalOpen(false)} 
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Options */}
+            <div className="space-y-3">
+              {/* Option 1: Fast Text (Recommended) */}
+              <button
+                onClick={shareArenaAsText}
+                className="w-full text-right p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 to-slate-800/80 hover:from-emerald-900/50 hover:to-slate-750 border-2 border-emerald-500/50 hover:border-emerald-400 transition-all group active:scale-[0.98] shadow-lg flex items-start gap-3.5 relative overflow-hidden"
+              >
+                <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-[9px] font-black text-emerald-400 uppercase tracking-wide">
+                  מומלץ • מהיר
+                </div>
+                <div className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform mt-0.5">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1 pr-0.5">
+                  <div className="text-sm sm:text-base font-black text-white group-hover:text-emerald-300 transition-colors">
+                    טקסט קצר לווצאפ
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                    שולח את תוצאות המשחקים בפורמט טקסט קריא ומסודר – ללא תמונות בגלריה!
+                  </p>
+                  {/* Preview snippet */}
+                  <div className="mt-2 p-2 bg-slate-950/70 rounded-xl border border-slate-800/80 text-[11px] font-mono text-slate-400 space-y-0.5">
+                    {(fixtures.find(r => r.round === (selectedRound || currentRound))?.matches || []).slice(0, 3).map((m: any, idx: number) => (
+                      <div key={idx} className="truncate">
+                        • {TEAM_NAMES[m.h] || m.h} {calculateTeamScore(m.h)} - {calculateTeamScore(m.a)} {TEAM_NAMES[m.a] || m.a}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </button>
+
+              {/* Quick Copy Text Button */}
+              <button
+                onClick={copyArenaTextOnly}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-750 transition-all text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
+              >
+                <Copy className="w-3.5 h-3.5 text-emerald-400" />
+                <span>רק העתק את הטקסט ללוח (בלי לפתוח שיתוף)</span>
+              </button>
+
+              <div className="relative flex py-0.5 items-center">
+                <div className="flex-grow border-t border-slate-800"></div>
+                <span className="flex-shrink mx-3 text-slate-500 text-[10px] font-bold">או</span>
+                <div className="flex-grow border-t border-slate-800"></div>
+              </div>
+
+              {/* Option 2: Full Graphic Image */}
+              <button
+                onClick={() => { setIsShareModalOpen(false); shareArenaAsImage(); }}
+                className="w-full text-right p-3.5 rounded-2xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-blue-500/50 transition-all group active:scale-[0.98] flex items-center gap-3.5"
+              >
+                <div className="w-11 h-11 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                  <ImageIcon className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm sm:text-base font-black text-white group-hover:text-blue-300 transition-colors">
+                    תמונה מעוצבת של הזירה
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    מייצר צילום גרפי מלא באיכות גבוהה של לוח המשחקים
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
