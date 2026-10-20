@@ -25,7 +25,7 @@ const App: React.FC = () => {
   const [loggedInUser, setLoggedInUser] = useState<User | null>(() => authService.getSession());
   const [activeTab, setActiveTab] = useState<'home' | 'live' | 'lineup' | 'table' | 'fixtures' | 'settings' | 'cup' | 'free_agents'>(() => {
     const saved = localStorage.getItem('luzon_default_tab');
-    if (saved && ['home', 'live', 'lineup', 'table', 'fixtures', 'cup', 'free_agents'].includes(saved)) {
+    if (saved && ['home', 'live', 'lineup', 'table', 'fixtures', 'cup'].includes(saved)) {
       return saved as any;
     }
     return 'home';
@@ -404,7 +404,6 @@ const App: React.FC = () => {
       {id: 'home', icon: <Home className="w-6 h-6" />, label: 'ראשי'},
       {id: 'lineup', icon: <Users className="w-6 h-6" />, label: 'הרכב'},
       {id: 'live', icon: <Zap className="w-6 h-6" />, label: 'זירה'}, 
-      {id: 'free_agents', icon: <Search className="w-6 h-6" />, label: 'חופשיים'}, 
       {id: 'table', icon: <BarChart3 className="w-6 h-6" />, label: 'טבלה'}, 
       {id: 'fixtures', icon: <Calendar className="w-6 h-6" />, label: 'משחקים'},
       {id: 'cup', icon: <Trophy className="w-6 h-6" />, label: 'גביע'}, 
@@ -577,9 +576,6 @@ const App: React.FC = () => {
         )}
         <div className={activeTab === 'cup' ? 'block' : 'hidden'}>
           <CupTab />
-        </div>
-        <div className={activeTab === 'free_agents' ? 'block' : 'hidden'}>
-          <FreeAgentsTab users={teams} />
         </div>
       </main>
 
