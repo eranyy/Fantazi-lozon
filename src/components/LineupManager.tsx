@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, History, Settings2, LayoutGrid, List, MessageCircle, RefreshCw, Eraser, Search, Share2, Send, ArrowRightLeft, Snowflake, Plus, Trash2, Undo2, AlertTriangle, CheckCircle2, Siren, Trophy, Lock, Unlock } from 'lucide-react';
+import { ChevronDown, History, Settings2, LayoutGrid, List, MessageCircle, RefreshCw, Eraser, Search, Share2, Send, ArrowRightLeft, Snowflake, Plus, Trash2, Undo2, AlertTriangle, CheckCircle2, Siren, Trophy, Lock, Unlock, Bot, Sparkles, Calendar } from 'lucide-react';
 import { Team, Player, User } from '../types';
 import { calculateOptimalLineup } from '../utils/optimalLineup';
-import { db } from '../firebaseConfig';
+import { db, functions } from '../firebaseConfig';
 import { collection, doc, updateDoc, arrayUnion, onSnapshot, addDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { GoogleGenAI } from "@google/genai";
+import { getMatchdayLineupAdvice } from '../geminiService';
+import { RoundCountdownBanner } from './RoundCountdown';
+import { sortMatchesChronologically } from '../utils/dateUtils';
 
 interface LineupManagerProps { teams: Team[]; loggedInUser: User | null; currentRound: number; isAdmin: boolean; }
 
@@ -181,6 +185,7 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const [viewMode, setViewMode] = useState<'pitch' | 'list'>('pitch');
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [activeZone, setActiveZone] = useState<'GK' | 'DEF' | 'MID' | 'FWD' | null>(null);
+  const [swapCandidatePlayer, setSwapCandidatePlayer] = useState<Player | null>(null);
 
   const [isCupModeActive, setIsCupModeActive] = useState<boolean>(false);
 
@@ -208,6 +213,190 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const [tradePlayerB, setTradePlayerB] = useState('');
   const [executingTrade, setExecutingTrade] = useState(false);
   const [tradeSuccessMsg, setTradeSuccessMsg] = useState<string | null>(null);
+
+  const [showAIAdviceModal, setShowAIAdviceModal] = useState(false);
+  const [aiAdviceData, setAiAdviceData] = useState<any>(null);
+  const [loadingAIAdvice, setLoadingAIAdvice] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedPlayer) setSelectedPlayer(null);
+        else if (swapCandidatePlayer) setSwapCandidatePlayer(null);
+        else if (activeZone) setActiveZone(null);
+        else if (showTransferModal) setShowTransferModal(false);
+        else if (showTradeModal) setShowTradeModal(false);
+        else if (showAIAdviceModal) setShowAIAdviceModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPlayer, swapCandidatePlayer, activeZone, showTransferModal, showTradeModal, showAIAdviceModal]);
+
+  const handleFetchAIAdvice = async () => {
+    try {
+      setLoadingAIAdvice(true);
+      setShowAIAdviceModal(true);
+      const fullSquad = [...activeLineup, ...activeBench];
+
+      // Find Fantasy Opponent for currentRound
+      const currentMatches = (fixtures || []).find((r: any) => Number(r.round) === Number(currentRound))?.matches || [];
+      const myMatch = currentMatches.find((m: any) => m.h === myTeam?.id || m.a === myTeam?.id || m.h === activeTeamId || m.a === activeTeamId);
+      let opponentTeamName = 'ללא יריבה ספציפית';
+      if (myMatch) {
+        const oppId = (myMatch.h === myTeam?.id || myMatch.h === activeTeamId) ? myMatch.a : myMatch.h;
+        const oppObj = teams.find((t: any) => t.id === oppId || t.teamName === oppId);
+        opponentTeamName = oppObj?.teamName || oppObj?.name || oppId;
+      }
+
+      // Filter Israeli Premier League real fixtures for currentRound
+      const roundRealMatches = (realFixtures || []).filter((m: any) => !m.round || Number(m.round) === Number(currentRound));
+
+      const TEAM_MANAGERS: Record<string, string> = {
+        tampa: 'יינון',
+        tumali: 'אלי ותום',
+        hamsili: 'ערן ואסף',
+        harale: 'גיא',
+        holonia: 'ארז',
+        pichichi: 'שלומי'
+      };
+
+      const resolvedManager = myTeam?.manager || (myTeam?.id ? TEAM_MANAGERS[myTeam.id] : '') || myTeam?.name || loggedInUser?.name || 'מנג\'ר';
+
+      const advice = await getMatchdayLineupAdvice({
+        squad: fullSquad,
+        teamName: myTeam?.teamName || 'שלך',
+        managerName: resolvedManager,
+        currentRound,
+        opponentTeamName,
+        realFixtures: roundRealMatches
+      });
+      setAiAdviceData(advice);
+    } catch (err: any) {
+      showToast(err.message || 'שגיאה בהפקת המלצת ה-AI', 'error');
+    } finally {
+      setLoadingAIAdvice(false);
+    }
+  };
+
+  const handleApplyAIAdvice = () => {
+    if (!aiAdviceData || !canEditLineup || globalLock) return;
+
+    const fullSquad = [...lineup, ...bench];
+    if (fullSquad.length === 0) return;
+
+    // 1. Normalize position for all players in squad
+    const cleanedSquad: Player[] = fullSquad.map(p => ({
+      ...p,
+      position: normalizePos(p.position || (p as any).pos)
+    }));
+
+    const startingNames: string[] = aiAdviceData.startingXI || [];
+    const isRecommended = (p: Player) => startingNames.some(name => isSamePlayer(p, { name }));
+
+    // Group squad by normalized position
+    const gks: Player[] = cleanedSquad.filter(p => p.position === 'GK');
+    const defs: Player[] = cleanedSquad.filter(p => p.position === 'DEF');
+    const mids: Player[] = cleanedSquad.filter(p => p.position === 'MID');
+    const fwds: Player[] = cleanedSquad.filter(p => p.position === 'FWD');
+
+    if (gks.length < 1) {
+      return showToast('אין שוער תקין בסגל!', 'error');
+    }
+
+    // Sort players within position groups: AI recommended first, then by points descending
+    const sortFunc = (a: Player, b: Player) => {
+      const recA = isRecommended(a) ? 1 : 0;
+      const recB = isRecommended(b) ? 1 : 0;
+      if (recB !== recA) return recB - recA;
+      return (Number(b.points) || 0) - (Number(a.points) || 0);
+    };
+
+    gks.sort(sortFunc);
+    defs.sort(sortFunc);
+    mids.sort(sortFunc);
+    fwds.sort(sortFunc);
+
+    // 2. Parse target formation from AI recommendation
+    let targetDef = 4;
+    let targetMid = 4;
+    let targetFwd = 2;
+
+    const match = String(aiAdviceData.recommendedFormation || '').match(/(\d)\s*-\s*(\d)\s*-\s*(\d)/);
+    if (match) {
+      const d = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const f = parseInt(match[3], 10);
+      if (d + m + f === 10 && ALLOWED_FORMATIONS.includes(`${d}-${m}-${f}`)) {
+        targetDef = d;
+        targetMid = m;
+        targetFwd = f;
+      }
+    }
+
+    // Check if current squad has enough players to fulfill target formation
+    const fitsTarget = (defs.length >= targetDef) && (mids.length >= targetMid) && (fwds.length >= targetFwd);
+
+    if (!fitsTarget) {
+      // Find the legal formation from ALLOWED_FORMATIONS that maximizes AI recommended players
+      let bestForm = '4-4-2';
+      let maxRecCount = -1;
+
+      for (const formStr of ALLOWED_FORMATIONS) {
+        const [d, m, f] = formStr.split('-').map(n => parseInt(n, 10));
+        if (defs.length >= d && mids.length >= m && fwds.length >= f) {
+          const candidateStarters = [
+            gks[0],
+            ...defs.slice(0, d),
+            ...mids.slice(0, m),
+            ...fwds.slice(0, f)
+          ];
+          const recCount = candidateStarters.filter(p => p && isRecommended(p)).length;
+          if (recCount > maxRecCount) {
+            maxRecCount = recCount;
+            bestForm = formStr;
+            targetDef = d;
+            targetMid = m;
+            targetFwd = f;
+          }
+        }
+      }
+    }
+
+    // Ensure target counts do not exceed available players
+    targetDef = Math.min(targetDef, defs.length);
+    targetMid = Math.min(targetMid, mids.length);
+    targetFwd = Math.min(targetFwd, fwds.length);
+
+    const selectedGK = gks[0];
+    const selectedDefs = defs.slice(0, targetDef);
+    const selectedMids = mids.slice(0, targetMid);
+    const selectedFwds = fwds.slice(0, targetFwd);
+
+    const newStarters = [selectedGK, ...selectedDefs, ...selectedMids, ...selectedFwds].map(p => ({
+      ...p,
+      position: p.position as any,
+      isStarting: true
+    }));
+
+    const starterIds = new Set(newStarters.map(p => p.id || p.name));
+    
+    // Bench: all remaining squad players, sorted by position order
+    const newBench = cleanedSquad
+      .filter(p => !starterIds.has(p.id || p.name))
+      .map(p => ({
+        ...p,
+        position: p.position as any,
+        isStarting: false
+      }))
+      .sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99));
+
+    setLineup(newStarters);
+    setBench(newBench);
+    persistDraftLineup(newStarters, newBench);
+    setShowAIAdviceModal(false);
+    showToast(`⚡ הרכב מומלץ (${targetDef}-${targetMid}-${targetFwd}) הוחל על המגרש בהצלחה!`, 'success');
+  };
 
   const teamOptions = [
     { id: 'tumali', name: 'תומאלי (אלי ותום)' },
@@ -339,25 +528,51 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const currentRole = String(loggedInUser?.role || '');
   const isManagerOrAdmin = currentRole === 'ADMIN' || currentRole === 'ARENA_MANAGER' || currentRole === 'MODERATOR' || currentRole === 'SUPER_ADMIN' || isAdmin;
 
-  const isMyTeam = isAdmin || (() => {
+  const isMyActualOwnTeam = (() => {
     if (!myTeam || !loggedInUser) return false;
     const uId = cleanStr(loggedInUser.id);
     const uTeamId = cleanStr(loggedInUser.teamId);
     const uName = cleanStr(loggedInUser.name);
+    const uEmail = cleanStr((loggedInUser as any).email);
     const uTeamName = cleanStr(loggedInUser.teamName);
 
     const tId = cleanStr(myTeam.id);
     const tName = cleanStr(myTeam.teamName);
     const tManager = cleanStr(myTeam.manager);
 
+    // Eran (Admin) & Hamsili
+    if ((uEmail.includes('eranyy') || uName.includes('ערן') || uTeamName.includes('חמסילי') || uTeamId === 'hamsili') && (tId === 'hamsili' || tName.includes('חמסילי'))) {
+      return true;
+    }
+    // Tumali
+    if ((uName.includes('אלי') || uName.includes('תום') || uTeamName.includes('תומאלי') || uTeamId === 'tumali') && (tId === 'tumali' || tName.includes('תומאלי'))) {
+      return true;
+    }
+    // Harale
+    if ((uName.includes('גיא') || uTeamName.includes('חראלה') || uTeamId === 'harale') && (tId === 'harale' || tName.includes('חראלה'))) {
+      return true;
+    }
+    // Holonia
+    if ((uName.includes('ארז') || uTeamName.includes('חולוניה') || uTeamId === 'holonia') && (tId === 'holonia' || tName.includes('חולוניה'))) {
+      return true;
+    }
+    // Pichichi
+    if ((uName.includes('שלומי') || uTeamName.includes('פיציצי') || uTeamId === 'pichichi') && (tId === 'pichichi' || tName.includes('פיציצי'))) {
+      return true;
+    }
+    // Tampa
+    if ((uName.includes('יינון') || uTeamName.includes('טמפה') || uTeamId === 'tampa') && (tId === 'tampa' || tName.includes('טמפה'))) {
+      return true;
+    }
+
     return (
       (tId && (tId === uId || tId === uTeamId)) || 
       (tName && (tName === uTeamName || tName === uId)) || 
-      (tManager && (tManager === uName)) ||
-      (tName.includes('חראלה') && uTeamName.includes('חראלה')) 
+      (tManager && uName && (tManager.includes(uName) || uName.includes(tManager)))
     );
   })();
 
+  const isMyTeam = isAdmin || isMyActualOwnTeam;
   const canEditLineup = isMyTeam || isManagerOrAdmin;
 
   useEffect(() => {
@@ -432,6 +647,20 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     handleSetTeam(targetTeamId);
   }, [teams, loggedInUser, activeTeamId]);
 
+  const persistDraftLineup = (newLineup: Player[], newBench: Player[]) => {
+    if (!activeTeamId || isCupModeActive) return;
+    try {
+      const draftKey = `luzon_draft_${activeTeamId}_r${currentRound}`;
+      localStorage.setItem(draftKey, JSON.stringify({ lineup: newLineup, round: currentRound, updatedAt: Date.now() }));
+    } catch (e) {}
+
+    updateDoc(doc(db, 'users', activeTeamId), {
+      draft_lineup: newLineup,
+      draft_round: currentRound,
+      draft_updated_at: new Date().toISOString()
+    }).catch((err) => console.error('Error auto-saving draft lineup:', err));
+  };
+
   useEffect(() => {
     if (activeTeamId) {
       const team = displayTeams.find(t => t.id === activeTeamId);
@@ -456,8 +685,35 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
                 benchPlayers = safeSquad.filter(p => !p.isStarting);
             }
         } else {
+            // 1. Check if there is an active draft for the current round (either in Firestore or localStorage)
+            let draftSource: any[] | null = null;
+            if ((team as any).draft_round === currentRound && Array.isArray((team as any).draft_lineup)) {
+              draftSource = (team as any).draft_lineup;
+            } else {
+              try {
+                const localDraftRaw = localStorage.getItem(`luzon_draft_${activeTeamId}_r${currentRound}`);
+                if (localDraftRaw) {
+                  const parsedDraft = JSON.parse(localDraftRaw);
+                  if (parsedDraft && parsedDraft.round === currentRound && Array.isArray(parsedDraft.lineup)) {
+                    draftSource = parsedDraft.lineup;
+                  }
+                }
+              } catch (e) {}
+            }
+
             const savedRoundLineup = team.lineupsByRound?.[currentRound]?.lineup;
-            if (Array.isArray(savedRoundLineup) && savedRoundLineup.length > 0) {
+            if (draftSource !== null) {
+              // Filter draft players to only those still in squad
+              const squadIds = new Set(safeSquad.map(p => p.id));
+              startingPlayers = draftSource
+                .filter((p: any) => p && squadIds.has(p.id))
+                .map((p: any) => {
+                  const freshP = safeSquad.find(sp => sp.id === p.id) || p;
+                  return { ...freshP, isStarting: true };
+                });
+              const startingIds = new Set(startingPlayers.map(p => p.id));
+              benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
+            } else if (Array.isArray(savedRoundLineup) && savedRoundLineup.length > 0) {
               startingPlayers = savedRoundLineup.map((p: any) => ({ ...p, isStarting: true }));
               const startingIds = new Set(startingPlayers.map(p => p.id));
               benchPlayers = safeSquad.filter(p => !startingIds.has(p.id)).map((p: any) => ({ ...p, isStarting: false }));
@@ -495,8 +751,8 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
   const freezeCount = safeTransfersLog.filter(t => t.type === 'FREEZE_IN' || t.isFreeze).length;
   const transferPercent = Math.min((usedTransfers / 14) * 100, 100);
 
-  const activeLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
-  const activeBench = bench.filter(p => p && p.id);
+  const activeLineup = lineup.filter(p => p && (p.id || p.name) && POS_ARRAY.includes(normalizePos(p.position || (p as any).pos)));
+  const activeBench = bench.filter(p => p && (p.id || p.name));
 
   const defs = activeLineup.filter(p => normalizePos(p.position) === 'DEF').length;
   const mids = activeLineup.filter(p => normalizePos(p.position) === 'MID').length;
@@ -714,6 +970,53 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     }
   };
 
+  const executeQuickSwap = (benchPlayer: Player, pitchPlayerOut: Player) => {
+    const currentActiveLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
+    const currentActiveBench = bench.filter(p => p && p.id);
+
+    if (checkIsMatchStarted(pitchPlayerOut.team) && !isManagerOrAdmin) {
+      return showToast(`❌ המשחק של ${pitchPlayerOut.team} כבר התחיל! לא ניתן להחליף את ${pitchPlayerOut.name}.`, 'error');
+    }
+
+    const tempLineup = currentActiveLineup.filter(p => p.id !== pitchPlayerOut.id);
+    const playerRealTeam = (benchPlayer as any).realTeam || benchPlayer.team;
+    const sameTeamCountInLineup = tempLineup.filter(p => isTeamMatch((p as any).realTeam || p.team, playerRealTeam)).length;
+
+    let maxAllowedFromTeam = 2;
+    if (isCupModeActive && (cupSettings.stage === 'semi' || cupSettings.stage === 'final')) maxAllowedFromTeam = 3;
+    else if (!isCupModeActive && isPlayoffRound) maxAllowedFromTeam = 3;
+
+    if (sameTeamCountInLineup >= maxAllowedFromTeam) {
+      return showToast(`❌ חוק לוזון: אסור יותר מ-${maxAllowedFromTeam} שחקנים מאותה קבוצה (${playerRealTeam}) בהרכב!`, 'error');
+    }
+
+    const nextLineup = [...tempLineup, { ...benchPlayer, isStarting: true }];
+    const newDefs = nextLineup.filter(p => normalizePos(p.position) === 'DEF').length;
+    const newMids = nextLineup.filter(p => normalizePos(p.position) === 'MID').length;
+    const newFwds = nextLineup.filter(p => normalizePos(p.position) === 'FWD').length;
+    const newGks = nextLineup.filter(p => normalizePos(p.position) === 'GK').length;
+
+    if (newGks !== 1) return showToast('❌ חוק לוזון: חייב להיות בדיוק שוער 1 בהרכב!', 'error');
+
+    let requireFormationCheck = true;
+    if (isCupModeActive && (cupSettings.stage === 'semi' || cupSettings.stage === 'final')) requireFormationCheck = false;
+    if (!isCupModeActive && isPlayoffRound) requireFormationCheck = false;
+
+    if (requireFormationCheck) {
+      const testForm = `${newDefs}-${newMids}-${newFwds}`;
+      if (!ALLOWED_FORMATIONS.includes(testForm)) {
+        return showToast(`❌ מערך ${testForm} אינו חוקי! בחר שחקן אחר להחלפה.`, 'error');
+      }
+    }
+
+    const nextBench = [...currentActiveBench.filter(p => p.id !== benchPlayer.id), { ...pitchPlayerOut, isStarting: false }].sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99));
+    setLineup(nextLineup);
+    setBench(nextBench);
+    persistDraftLineup(nextLineup, nextBench);
+    setSwapCandidatePlayer(null);
+    showToast(`🔄 ${benchPlayer.name} נכנס להרכב במקום ${pitchPlayerOut.name}!`, 'success');
+  };
+
   const togglePlayerPosition = (player: Player, from: 'lineup' | 'bench') => {
     if (!canEditLineup) return showToast('מצב צפייה בלבד. אינך יכול לערוך.', 'error');
     const currentActiveLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
@@ -732,7 +1035,10 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
     }
 
     if (from === 'bench') {
-      if (currentActiveLineup.length >= 11) return showToast(`❌ ההרכב מלא (11/11). קודם הורד שחקן לספסל כדי לפנות מקום!`, 'error');
+      if (currentActiveLineup.length >= 11) {
+        setSwapCandidatePlayer(player);
+        return;
+      }
       
       const playerRealTeam = (player as any).realTeam || player.team;
       const sameTeamCountInLineup = currentActiveLineup.filter(p => isTeamMatch((p as any).realTeam || p.team, playerRealTeam)).length;
@@ -771,11 +1077,17 @@ const LineupManager: React.FC<LineupManagerProps> = ({ teams, loggedInUser, curr
           }
       }
 
-      setLineup([...currentActiveLineup, { ...player, isStarting: true }]); 
-      setBench(currentActiveBench.filter(p => p.id !== player.id).sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99)));
+      const nextLineup = [...currentActiveLineup, { ...player, isStarting: true }];
+      const nextBench = currentActiveBench.filter(p => p.id !== player.id).sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99));
+      setLineup(nextLineup); 
+      setBench(nextBench);
+      persistDraftLineup(nextLineup, nextBench);
     } else {
-      setLineup(currentActiveLineup.filter(p => p.id !== player.id)); 
-      setBench([...currentActiveBench, { ...player, isStarting: false }].sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99)));
+      const nextLineup = currentActiveLineup.filter(p => p.id !== player.id);
+      const nextBench = [...currentActiveBench, { ...player, isStarting: false }].sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99));
+      setLineup(nextLineup); 
+      setBench(nextBench);
+      persistDraftLineup(nextLineup, nextBench);
     }
   };
 
@@ -888,6 +1200,8 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
               published_lineup: newLineup, 
               published_subs_out: newBench,
               lineup: newLineup,
+              draft_lineup: newLineup,
+              draft_round: currentRound,
               squad: updatedSquad,
               players: updatedSquad
           });
@@ -968,7 +1282,12 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
           updateData.published_lineup = activeLineup;
           updateData.published_subs_out = activeBench;
           updateData.lineup = activeLineup;
+          updateData.draft_lineup = activeLineup;
+          updateData.draft_round = currentRound;
           updateData.lastLineupUpdate = new Date().toISOString();
+          try {
+            localStorage.setItem(`luzon_draft_${myTeam!.id}_r${currentRound}`, JSON.stringify({ lineup: activeLineup, round: currentRound, updatedAt: Date.now() }));
+          } catch (e) {}
           if (currentRound) {
             updateData[`lineupsByRound.${currentRound}`] = {
               lineup: activeLineup.map(p => ({ ...p, points: 0, stats: {} })),
@@ -1001,6 +1320,24 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
       await updateDoc(doc(db, 'users', myTeam!.id), updateData);
       
       showToast(`✅ הרכב ${isCupModeActive ? 'הגביע' : 'הליגה'} נשמר בהצלחה!`, 'success');
+
+      // 🟢 שליחת התראת פוש לשאר המאמנים בליגה שמעדכנת על שמירת הרכב בזירה 🟢
+      if (!isCupModeActive) {
+        try {
+          const teamTitle = myTeam?.teamName || 'קבוצה';
+          const managerTitle = loggedInUser?.name || myTeam?.manager || teamTitle;
+          const sendPushFunc = httpsCallable(functions, 'sendCustomPushNotification');
+          sendPushFunc({
+            title: `🚨 עדכון הרכב בזירה!`,
+            message: `${managerTitle} (${teamTitle}) עדכן הרכב בזירה למחזור ${currentRound}! היכנסו לבדוק ⚽`,
+            targetUserId: 'ALL',
+            excludeUserId: myTeam!.id,
+            category: 'rivalLineups'
+          }).catch((pushErr) => console.error('Lineup push notification error:', pushErr));
+        } catch (pushErr) {
+          console.error('Lineup push notification trigger error:', pushErr);
+        }
+      }
       
     } catch (e) { showToast('שגיאה בשמירה', 'error'); }
     setIsSaving(false);
@@ -1021,8 +1358,10 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
       allPlayers.filter((p: any) => p && (p.id || p.name)).map((p: any) => [p.id || p.name, { ...p, isStarting: false }])
     ).values());
 
+    const sortedBench = safeAll.sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99));
     setLineup([]);
-    setBench(safeAll.sort((a, b) => (POS_ORDER[a.position] || 99) - (POS_ORDER[b.position] || 99)));
+    setBench(sortedBench);
+    persistDraftLineup([], sortedBench);
     setShowClearConfirmModal(false);
     showToast('🧹 כל השחקנים הורדו מהדשא לספסל.', 'success');
   };
@@ -1393,24 +1732,74 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
     return false;
   };
 
+  const filterRoundName = `מחזור ${currentRound}`;
+  const isStateCupMatch = (m: any) =>
+    Boolean(
+      m?.isCupMatch ||
+      /גביע|סיבוב|שמינית|רבע|חצי|גמר/i.test(m?.competition || '') ||
+      /גביע|סיבוב|שמינית|רבע|חצי|גמר/i.test(m?.roundStage || '')
+    );
+
+  const currentRoundRealMatches = (() => {
+    const regularRoundMatches = realFixtures.filter(m =>
+      Number(m.round) === Number(currentRound) ||
+      m.roundStage === filterRoundName ||
+      String(m.round) === String(currentRound)
+    );
+    if (isCupModeActive) {
+      const allCupMatches = realFixtures.filter(isStateCupMatch);
+      const upcomingCupMatches = allCupMatches.filter(m => m.status !== 'הסתיים');
+      if (upcomingCupMatches.length > 0) {
+        return sortMatchesChronologically(upcomingCupMatches);
+      }
+      if (allCupMatches.length > 0 && regularRoundMatches.length === 0) {
+        return sortMatchesChronologically(allCupMatches);
+      }
+    }
+    return sortMatchesChronologically(regularRoundMatches);
+  })();
+
+  const getPlayerMatchInfo = (playerRealTeam: string) => {
+    if (!playerRealTeam || playerRealTeam === 'חופשי') return null;
+    const getTeamStr = (t: any) => (!t ? '' : typeof t === 'string' ? t : t.name || t.id || '');
+    const match = currentRoundRealMatches.find((m: any) => {
+      const hName = m.h || getTeamStr(m.homeTeam);
+      const aName = m.a || getTeamStr(m.awayTeam);
+      return isTeamMatch(hName, playerRealTeam) || isTeamMatch(aName, playerRealTeam);
+    });
+    if (!match) return null;
+    const hName = match.h || getTeamStr(match.homeTeam);
+    const aName = match.a || getTeamStr(match.awayTeam);
+    const isHome = isTeamMatch(hName, playerRealTeam);
+    return {
+      opponent: isHome ? aName : hName,
+      isHome,
+      time: match.time || match.matchTime || '',
+      date: match.date || '',
+      day: match.day || '',
+      status: match.status || 'עתידי',
+    };
+  };
+
   const renderListRow = (player: Player, isBench: boolean) => {
     const isSub = checkIsHalftimeSub(player.name);
     const playerPos = (player as any).pos || player.position;
     const colors = getTeamColors(myTeam?.teamName || '', normalizePos(playerPos) === 'GK');
     const dual = isDualPlayer(player);
+    const matchInfo = getPlayerMatchInfo((player as any).realTeam || player.team);
     
     return (
       <div key={player.id} onClick={(e) => { e.stopPropagation(); setSelectedPlayer(player); }} className="flex items-center justify-between bg-slate-800/40 hover:bg-slate-800 p-3 rounded-2xl border border-slate-700/50 cursor-pointer transition-all active:scale-[0.98] group">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 shrink-0 relative">
             <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={normalizePos(playerPos) === 'GK' ? '🧤' : normalizePos(playerPos)} />
           </div>
-          <div className="flex flex-col">
-            <span className="font-black text-white text-sm md:text-base group-hover:text-green-400 transition-colors flex items-center gap-2">
-              {player.name}
-              {isSub && <span className="bg-orange-500 text-black text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black">חילוף</span>}
+          <div className="flex flex-col min-w-0">
+            <span className="font-black text-white text-sm md:text-base group-hover:text-green-400 transition-colors flex items-center gap-2 truncate">
+              <span className="truncate">{player.name}</span>
+              {isSub && <span className="bg-orange-500 text-black text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black shrink-0">חילוף</span>}
             </span>
-            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5 mt-0.5">
+            <span className="text-[10px] text-slate-400 font-bold flex flex-wrap items-center gap-1.5 mt-0.5">
               <span>{player.team}</span>
               <span className="text-slate-600">•</span>
               {dual ? (
@@ -1420,10 +1809,18 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
               ) : (
                 <span className="text-slate-400 font-semibold">{getHebrewRole(playerPos)}</span>
               )}
+              {matchInfo && (
+                <>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-cyan-400/90 font-black">
+                    נגד {matchInfo.opponent} ({matchInfo.isHome ? 'ב' : 'ח'})
+                  </span>
+                </>
+              )}
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           {canEditLineup && (
             <button
               onClick={(e) => { e.stopPropagation(); togglePlayerPosition(player, isBench ? 'bench' : 'lineup'); }}
@@ -1439,13 +1836,17 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 font-sans animate-in fade-in pb-56 md:pb-32" dir="rtl">
+    <div className="w-full max-w-6xl lg:max-w-[1460px] mx-auto space-y-6 font-sans animate-in fade-in pb-56 md:pb-32 overflow-x-hidden" dir="rtl">
       
       {toast && (
         <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-[9999] px-6 py-3 rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.8)] border flex items-center gap-3 animate-in slide-in-from-top-10 duration-300 backdrop-blur-xl ${toast.type === 'error' ? 'bg-red-950/90 border-red-500/50 text-red-200' : toast.type === 'info' ? 'bg-blue-950/90 border-blue-500/50 text-blue-200' : 'bg-green-950/90 border-green-500/50 text-green-200'}`}>
           <span className="text-2xl">{toast.type === 'error' ? '🛑' : toast.type === 'info' ? '⚠️' : '✅'}</span>
           <span className="font-black text-sm tracking-wide">{toast.msg}</span>
         </div>
+      )}
+
+      {!globalLock && (
+        <RoundCountdownBanner currentRound={currentRound} />
       )}
 
       {globalLock && (
@@ -1563,28 +1964,58 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
         </div>
       )}
 
-      <div className="bg-slate-900/60 backdrop-blur-xl p-4 md:p-6 rounded-[32px] border border-white/5 shadow-2xl relative z-40 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="relative w-full md:w-auto flex justify-between items-center">
-          <button onClick={() => setShowTeamDropdown(!showTeamDropdown)} className="flex items-center gap-2 group outline-none">
-            <h2 className="text-2xl md:text-3xl font-black text-white italic tracking-tight group-hover:text-green-400 transition-colors drop-shadow-md">
+      <div className={`bg-slate-900/60 backdrop-blur-xl p-4 md:p-6 rounded-[32px] border border-white/5 shadow-2xl relative ${showTeamDropdown ? 'z-50' : 'z-40'} flex flex-col md:flex-row justify-between items-center gap-4`}>
+        <div className="relative w-full md:w-auto flex justify-between items-center gap-2 min-w-0">
+          <button onClick={() => setShowTeamDropdown(!showTeamDropdown)} className="flex items-center gap-1.5 group outline-none min-w-0 flex-1 text-right">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-white italic tracking-tight group-hover:text-green-400 transition-colors drop-shadow-md truncate">
               {myTeam.teamName}
             </h2>
-            <ChevronDown className={`w-6 h-6 text-slate-500 group-hover:text-green-400 transition-transform duration-300 ${showTeamDropdown ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-slate-500 group-hover:text-green-400 transition-transform duration-300 ${showTeamDropdown ? 'rotate-180' : ''}`} />
           </button>
 
           {showTeamDropdown && (
-            <div className="absolute top-full right-0 mt-3 w-56 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2">
-              <div className="max-h-64 overflow-y-auto py-2 custom-scrollbar">
-                {displayTeams.map(t => (
-                  <button key={t.id} onClick={() => {handleSetTeam(t.id); setShowTeamDropdown(false);}} className={`w-full text-right px-5 py-3.5 text-sm font-black transition-colors ${activeTeamId === t.id ? 'bg-green-500/10 text-green-400 border-l-4 border-green-500' : 'text-slate-300 hover:bg-slate-800/80'}`}>
-                    {t.teamName}
-                  </button>
-                ))}
+            <>
+              <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowTeamDropdown(false)} />
+              <div className="absolute top-full right-0 mt-3 w-56 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                <div className="max-h-64 overflow-y-auto py-2 custom-scrollbar">
+                  {displayTeams.map(t => (
+                    <button key={t.id} onClick={() => {handleSetTeam(t.id); setShowTeamDropdown(false);}} className={`w-full text-right px-5 py-3.5 text-sm font-black transition-colors ${activeTeamId === t.id ? 'bg-green-500/10 text-green-400 border-l-4 border-green-500' : 'text-slate-300 hover:bg-slate-800/80'}`}>
+                      {t.teamName}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            </>
           )}
 
-          <div className="flex md:hidden items-center gap-2">
+          <div className="flex md:hidden items-center gap-1.5 shrink-0">
+            {activeTab === 'pitch' && canEditLineup && (
+              <button
+                onClick={handleSaveLineup}
+                disabled={isSaving || (!isPlayoffRound && !isCupModeActive && activeLineup.length !== 11) || (globalLock && !isManagerOrAdmin && !globalUnlock)}
+                className={`px-2.5 py-2 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 active:scale-95 shadow-md shrink-0 ${
+                  globalLock && !isManagerOrAdmin && !globalUnlock
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : isFormationValid && (isPlayoffRound || isCupModeActive || activeLineup.length === 11)
+                    ? isCupModeActive
+                      ? 'bg-gradient-to-r from-yellow-400 to-amber-600 text-black'
+                      : 'bg-gradient-to-r from-green-500 to-emerald-600 text-black'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}
+                title="שמור הרכב"
+              >
+                <span>{isSaving ? 'שומר...' : 'שמור 💾'}</span>
+              </button>
+            )}
+            {isMyActualOwnTeam && (
+              <button 
+                onClick={handleFetchAIAdvice} 
+                title="יועץ AI אישי" 
+                className="bg-purple-600/30 text-purple-300 p-2.5 rounded-xl border border-purple-500/40 active:scale-95 flex items-center justify-center gap-1"
+              >
+                <Sparkles className="w-4 h-4 text-yellow-300" />
+              </button>
+            )}
             {activeTab === 'pitch' && canEditLineup && (
               <button onClick={handleClearPitch} title="נקה מגרש (הורד את כולם לספסל)" className="bg-slate-800 p-2.5 rounded-xl text-slate-400 hover:text-white transition-colors">
                 <Eraser className="w-4 h-4" />
@@ -1599,6 +2030,16 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
         </div>
 
         <div className="hidden md:flex items-center gap-3">
+          {isMyActualOwnTeam && (
+            <button 
+              onClick={handleFetchAIAdvice} 
+              title={`יועץ AI אישי לקבוצת ${myTeam?.teamName || ''}`} 
+              className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 active:scale-95 font-black text-xs shadow-lg"
+            >
+              <Sparkles className="w-4 h-4 text-yellow-300" />
+              <span>✨ יועץ AI</span>
+            </button>
+          )}
           {activeTab === 'pitch' && canEditLineup && (
             <button onClick={handleClearPitch} title="נקה מגרש (הורד את כולם לספסל)" className="bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-xl transition-all flex items-center gap-2 active:scale-95 font-bold text-xs shadow-md">
               <Eraser className="w-4 h-4" /> נקה מגרש
@@ -1641,40 +2082,72 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
       )}
 
       {activeTab === 'pitch' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 xl:gap-6 items-start">
           
-          <div className={`flex-col gap-6 order-2 lg:order-1 ${viewMode === 'list' ? 'hidden lg:flex lg:col-span-4' : 'flex lg:col-span-4'}`}>
+          <div className={`flex-col gap-5 order-2 lg:order-1 ${viewMode === 'list' ? 'hidden lg:flex lg:col-span-3' : 'flex lg:col-span-3'}`}>
             
+            {/* 🖥️ כפתור שמירת הרכב ושיתוף קבוע בסרגל הצד למחשב בלבד (lg:flex) כדי שלא יסתיר את המגרש 🖥️ */}
+            <div className="hidden lg:flex items-center gap-2.5 bg-slate-900/90 backdrop-blur-2xl p-2.5 rounded-[26px] border border-white/10 shadow-2xl">
+              <button 
+                onClick={handleSaveLineup} 
+                disabled={isSaving || (!isPlayoffRound && !isCupModeActive && activeLineup.length !== 11) || (globalLock && !isManagerOrAdmin && !globalUnlock)} 
+                className={`flex-1 py-3 px-3 rounded-[18px] font-black text-sm xl:text-base transition-all shadow-inner flex flex-col items-center justify-center ${globalLock && !isManagerOrAdmin && !globalUnlock ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : isFormationValid && (isPlayoffRound || isCupModeActive || activeLineup.length === 11) ? (isCupModeActive ? 'bg-gradient-to-r from-yellow-400 to-amber-600 text-black hover:brightness-110 active:scale-95 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 'bg-gradient-to-r from-green-500 to-emerald-600 text-black hover:brightness-110 active:scale-95 shadow-[0_0_15px_rgba(34,197,94,0.3)]') : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+              >
+                {globalLock && !isManagerOrAdmin && !globalUnlock ? (
+                  <span className="text-xs">המחזור נעול 🔒</span>
+                ) : isSaving ? (
+                  <span className="animate-pulse">שומר...</span>
+                ) : !isFormationValid && activeLineup.length === 11 ? (
+                  <>
+                    <span className="text-xs text-red-400 leading-tight">מערך לא חוקי</span>
+                    <span className="text-[10px] text-slate-500">({currentFormationStr} אינו מאושר)</span>
+                  </>
+                ) : !isFormationValid || (!isPlayoffRound && !isCupModeActive && activeLineup.length !== 11) ? (
+                  <span className="text-xs">השלם הרכב ({activeLineup.length}/11 שחקנים)</span>
+                ) : (
+                  <>{isCupModeActive ? 'שמור הרכב גביע 🏆' : 'שמור הרכב ועדכן זירה 💾'}</>
+                )}
+              </button>
+              <button 
+                onClick={handleWhatsAppShare} 
+                disabled={lineup.length === 0} 
+                className="w-[46px] h-[46px] rounded-[18px] bg-gradient-to-br from-[#25D366] to-[#128C7E] text-white flex items-center justify-center shadow-lg hover:shadow-[0_0_20px_rgba(37,211,102,0.5)] transition-all active:scale-95 disabled:opacity-50 disabled:grayscale shrink-0"
+                title="שתף הרכב לווצאפ"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+            </div>
+
             {!isCupModeActive && (
-                <div className="bg-slate-900/60 backdrop-blur-xl rounded-[32px] border border-orange-500/20 p-5 shadow-[0_0_30px_rgba(249,115,22,0.05)]">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-black text-white flex items-center gap-2">
-                      <RefreshCw className="w-5 h-5 text-orange-500" /> חילופי מחצית
+                <div className="bg-slate-900/60 backdrop-blur-xl rounded-[28px] border border-orange-500/20 p-4 xl:p-5 shadow-[0_0_30px_rgba(249,115,22,0.05)]">
+                  <div className="flex justify-between items-center mb-3.5">
+                    <h3 className="font-black text-white text-sm xl:text-base flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 text-orange-500" /> חילופי מחצית
                     </h3>
-                    <span className="text-[10px] font-black bg-orange-500/10 text-orange-400 px-3 py-1.5 rounded-lg border border-orange-500/30">
+                    <span className="text-[10px] font-black bg-orange-500/10 text-orange-400 px-2.5 py-1 rounded-lg border border-orange-500/30">
                       {safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round || Number(t.round) === Number(currentRound))).length} / 3
                     </span>
                   </div>
                   
-                  <div className="space-y-3 mb-6">
+                  <div className="space-y-2.5 mb-4">
                     <div className="relative">
-                      <select value={subOutId} onChange={e => setSubOutId(e.target.value)} disabled={!canEditLineup || globalLock} className="w-full bg-slate-950/80 text-slate-300 text-sm font-bold p-3.5 rounded-2xl border border-red-500/30 focus:border-red-500 outline-none appearance-none pr-10">
+                      <select value={subOutId} onChange={e => setSubOutId(e.target.value)} disabled={!canEditLineup || globalLock} className="w-full bg-slate-950/80 text-slate-300 text-xs xl:text-sm font-bold p-3 rounded-2xl border border-red-500/30 focus:border-red-500 outline-none appearance-none pr-9">
                         <option value="">בחר שחקן יוצא (מההרכב)</option>
                         {lineup.sort((a,b)=>POS_ORDER[a.position]-POS_ORDER[b.position]).map(p => <option key={p.id} value={p.id}>{p.name} ({p.position})</option>)}
                       </select>
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-lg">⬇️</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-sm">⬇️</span>
                     </div>
                     
                     <div className="relative">
-                      <select value={subInId} onChange={e => setSubInId(e.target.value)} disabled={!canEditLineup || globalLock} className="w-full bg-slate-950/80 text-slate-300 text-sm font-bold p-3.5 rounded-2xl border border-green-500/30 focus:border-green-500 outline-none appearance-none pr-10">
+                      <select value={subInId} onChange={e => setSubInId(e.target.value)} disabled={!canEditLineup || globalLock} className="w-full bg-slate-950/80 text-slate-300 text-xs xl:text-sm font-bold p-3 rounded-2xl border border-green-500/30 focus:border-green-500 outline-none appearance-none pr-9">
                         <option value="">בחר שחקן נכנס (מהספסל)</option>
                         {bench.map(p => <option key={p.id} value={p.id}>{p.name} ({p.position})</option>)}
                       </select>
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-lg">⬆️</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-sm">⬆️</span>
                     </div>
                     
-                    <div className="flex gap-2 pt-2">
-                      <button onClick={handleHalftimeSub} disabled={!canEditLineup || !subOutId || !subInId || globalLock} className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-30 disabled:grayscale text-black font-black py-3.5 rounded-2xl text-sm transition-all shadow-lg active:scale-95">
+                    <div className="flex gap-2 pt-1">
+                      <button onClick={handleHalftimeSub} disabled={!canEditLineup || !subOutId || !subInId || globalLock} className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-30 disabled:grayscale text-black font-black py-3 rounded-2xl text-xs xl:text-sm transition-all shadow-lg active:scale-95">
                         בצע חילוף ⚡
                       </button>
                     </div>
@@ -1726,9 +2199,9 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
             )}
 
             {viewMode === 'pitch' && (
-              <div className="hidden lg:flex flex-col bg-slate-900/60 backdrop-blur-xl rounded-[32px] border border-white/5 p-5 shadow-2xl flex-1 min-h-[300px]">
-                <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-                  <h3 className="font-black text-white text-lg flex items-center gap-2">🪑 ספסל</h3>
+              <div className="hidden lg:flex flex-col bg-slate-900/60 backdrop-blur-xl rounded-[28px] border border-white/5 p-4 xl:p-5 shadow-2xl flex-1 min-h-[300px]">
+                <div className="flex justify-between items-center mb-3.5 pb-2.5 border-b border-slate-800">
+                  <h3 className="font-black text-white text-base xl:text-lg flex items-center gap-2">🪑 ספסל</h3>
                   <span className="text-slate-500 font-mono text-xs font-bold">{bench.length} שחקנים</span>
                 </div>
                 
@@ -1742,18 +2215,19 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                   {bench.map(player => {
                     const colors = getTeamColors(myTeam?.teamName || '', player.position === 'GK');
+                    const matchInfo = getPlayerMatchInfo((player as any).realTeam || player.team);
                     return (
-                      <div key={player.id} onClick={() => setSelectedPlayer(player)} className="flex items-center justify-between bg-slate-800/40 hover:bg-slate-800 p-3 rounded-2xl border border-transparent hover:border-slate-700 transition-colors cursor-pointer group">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 shrink-0 relative">
+                      <div key={player.id} onClick={() => setSelectedPlayer(player)} className="flex items-center justify-between bg-slate-800/40 hover:bg-slate-800 p-2.5 xl:p-3 rounded-2xl border border-transparent hover:border-slate-700 transition-colors cursor-pointer group gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 xl:w-10 xl:h-10 shrink-0 relative">
                              <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={normalizePos((player as any).pos || player.position) === 'GK' ? '🧤' : normalizePos((player as any).pos || player.position)} />
                           </div>
-                          <div>
-                            <div className="text-sm font-black text-slate-200 group-hover:text-white transition-colors flex items-center gap-1.5">
-                              {player.name}
+                          <div className="min-w-0">
+                            <div className="text-xs xl:text-sm font-black text-slate-200 group-hover:text-white transition-colors flex items-center gap-1.5 truncate">
+                              <span className="truncate">{player.name}</span>
                             </div>
-                            <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
-                              <span>{player.team}</span>
+                            <div className="text-[10px] text-slate-400 font-bold flex flex-wrap items-center gap-1">
+                              <span className="truncate">{player.team}</span>
                               <span className="text-slate-600">•</span>
                               {isDualPlayer(player) ? (
                                 <span className="text-purple-400 font-black">
@@ -1763,11 +2237,30 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                                 <span className="text-slate-400 font-semibold">{getHebrewRole((player as any).pos || player.position)}</span>
                               )}
                             </div>
+                            {matchInfo && (
+                              <div className="text-[9px] text-cyan-400/90 font-black mt-0.5 truncate">
+                                נגד {matchInfo.opponent} ({matchInfo.isHome ? 'ב' : 'ח'})
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-500 group-hover:bg-green-500/20 group-hover:text-green-400 transition-colors">
-                          <ChevronDown className="w-4 h-4 -rotate-90" />
-                        </div>
+                        {canEditLineup && (!globalLock || isManagerOrAdmin) ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); togglePlayerPosition(player, 'bench'); }}
+                            title={activeLineup.length >= 11 ? 'החלף שחקן מההרכב' : 'הכנס להרכב בלחיצה אחת'}
+                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all flex items-center gap-1 shrink-0 active:scale-95 border ${
+                              activeLineup.length >= 11
+                                ? 'bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border-emerald-500/30'
+                                : 'bg-green-500/15 hover:bg-green-500 text-green-400 hover:text-slate-950 border-green-500/30'
+                            }`}
+                          >
+                            {activeLineup.length >= 11 ? '⇄ החלף' : '+ הכנס'}
+                          </button>
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-slate-500 group-hover:bg-green-500/20 group-hover:text-green-400 transition-colors shrink-0">
+                            <ChevronDown className="w-4 h-4 -rotate-90" />
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -1776,7 +2269,7 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
             )}
           </div>
 
-          <div className={`${viewMode === 'list' ? 'lg:col-span-8 w-full' : 'lg:col-span-8'} order-1 lg:order-2`}>
+          <div className={`${viewMode === 'list' ? 'lg:col-span-6 w-full' : 'lg:col-span-6'} order-1 lg:order-2`}>
             {viewMode === 'list' ? (
               
               <div className="bg-slate-900/60 backdrop-blur-xl rounded-[32px] md:rounded-[40px] border border-white/5 p-4 md:p-8 shadow-2xl h-full animate-in fade-in">
@@ -1791,7 +2284,6 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                     </div>
                   </div>
                 </div>
-                 
                 <div className="mb-10">
                   <h4 className="text-lg md:text-xl font-black text-green-400 mb-4 flex items-center gap-2 border-b border-green-500/20 pb-2">
                     <span className="text-2xl">🏃‍♂️</span> הרכב פותח
@@ -1825,7 +2317,7 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
               </div>
 
             ) : (
-              <div className={`relative w-full h-[600px] sm:h-[650px] md:h-[800px] rounded-[40px] overflow-hidden shadow-2xl border-[8px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] animate-in fade-in flex flex-col shrink-0 ${isCupModeActive ? 'border-amber-900 from-yellow-800 via-amber-900 to-[#1e1005]' : 'border-[#0B1120] from-emerald-800 via-green-900 to-green-950'}`}>
+              <div className={`relative z-10 w-full h-[600px] sm:h-[650px] md:h-[800px] rounded-[40px] overflow-hidden shadow-2xl border-[8px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] animate-in fade-in flex flex-col shrink-0 ${isCupModeActive ? 'border-amber-900 from-yellow-800 via-amber-900 to-[#1e1005]' : 'border-[#0B1120] from-emerald-800 via-green-900 to-green-950'}`}>
                 <div className="absolute inset-0 pointer-events-none opacity-20 mix-blend-overlay" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 40px, #ffffff 40px, #ffffff 80px)' }}></div>
                 
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/3 h-[15%] border-[2px] border-white/30 rounded-b-3xl pointer-events-none"></div>
@@ -1883,7 +2375,7 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                       >
                         <div className="absolute inset-x-2 inset-y-1 bg-white/0 group-hover:bg-white/5 rounded-2xl transition-colors border border-transparent group-hover:border-white/10 border-dashed flex items-center justify-center pointer-events-none"></div>
 
-                        <div className="flex justify-center items-start gap-0.5 sm:gap-4 md:gap-8 w-full z-10 px-1">
+                        <div className="flex justify-center items-start gap-0.5 sm:gap-4 md:gap-6 xl:gap-8 w-full z-10 px-1">
                           
                           {posPlayers.map(player => {
                             const nameParts = player.name.trim().split(/\s+/);
@@ -1896,6 +2388,16 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                             return (
                               <div key={player.id} onClick={(e) => { e.stopPropagation(); setSelectedPlayer(player); }} className="relative flex flex-col items-center justify-start cursor-pointer group/player active:scale-90 transition-transform duration-300 hover:-translate-y-1.5 w-[46px] sm:w-[70px]">
                                 
+                                {canEditLineup && (!globalLock || isManagerOrAdmin) && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); togglePlayerPosition(player, 'lineup'); }}
+                                    title="הורד לספסל"
+                                    className="hidden lg:flex opacity-0 group-hover/player:opacity-100 absolute -top-2 -left-2 z-50 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white items-center justify-center text-[10px] font-black shadow-lg border border-white/30 transition-all hover:scale-110"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+
                                 <div className={`absolute -top-3 sm:-top-4 z-30 px-1.5 py-0.5 rounded text-[8px] sm:text-[11px] font-black shadow-xl border border-white/20 transition-transform duration-300 ${Number(player.points) > 0 ? 'bg-gradient-to-t from-green-500 to-green-400 text-black' : 'bg-slate-800 text-white'}`}>
                                   {player.points || 0} pt
                                 </div>
@@ -1940,6 +2442,168 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ⚽ עמודה שמאלית ב-PC / תחתית המסך בנייד: לוח משחקי ליגת העל / גביע המדינה לתכנון הרכב חכם ⚽ */}
+          <div className={`lg:col-span-3 order-3 flex flex-col bg-slate-900/60 backdrop-blur-xl rounded-[28px] border p-4 xl:p-5 ${isCupModeActive ? 'border-yellow-500/30 shadow-[0_0_30px_rgba(250,204,21,0.08)]' : 'border-cyan-500/20 shadow-[0_0_30px_rgba(6,182,212,0.06)]'}`}>
+            <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${isCupModeActive ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400' : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'}`}>
+                  {isCupModeActive ? <Trophy className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h3 className="font-black text-white text-sm xl:text-base leading-tight">
+                    {isCupModeActive ? 'משחקי מחזור הגביע' : 'משחקי ליגת העל'}
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400">
+                    {isCupModeActive ? 'תכנון הרכב גביע מול היריבות' : 'תכנון הרכב מול יריבות המחזור'}
+                  </p>
+                </div>
+              </div>
+              <span className={`border px-2.5 py-1 rounded-xl text-[11px] font-black shrink-0 ${isCupModeActive ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'}`}>
+                {isCupModeActive && currentRoundRealMatches.some(isStateCupMatch)
+                  ? (currentRoundRealMatches[0]?.roundStage || 'גביע המדינה')
+                  : `מחזור ${currentRound}`}
+              </span>
+            </div>
+
+            {currentRoundRealMatches.length === 0 ? (
+              <div className="py-10 text-center text-slate-500 text-xs font-bold bg-slate-950/40 rounded-2xl border border-dashed border-slate-800">
+                {isCupModeActive ? 'טרם פורסמו משחקי גביע המדינה / מחזור הגביע.' : `טרם פורסמו משחקי ליגת העל למחזור ${currentRound}.`}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {currentRoundRealMatches.map((m: any, idx: number) => {
+                  const getTeamStr = (t: any) => (!t ? '' : typeof t === 'string' ? t : t.name || t.id || '');
+                  const homeName = m.h || getTeamStr(m.homeTeam);
+                  const awayName = m.a || getTeamStr(m.awayTeam);
+                  const matchTime = m.time || m.matchTime || '';
+                  const matchDate = m.date || '';
+                  const matchDay = m.day || '';
+                  const isFinished = m.status === 'הסתיים';
+                  const hasScore = m.hs !== null && m.hs !== undefined && m.hs !== '' && m.as !== null && m.as !== undefined && m.as !== '';
+
+                  const homeLineupPlayers = activeLineup.filter(p => isTeamMatch((p as any).realTeam || p.team, homeName));
+                  const awayLineupPlayers = activeLineup.filter(p => isTeamMatch((p as any).realTeam || p.team, awayName));
+                  const homeBenchPlayers = activeBench.filter(p => isTeamMatch((p as any).realTeam || p.team, homeName));
+                  const awayBenchPlayers = activeBench.filter(p => isTeamMatch((p as any).realTeam || p.team, awayName));
+
+                  const hasAnyLineupInMatch = homeLineupPlayers.length > 0 || awayLineupPlayers.length > 0;
+
+                  const getLastName = (fullName: string) => {
+                    const parts = (fullName || '').trim().split(/\s+/);
+                    return parts[parts.length - 1] || fullName;
+                  };
+
+                  return (
+                    <div
+                      key={m.id || idx}
+                      className={`rounded-2xl p-3 border transition-all ${
+                        hasAnyLineupInMatch
+                          ? 'bg-emerald-950/25 border-emerald-500/35 shadow-[0_0_15px_rgba(16,185,129,0.08)]'
+                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                      }`}
+                    >
+                      {/* שורת תאריך, יום ושעה */}
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-2 pb-1.5 border-b border-white/5">
+                        <span className="flex items-center gap-1">
+                          {matchDay && <span className="text-slate-300 font-black">{matchDay}</span>}
+                          {matchDate && <span>{matchDate}</span>}
+                        </span>
+                        {isFinished || hasScore ? (
+                          <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-black text-[10px]">
+                            {hasScore ? `${m.hs} : ${m.as}` : 'הסתיים'}
+                          </span>
+                        ) : (
+                          <span className="bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-2 py-0.5 rounded-md font-mono font-black text-[10px]">
+                            ⏰ {matchTime || 'טרם נקבע'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* קבוצת בית נגד קבוצת חוץ */}
+                      <div className="grid grid-cols-11 items-center gap-1 text-xs font-black">
+                        {/* קבוצת בית */}
+                        <div className="col-span-5 flex flex-col items-start min-w-0">
+                          <div className="flex items-center gap-1.5 w-full">
+                            {homeLineupPlayers.length > 0 && (
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] shrink-0"></span>
+                            )}
+                            <span className={`truncate ${homeLineupPlayers.length > 0 ? 'text-emerald-300' : 'text-white'}`}>
+                              {homeName}
+                            </span>
+                          </div>
+                          {homeLineupPlayers.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {homeLineupPlayers.map(p => (
+                                <span key={p.id} className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-black leading-none">
+                                  🏃 {getLastName(p.name)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {homeBenchPlayers.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {homeBenchPlayers.map(p => (
+                                <span key={p.id} className="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-bold leading-none">
+                                  🪑 {getLastName(p.name)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* VS */}
+                        <div className="col-span-1 text-center text-[10px] font-black text-slate-600">
+                          נגד
+                        </div>
+
+                        {/* קבוצת חוץ */}
+                        <div className="col-span-5 flex flex-col items-end text-left min-w-0">
+                          <div className="flex items-center justify-end gap-1.5 w-full">
+                            <span className={`truncate ${awayLineupPlayers.length > 0 ? 'text-emerald-300' : 'text-white'}`}>
+                              {awayName}
+                            </span>
+                            {awayLineupPlayers.length > 0 && (
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] shrink-0"></span>
+                            )}
+                          </div>
+                          {awayLineupPlayers.length > 0 && (
+                            <div className="flex flex-wrap justify-end gap-1 mt-1">
+                              {awayLineupPlayers.map(p => (
+                                <span key={p.id} className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-black leading-none">
+                                  🏃 {getLastName(p.name)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {awayBenchPlayers.length > 0 && (
+                            <div className="flex flex-wrap justify-end gap-1 mt-1">
+                              {awayBenchPlayers.map(p => (
+                                <span key={p.id} className="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-bold leading-none">
+                                  🪑 {getLastName(p.name)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* מקרא קצר בתחתית הלוח */}
+            <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-bold text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>🏃 בהרכב הפותח</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span>🪑 בספסל שלך</span>
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -2119,24 +2783,24 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
         );
       })()}
 
-      <div className="fixed bottom-[110px] lg:bottom-[120px] left-0 right-0 px-4 flex justify-center z-[300] pointer-events-none">
-        <div className="bg-black/80 backdrop-blur-2xl p-2.5 rounded-[32px] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex items-center gap-3 w-full max-w-[380px] pointer-events-auto transition-all animate-in slide-in-from-bottom-10">
+      <div className="lg:hidden fixed bottom-[82px] sm:bottom-[110px] left-0 right-0 px-3 sm:px-4 flex justify-center z-[300] pointer-events-none">
+        <div className="bg-black/85 backdrop-blur-2xl p-1.5 sm:p-2.5 rounded-[24px] sm:rounded-[32px] border border-white/10 shadow-[0_15px_40px_rgba(0,0,0,0.85)] flex items-center gap-2 sm:gap-3 w-full max-w-[340px] sm:max-w-[380px] pointer-events-auto transition-all animate-in slide-in-from-bottom-10">
            <button 
              onClick={handleSaveLineup} 
              disabled={isSaving || (!isPlayoffRound && !isCupModeActive && activeLineup.length !== 11) || (globalLock && !isManagerOrAdmin && !globalUnlock)} 
-             className={`flex-1 py-4 rounded-[24px] font-black text-lg transition-all shadow-inner flex flex-col items-center justify-center ${globalLock && !isManagerOrAdmin && !globalUnlock ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : isFormationValid && (isPlayoffRound || isCupModeActive || activeLineup.length === 11) ? (isCupModeActive ? 'bg-gradient-to-r from-yellow-400 to-amber-600 text-black hover:brightness-110 active:scale-95 shadow-[0_0_15px_rgba(250,204,21,0.5)]' : 'bg-gradient-to-r from-green-500 to-emerald-600 text-black hover:brightness-110 active:scale-95') : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+             className={`flex-1 py-2.5 sm:py-4 rounded-[18px] sm:rounded-[24px] font-black text-sm sm:text-lg transition-all shadow-inner flex flex-col items-center justify-center ${globalLock && !isManagerOrAdmin && !globalUnlock ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : isFormationValid && (isPlayoffRound || isCupModeActive || activeLineup.length === 11) ? (isCupModeActive ? 'bg-gradient-to-r from-yellow-400 to-amber-600 text-black hover:brightness-110 active:scale-95 shadow-[0_0_15px_rgba(250,204,21,0.5)]' : 'bg-gradient-to-r from-green-500 to-emerald-600 text-black hover:brightness-110 active:scale-95') : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
            >
              {globalLock && !isManagerOrAdmin && !globalUnlock ? (
-               <span className="text-sm">המחזור נעול 🔒</span>
+               <span className="text-xs sm:text-sm">המחזור נעול 🔒</span>
              ) : isSaving ? (
                <span className="animate-pulse">שומר...</span>
              ) : !isFormationValid && activeLineup.length === 11 ? (
                <>
-                 <span className="text-sm text-red-400 leading-tight">מערך לא חוקי</span>
-                 <span className="text-[10px] text-slate-500">({currentFormationStr} אינו מאושר)</span>
+                 <span className="text-xs sm:text-sm text-red-400 leading-tight">מערך לא חוקי</span>
+                 <span className="text-[9px] sm:text-[10px] text-slate-500">({currentFormationStr} אינו מאושר)</span>
                </>
              ) : !isFormationValid || (!isPlayoffRound && !isCupModeActive && activeLineup.length !== 11) ? (
-               <span className="text-sm">השלם הרכב (11 שחקנים)</span>
+               <span className="text-xs sm:text-sm">השלם הרכב ({activeLineup.length}/11 שחקנים)</span>
              ) : (
                <>{isCupModeActive ? 'שמור הרכב גביע 🏆' : 'שמור הרכב ועדכן זירה 💾'}</>
              )}
@@ -2144,18 +2808,151 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
            <button 
              onClick={handleWhatsAppShare} 
              disabled={lineup.length === 0} 
-             className="w-[60px] h-[60px] rounded-[24px] bg-gradient-to-br from-[#25D366] to-[#128C7E] text-white flex items-center justify-center shadow-lg hover:shadow-[0_0_20px_rgba(37,211,102,0.5)] transition-all active:scale-95 disabled:opacity-50 disabled:grayscale"
+             className="w-[44px] h-[44px] sm:w-[60px] sm:h-[60px] rounded-[18px] sm:rounded-[24px] bg-gradient-to-br from-[#25D366] to-[#128C7E] text-white flex items-center justify-center shadow-lg hover:shadow-[0_0_20px_rgba(37,211,102,0.5)] transition-all active:scale-95 disabled:opacity-50 disabled:grayscale shrink-0"
              title="שתף הרכב לווצאפ"
            >
-             <Share2 className="w-6 h-6" />
+             <Share2 className="w-5 h-5 sm:w-6 sm:h-6" />
            </button>
         </div>
       </div>
 
+      {swapCandidatePlayer && (
+        <div className="fixed inset-0 z-[3500] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200" dir="rtl">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setSwapCandidatePlayer(null)}></div>
+          <div className="relative w-full max-w-md bg-slate-900 rounded-t-[36px] sm:rounded-[36px] border border-slate-700/80 p-5 pb-8 sm:p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200 flex flex-col max-h-[85dvh]">
+            <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-4 sm:hidden"></div>
+            <div className="text-center mb-4">
+              <div className="inline-flex items-center gap-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-black mb-2">
+                🔄 החלפה מהירה בלחיצה (11/11)
+              </div>
+              <h3 className="text-lg sm:text-xl font-black text-white">
+                את מי להוציא מההרכב עבור <span className="text-emerald-400">{swapCandidatePlayer.name}</span>?
+              </h3>
+              <p className="text-xs text-slate-400 font-bold mt-1">
+                בחר שחקן מהמגרש כדי לבצע חילוף ישיר:
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1">
+              {(() => {
+                const currentActiveLineup = lineup.filter(p => p && p.id && POS_ARRAY.includes(p.position));
+                const benchPos = normalizePos((swapCandidatePlayer as any).pos || swapCandidatePlayer.position);
+
+                let maxAllowedFromTeam = 2;
+                if (isCupModeActive && (cupSettings.stage === 'semi' || cupSettings.stage === 'final')) maxAllowedFromTeam = 3;
+                else if (!isCupModeActive && isPlayoffRound) maxAllowedFromTeam = 3;
+
+                let requireFormationCheck = true;
+                if (isCupModeActive && (cupSettings.stage === 'semi' || cupSettings.stage === 'final')) requireFormationCheck = false;
+                if (!isCupModeActive && isPlayoffRound) requireFormationCheck = false;
+
+                const evaluatedPlayers = currentActiveLineup.map(pitchPlayer => {
+                  const pitchPos = normalizePos((pitchPlayer as any).pos || pitchPlayer.position);
+                  const tempLineup = currentActiveLineup.filter(p => p.id !== pitchPlayer.id);
+                  const nextLineup = [...tempLineup, { ...swapCandidatePlayer, isStarting: true }];
+
+                  const newGks = nextLineup.filter(p => normalizePos(p.position) === 'GK').length;
+                  const newDefs = nextLineup.filter(p => normalizePos(p.position) === 'DEF').length;
+                  const newMids = nextLineup.filter(p => normalizePos(p.position) === 'MID').length;
+                  const newFwds = nextLineup.filter(p => normalizePos(p.position) === 'FWD').length;
+                  const nextForm = `${newDefs}-${newMids}-${newFwds}`;
+
+                  const playerRealTeam = (swapCandidatePlayer as any).realTeam || swapCandidatePlayer.team;
+                  const sameTeamCount = tempLineup.filter(p => isTeamMatch((p as any).realTeam || p.team, playerRealTeam)).length;
+                  const matchStarted = checkIsMatchStarted(pitchPlayer.team) && !isManagerOrAdmin;
+
+                  let isValid = true;
+                  let invalidReason = '';
+
+                  if (matchStarted) {
+                    isValid = false;
+                    invalidReason = 'משחק החל 🔒';
+                  } else if (newGks !== 1) {
+                    isValid = false;
+                    invalidReason = 'חובה שוער 1';
+                  } else if (sameTeamCount >= maxAllowedFromTeam) {
+                    isValid = false;
+                    invalidReason = `מגבלת קבוצה (${maxAllowedFromTeam})`;
+                  } else if (requireFormationCheck && !ALLOWED_FORMATIONS.includes(nextForm)) {
+                    isValid = false;
+                    invalidReason = `מערך ${nextForm} לא חוקי`;
+                  }
+
+                  const isSamePos = pitchPos === benchPos;
+                  return { pitchPlayer, pitchPos, nextForm, isValid, invalidReason, isSamePos };
+                }).sort((a, b) => {
+                  if (a.isValid !== b.isValid) return a.isValid ? -1 : 1;
+                  if (a.isSamePos !== b.isSamePos) return a.isSamePos ? -1 : 1;
+                  return (POS_ORDER[a.pitchPos] || 99) - (POS_ORDER[b.pitchPos] || 99);
+                });
+
+                return evaluatedPlayers.map(({ pitchPlayer, pitchPos, nextForm, isValid, invalidReason, isSamePos }) => {
+                  const colors = getTeamColors(myTeam?.teamName || '', pitchPos === 'GK');
+                  return (
+                    <button
+                      key={pitchPlayer.id}
+                      onClick={() => executeQuickSwap(swapCandidatePlayer, pitchPlayer)}
+                      disabled={!isValid}
+                      className={`w-full flex justify-between items-center p-3 rounded-2xl border text-right transition-all ${
+                        isValid
+                          ? isSamePos
+                            ? 'bg-emerald-950/30 hover:bg-emerald-900/40 border-emerald-500/40 active:scale-[0.98]'
+                            : 'bg-slate-800/70 hover:bg-slate-800 border-slate-700 active:scale-[0.98]'
+                          : 'bg-slate-900/40 border-slate-800/60 opacity-45 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 shrink-0">
+                          <Jersey primary={colors.prim} secondary={colors.sec} textColor={colors.text} text={pitchPos === 'GK' ? '🧤' : pitchPos} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-black text-white text-sm flex items-center gap-1.5 truncate">
+                            <span className="truncate">{pitchPlayer.name}</span>
+                            {isSamePos && isValid && (
+                              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-black shrink-0">
+                                אותה עמדה
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5 mt-0.5">
+                            <span>{pitchPlayer.team}</span>
+                            <span className="text-slate-600">•</span>
+                            <span>{getHebrewRole(pitchPos)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 mr-2">
+                        {isValid ? (
+                          <span className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                            החלף ({nextForm})
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded-lg">
+                            {invalidReason}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+
+            <button
+              onClick={() => setSwapCandidatePlayer(null)}
+              className="mt-4 w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-black text-base rounded-2xl transition-colors active:scale-95"
+            >
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
+
       {activeZone && (
-        <div className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[3500] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveZone(null)}></div>
-          <div className="relative w-full max-w-md bg-slate-900 rounded-t-[40px] sm:rounded-[40px] border border-slate-800 p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200 flex flex-col max-h-[80vh]">
+          <div className="relative w-full max-w-md bg-slate-900 rounded-t-[40px] sm:rounded-[40px] border border-slate-800 p-6 pb-8 sm:p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200 flex flex-col max-h-[85dvh]">
             <div className="w-12 h-1.5 bg-slate-800 rounded-full mx-auto mb-6 sm:hidden"></div>
             <h3 className="text-2xl font-black text-white mb-6 text-center flex items-center justify-center gap-2">
               בחר <span className={POS_COLORS[activeZone]?.text}>{activeZone === 'GK' ? 'שוער' : activeZone === 'DEF' ? 'שחקן הגנה' : activeZone === 'MID' ? 'קשר' : 'חלוץ'}</span>
@@ -2215,9 +3012,9 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
       )}
 
       {selectedPlayer && (
-        <div className="fixed inset-0 z-[3000] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[3500] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setSelectedPlayer(null)}></div>
-          <div className="relative w-full max-w-sm bg-[#0f172a] rounded-t-[40px] sm:rounded-[40px] border border-slate-700/60 p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 duration-300 overflow-hidden">
+          <div className="relative w-full max-w-sm bg-[#0f172a] rounded-t-[40px] sm:rounded-[40px] border border-slate-700/60 p-6 pb-8 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 duration-300 overflow-y-auto max-h-[85dvh]">
             <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 opacity-20 blur-[50px] pointer-events-none ${POS_COLORS[selectedPlayer.position]?.bg.split(' ')[0]}`}></div>
             <div className="w-12 h-1.5 bg-slate-700/50 rounded-full mx-auto mb-6 sm:hidden relative z-10"></div>
             
@@ -2607,6 +3404,136 @@ const activeSubs = safeArray(transfersLog).filter(t => isSubLog(t) && (!t.round 
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAIAdviceModal && (
+        <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-purple-500/50 rounded-[32px] max-w-lg w-full p-6 space-y-5 shadow-2xl text-right dir-rtl relative overflow-hidden animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-2">
+                <Bot className="w-7 h-7 text-yellow-400" /> 💡 יועץ AI למחזור {currentRound} — {myTeam?.teamName || ''}
+              </h3>
+              <button
+                onClick={() => setShowAIAdviceModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingAIAdvice ? (
+              <div className="py-12 text-center space-y-4">
+                <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-purple-300 font-black text-base animate-pulse">
+                  🤖 מנתח את הסגל ומשחקי המחזור...
+                </p>
+                <p className="text-xs text-slate-400">Gemini AI מעבד 11 פותחים, ספסל ואזהרות פציעות</p>
+              </div>
+            ) : aiAdviceData ? (
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar">
+                {/* Header Info: Formation & Confidence */}
+                <div className="flex items-center justify-between bg-purple-950/60 border border-purple-500/30 p-4 rounded-2xl">
+                  <div>
+                    <span className="text-xs text-purple-300 font-bold block">מערך מומלץ:</span>
+                    <span className="text-2xl font-black text-white">{aiAdviceData.recommendedFormation}</span>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-xs text-slate-400 font-bold block">מדד ביטחון AI:</span>
+                    <span className="text-lg font-black text-emerald-400">{aiAdviceData.confidenceScore}%</span>
+                  </div>
+                </div>
+
+                {/* 11 Starters */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                  <h4 className="text-sm font-black text-green-400 flex items-center gap-2">
+                    <span>🏃‍♂️</span> 11 הפותחים המומלצים:
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-200">
+                    {(aiAdviceData.startingXI || []).map((name: string, i: number) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-green-400 font-black">✓</span>
+                        <span className="font-bold">{name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Bench Order */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                  <h4 className="text-sm font-black text-yellow-400 flex items-center gap-2">
+                    <span>🪑</span> סדר הספסל המומלץ:
+                  </h4>
+                  <div className="space-y-1 text-xs text-slate-300">
+                    {(aiAdviceData.benchOrder || []).map((name: string, i: number) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-900/80 p-2 rounded-xl">
+                        <span className="text-slate-500 font-black">{i + 1}.</span>
+                        <span>{name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Player Availability Alerts (Injuries / Cards) */}
+                {aiAdviceData.playerAvailabilityAlerts && aiAdviceData.playerAvailabilityAlerts.length > 0 && (
+                  <div className="bg-amber-950/70 border border-amber-500/40 p-4 rounded-2xl space-y-1.5">
+                    <h4 className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                      <span>⚠️</span> אזהרות פציעות / הרחקות בלייב:
+                    </h4>
+                    <div className="space-y-1">
+                      {aiAdviceData.playerAvailabilityAlerts.map((alertMsg: string, idx: number) => (
+                        <p key={idx} className="text-xs text-amber-200 font-bold leading-relaxed">• {alertMsg}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Transfer Recommendation */}
+                {aiAdviceData.transferRecommendation && (
+                  <div className="bg-gradient-to-r from-blue-950/60 to-indigo-950/60 border border-blue-500/30 p-4 rounded-2xl space-y-1">
+                    <h4 className="text-xs font-black text-blue-300 flex items-center gap-1.5">
+                      <span>🔄</span> המלצת חילוף / טרייד:
+                    </h4>
+                    <p className="text-xs text-slate-200 font-medium leading-relaxed">
+                      {aiAdviceData.transferRecommendation}
+                    </p>
+                  </div>
+                )}
+
+                {/* Tactical Notes */}
+                {aiAdviceData.keyMatchupNotes && (
+                  <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-1">
+                    <h4 className="text-xs font-black text-slate-400">📝 דברי הסבר וטיפים:</h4>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      {aiAdviceData.keyMatchupNotes}
+                    </p>
+                  </div>
+                )}
+
+                {/* Apply Recommended Lineup Button */}
+                {canEditLineup && (!globalLock || isManagerOrAdmin) && (
+                  <button
+                    onClick={handleApplyAIAdvice}
+                    className="w-full py-4 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 font-black rounded-2xl text-sm md:text-base transition-all shadow-[0_0_20px_rgba(16,185,129,0.4)] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-5 h-5 text-black" />
+                    <span>⚡ החל הרכב מומלץ זה על המגרש</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowAIAdviceModal(false)}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl text-xs transition-all cursor-pointer"
+                >
+                  סגור חלונית
+                </button>
+              </div>
+            ) : (
+              <div className="py-6 text-center text-red-400 text-sm">
+                לא ניתן היה לטעון ניתוח כרגע.
+              </div>
+            )}
           </div>
         </div>
       )}
