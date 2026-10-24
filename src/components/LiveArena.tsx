@@ -496,9 +496,16 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (rObj && Array.isArray(rObj.lineup) && rObj.lineup.length > 0) {
       return rObj.lineup;
     }
+    const fixtureRound = fixtures.find((f: any) => f.round === rNum);
+    const isRoundClosed = Boolean(fixtureRound?.isPlayed) || (rNum < currentRound);
+    // For active or future rounds, if the manager hasn't saved a lineup for this round, the arena stays clean!
+    if (!isRoundClosed) {
+      return [];
+    }
+    // Fallback for legacy closed rounds prior to lineupsByRound migration
     const pub = safeArray(team.published_lineup || team.lineup);
     if (pub.length > 0) return pub;
-    return safeArray(team.squad).slice(0, 11);
+    return [];
   };
 
   const getRoundBench = (team: any, rNum: number = selectedRound) => {
@@ -507,16 +514,21 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     if (rObj && Array.isArray(rObj.subsOut) && rObj.subsOut.length > 0) {
       return rObj.subsOut;
     }
+    const fixtureRound = fixtures.find((f: any) => f.round === rNum);
+    const isRoundClosed = Boolean(fixtureRound?.isPlayed) || (rNum < currentRound);
+    if (!isRoundClosed) {
+      return [];
+    }
     const pubBench = safeArray(team.published_subs_out);
     if (pubBench.length > 0) return pubBench;
-    const roundLineup = getRoundLineup(team, rNum);
-    if (roundLineup.length === 0) return safeArray(team.squad);
-    return safeArray(team.squad).slice(11);
+    return [];
   };
 
   const applySubstitutionsToLineup = (team: any) => {
     if (!team) return [];
-    let currentLineup = [...getRoundLineup(team, selectedRound)];
+    const baseLineup = getRoundLineup(team, selectedRound);
+    if (!baseLineup || baseLineup.length === 0) return [];
+    let currentLineup = [...baseLineup];
     const bench = getRoundBench(team, selectedRound);
     const allPool = [...bench, ...safeArray(team.squad), ...safeArray(team.players)];
 
@@ -610,9 +622,10 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
     const team = teams.find(t => t.id === teamId);
     if (!team) return 0;
     
-    let total = 0;
     const currentLineup = applySubstitutionsToLineup(team);
-    if (currentLineup) total += currentLineup.reduce((sum: number, p: any) => sum + getPlayerPointsForRound(p, team, selectedRound), 0);
+    if (!currentLineup || currentLineup.length === 0) return 0;
+    
+    let total = currentLineup.reduce((sum: number, p: any) => sum + getPlayerPointsForRound(p, team, selectedRound), 0);
     
     const roundSubs = safeArray(team.transfers).filter((t: any) => isSubLog(t) && (!t.round || Number(t.round) === Number(selectedRound)));
     roundSubs.forEach((sub: any) => {
@@ -2075,7 +2088,7 @@ const LiveArena: React.FC<LiveArenaProps> = ({ teams = [], currentRound = 0, isM
                             </div>
                           </div>
                           <div className="bg-slate-900 border border-slate-700 px-4 py-2 rounded-xl shadow-inner">
-                              <span className="text-xs font-black text-slate-300 tracking-widest flex items-center gap-2"><span>מערך</span><span className="text-green-400">{getFormation(applySubstitutionsToLineup(targetTeamObj))}</span></span>
+                              <span className="text-xs font-black text-slate-300 tracking-widest flex items-center gap-2"><span>מערך</span><span className="text-green-400">{getFormation(applySubstitutionsToLineup(targetTeamObj)) || '-'}</span></span>
                           </div>
                         </div>
 

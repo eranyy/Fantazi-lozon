@@ -17,12 +17,15 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
   const [rounds, setRounds] = useState<any[]>([]);
   const [realMatches, setRealMatches] = useState<any[]>([]);
   const [cupMatches, setCupMatches] = useState<any[]>([]);
-  const [subTab, setSubTab] = useState<'real' | 'fantasy'>('real');
+  const [subTab, setSubTab] = useState<'real' | 'cup' | 'fantasy'>('real');
   const [loading, setLoading] = useState(true);
   
   // סטייט עבור עריכת תוצאות עבר (מכונת הזמן)
   const [editModal, setEditModal] = useState<{ roundId: number, matchIdx: number, hId: string, aId: string, hs: number, as: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // 🟢 סטייט עבור סנכרון 🟢
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // המערכת תזכור באיזה מחזור אנחנו צופים עכשיו
   const [viewedRound, setViewedRound] = useState<number>(currentRound || 1);
@@ -88,6 +91,13 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
   const currentViewedData = rounds.find(r => r.round === viewedRound);
   const isCurrentLive = viewedRound === currentRound;
   const filterRoundName = `מחזור ${viewedRound}`;
+  const isCupMatchItem = (m: any) =>
+    Boolean(
+      m?.isCupMatch ||
+      /גביע|סיבוב|שמינית|רבע|חצי|גמר/i.test(m?.competition || '') ||
+      /גביע|סיבוב|שמינית|רבע|חצי|גמר/i.test(m?.roundStage || '')
+    );
+
   const currentRealMatches = sortMatchesChronologically(
     realMatches.filter(m => 
       Number(m.round) === viewedRound || 
@@ -96,7 +106,14 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
       String(m.round) === String(viewedRound)
     )
   );
-  const [isSyncing, setIsSyncing] = useState(false);
+
+  const allCupRealMatches = sortMatchesChronologically([
+    ...cupMatches,
+    ...realMatches.filter(isCupMatchItem)
+  ]);
+
+  const displayedRealMatches = subTab === 'cup' ? allCupRealMatches : currentRealMatches;
+
   const handleRefreshFromSheet = async () => {
     setIsSyncing(true);
     const res = await syncRealFixturesFromSheet();
@@ -115,24 +132,33 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
         <div className="flex items-center gap-3 mb-2 relative z-10">
           <CalendarDays className="w-8 h-8 text-blue-500" />
           <h2 className="text-3xl md:text-5xl font-black text-white italic tracking-tighter drop-shadow-md">
-            לוח משחקים <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500">ליגת העל</span>
+            לוח משחקים <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500">{subTab === 'cup' ? 'גביע המדינה' : 'ליגת העל'}</span>
           </h2>
         </div>
         <p className="text-xs text-zinc-400 font-bold uppercase tracking-[0.2em] mb-6 relative z-10">מועדים, אצטדיונים וערוצי שידור בלייב</p>
 
-        {/* 🟢 מתג בחירה בין משחקי ליגת העל המציאותיים לבין משחקי הפנטזי 🟢 */}
+        {/* 🟢 מתג בחירה בין משחקי ליגת העל, גביע המדינה ומשחקי הפנטזי 🟢 */}
         <div className="flex items-center gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800 mb-6 relative z-10 flex-wrap justify-center">
           <button 
             onClick={() => setSubTab('real')} 
-            className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'real' ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-amber-500/20' : 'text-zinc-400 hover:text-white'}`}
+            className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'real' ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-amber-500/20' : 'text-zinc-400 hover:text-white'}`}
           >
-            ⚽ משחקי ליגת העל (לייב)
+            ⚽ ליגת העל
+          </button>
+          <button 
+            onClick={() => setSubTab('cup')} 
+            className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'cup' ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-zinc-400 hover:text-white'}`}
+          >
+            🏆 גביע המדינה
+            {allCupRealMatches.length > 0 && (
+              <span className="bg-black/20 px-1.5 py-0.5 rounded-md text-[10px]">{allCupRealMatches.length}</span>
+            )}
           </button>
           <button 
             onClick={() => setSubTab('fantasy')} 
-            className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'fantasy' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-zinc-400 hover:text-white'}`}
+            className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${subTab === 'fantasy' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-zinc-400 hover:text-white'}`}
           >
-            🏆 משחקי הפנטזי בליגה
+            ⚔️ משחקי הפנטזי
           </button>
 
           <button 
@@ -146,46 +172,55 @@ const FixturesTab: React.FC<FixturesTabProps> = ({ currentRound, isAdmin }) => {
           </button>
         </div>
         
-        {/* Round Navigator - נווט המחזורים */}
-        <div className="flex items-center justify-between w-full max-w-sm bg-zinc-950/80 p-2 rounded-[24px] border border-zinc-800 shadow-inner relative z-10">
-          
-          <button 
-            onClick={() => setViewedRound(prev => Math.max(1, prev - 1))}
-            disabled={viewedRound <= 1}
-            className="w-12 h-12 flex items-center justify-center bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-[16px] transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
-          >
-            <ChevronRight className="w-6 h-6" />
-          </button>
+        {/* Round Navigator - נווט המחזורים (מוסתר כשצופים בכל משחקי גביע המדינה) */}
+        {subTab !== 'cup' && (
+          <div className="flex items-center justify-between w-full max-w-sm bg-zinc-950/80 p-2 rounded-[24px] border border-zinc-800 shadow-inner relative z-10">
+            
+            <button 
+              onClick={() => setViewedRound(prev => Math.max(1, prev - 1))}
+              disabled={viewedRound <= 1}
+              className="w-12 h-12 flex items-center justify-center bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-[16px] transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
 
-          <div className="flex flex-col items-center justify-center">
-             <div className="text-sm font-black text-zinc-500 uppercase tracking-widest mb-0.5">מחזור</div>
-             <div className="text-3xl font-black text-white tabular-nums leading-none">{viewedRound}</div>
+            <div className="flex flex-col items-center justify-center">
+               <div className="text-sm font-black text-zinc-500 uppercase tracking-widest mb-0.5">מחזור</div>
+               <div className="text-3xl font-black text-white tabular-nums leading-none">{viewedRound}</div>
+            </div>
+
+            <button 
+              onClick={() => setViewedRound(prev => Math.min(36, prev + 1))}
+              disabled={viewedRound >= 36}
+              className="w-12 h-12 flex items-center justify-center bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-[16px] transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
           </div>
-
-          <button 
-            onClick={() => setViewedRound(prev => Math.min(36, prev + 1))}
-            disabled={viewedRound >= 36}
-            className="w-12 h-12 flex items-center justify-center bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-[16px] transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
-          >
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* ⚽ תצוגת משחקי ליגת העל המציאותיים ⚽ */}
-      {subTab === 'real' && (
+      {/* ⚽ תצוגת משחקי ליגת העל או גביע המדינה המציאותיים ⚽ */}
+      {(subTab === 'real' || subTab === 'cup') && (
         <div className="space-y-4">
-          {currentRealMatches.length === 0 ? (
+          {displayedRealMatches.length === 0 ? (
             <div className="text-center py-16 bg-zinc-900/30 rounded-[32px] border border-dashed border-zinc-800">
-              <span className="text-4xl block mb-4 opacity-40">⚽</span>
-              <h3 className="text-xl font-black text-zinc-400">אין משחקי ליגת העל רשומים במחזור {viewedRound}</h3>
+              <span className="text-4xl block mb-4 opacity-40">{subTab === 'cup' ? '🏆' : '⚽'}</span>
+              <h3 className="text-xl font-black text-zinc-400">
+                {subTab === 'cup'
+                  ? 'טרם הוזנו משחקי גביע המדינה בלוח המשחקים'
+                  : `אין משחקי ליגת העל רשומים במחזור ${viewedRound}`}
+              </h3>
             </div>
           ) : (
-            currentRealMatches.map((m: any, idx: number) => (
+            displayedRealMatches.map((m: any, idx: number) => (
               <div key={idx} className="bg-gradient-to-r from-zinc-900 via-zinc-900/90 to-zinc-900 p-6 rounded-[28px] border border-zinc-800 shadow-xl flex flex-col gap-4 relative overflow-hidden group hover:border-yellow-500/40 transition-all">
                 <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-yellow-400 bg-yellow-500/10 px-3 py-1 rounded-xl border border-yellow-500/20">{m.competition || 'ליגת WINNER'}</span>
+                    <span className="text-xs font-black text-yellow-400 bg-yellow-500/10 px-3 py-1 rounded-xl border border-yellow-500/20">
+                      {m.competition || (subTab === 'cup' ? 'גביע המדינה' : 'ליגת WINNER')}
+                      {m.roundStage && subTab === 'cup' ? ` • ${m.roundStage}` : ''}
+                    </span>
                     <span className="text-xs font-bold text-zinc-400">{formatMatchDateDisplay(m.date)} ({m.day})</span>
                   </div>
                   <span className={`text-xs font-black px-3 py-1 rounded-xl ${m.status?.includes('נדחה') ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-green-500/10 text-green-400 border border-green-500/20'}`}>

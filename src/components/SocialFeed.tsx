@@ -43,7 +43,12 @@ const sanitizeInputText = (str: string): string => {
 };
 
 const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUser, onNavigate }) => {
-  const [posts, setPosts] = useState<any[]>([]);
+  const [posts, setPosts] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('luzon_cached_social_posts');
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
   const [newPostText, setNewPostText] = useState('');
   const [mobileTab, setMobileTab] = useState<'feed' | 'widgets'>('feed');
   
@@ -53,7 +58,12 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
   const [fixtures, setFixtures] = useState<any[]>([]);
   const [realFixtures, setRealFixtures] = useState<any[]>([]);
   
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('luzon_cached_social_posts');
+      return !cached || JSON.parse(cached).length === 0;
+    } catch { return true; }
+  });
   const [isFetchingApi, setIsFetchingApi] = useState(false);
   
   const [apiMessage, setApiMessage] = useState<{text: string, type: 'info'|'success'|'error'} | null>(null);
@@ -96,7 +106,11 @@ const SocialFeed: React.FC<SocialFeedProps> = ({ teams, currentRound, loggedInUs
 
     const q = query(collection(db, 'social_posts'), orderBy('timestamp', 'desc'));
     const unsubPosts = onSnapshot(q, snap => {
-      setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const loadedPosts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPosts(loadedPosts);
+      try {
+        localStorage.setItem('luzon_cached_social_posts', JSON.stringify(loadedPosts.slice(0, 30)));
+      } catch (e) {}
       setLoading(false);
     });
 

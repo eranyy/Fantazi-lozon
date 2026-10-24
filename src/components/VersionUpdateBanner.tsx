@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebaseConfig';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { RefreshCw, Sparkles, X } from 'lucide-react';
@@ -6,6 +6,7 @@ import { RefreshCw, Sparkles, X } from 'lucide-react';
 export const VersionUpdateBanner: React.FC = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateMessage, setUpdateMessage] = useState('גרסה חדשה של פנטזי לוזון שוחררה! רענן לשמירה על סנכרון התוצאות והניקוד המעודכן.');
+  const latestServerTimestampRef = useRef<number>(0);
 
   // 1. Firestore global_refresh listener
   useEffect(() => {
@@ -13,6 +14,7 @@ export const VersionUpdateBanner: React.FC = () => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         const serverTimestamp = data?.timestamp || 0;
+        latestServerTimestampRef.current = serverTimestamp;
         const localTimestamp = Number(localStorage.getItem('luzon_last_handled_version') || 0);
 
         if (localTimestamp === 0) {
@@ -91,11 +93,9 @@ export const VersionUpdateBanner: React.FC = () => {
   }, []);
 
   const handleRefresh = () => {
-    const unsub = onSnapshot(doc(db, 'system_settings', 'global_refresh'), (docSnap) => {
-      const serverTimestamp = docSnap.data()?.timestamp || Date.now();
-      localStorage.setItem('luzon_last_handled_version', String(serverTimestamp));
-    });
-    unsub();
+    const currentTs = latestServerTimestampRef.current || Date.now();
+    localStorage.setItem('luzon_last_handled_version', String(currentTs));
+    localStorage.setItem('luzon_last_global_refresh', String(currentTs));
 
     if ('caches' in window) {
       caches.keys().then(names => {
@@ -106,6 +106,8 @@ export const VersionUpdateBanner: React.FC = () => {
   };
 
   const handleDismiss = () => {
+    const currentTs = latestServerTimestampRef.current || Date.now();
+    localStorage.setItem('luzon_last_handled_version', String(currentTs));
     setUpdateAvailable(false);
   };
 

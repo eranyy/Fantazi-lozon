@@ -49,6 +49,14 @@ export interface Team {
   cup_bench?: Player[];
 }
 
+export interface PushPreferences {
+  liveScoreboardBanner?: boolean;
+  lineupReminders?: boolean;
+  rivalLineups?: boolean;
+  transfers?: boolean;
+  matchResults?: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -59,6 +67,11 @@ export interface User {
   passwordHash?: string;
   allowedEmails?: string[];
   teamId?: string;
+  fontScale?: number;
+  pushPreferences?: PushPreferences;
+  defaultTab?: string;
+  soundEnabled?: boolean;
+  reduceMotion?: boolean;
 }
 
 export interface LockedLineup {

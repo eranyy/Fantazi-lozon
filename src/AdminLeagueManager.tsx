@@ -8,7 +8,6 @@ import { DEFAULT_SEASONS } from './constants/leagueConstants';
 import { cleanStr, getHistoricalName, getTeamColors } from './utils/teamUtils';
 
 import { TopPlayersSubTab } from './components/admin/TopPlayersSubTab';
-import { PredictorSubTab } from './components/admin/PredictorSubTab';
 import { PowerRankingsSubTab } from './components/admin/PowerRankingsSubTab';
 import { LeagueTableSubTab } from './components/admin/LeagueTableSubTab';
 import { LeagueRulesSubTab } from './components/admin/LeagueRulesSubTab';
@@ -19,7 +18,7 @@ import { TeamProfileModal } from './components/admin/TeamProfileModal';
 export { cleanStr, getHistoricalName, getTeamColors };
 
 const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'table' | 'rules' | 'hof' | 'records' | 'power' | 'top_players' | 'predictor'>(initialSubTab || 'table');
+  const [activeSubTab, setActiveSubTab] = useState<'table' | 'rules' | 'hof' | 'records' | 'power' | 'top_players'>(initialSubTab === 'predictor' ? 'table' : (initialSubTab || 'table'));
   const [teams, setTeams] = useState<any[]>([]);
   const [historySeasons, setHistorySeasons] = useState<any[]>(DEFAULT_SEASONS);
   const [topPlayers, setTopPlayers] = useState<any[]>([]); 
@@ -33,14 +32,12 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
     return map;
   }, [allPlayersDB]);
 
-  const [predictorStandings, setPredictorStandings] = useState<any[]>([]);
   const [whatsappPolls, setWhatsappPolls] = useState<any[]>([]);
-  const [selectedPredictorRound, setSelectedPredictorRound] = useState<number>(2);
 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
   const [spicyRecords, setSpicyRecords] = useState({ blowoutWins: [] as any[], blowoutLosses: [] as any[], biggestVictims: [] as any[] });
-  
+  const [selectedSeason, setSelectedSeason] = useState<number>(14);
   const [selectedTeamProfile, setSelectedTeamProfile] = useState<any | null>(null);
 
   useEffect(() => {
@@ -72,12 +69,6 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
     const unsubTopPlayers = onSnapshot(doc(db, "leagueData", "top_players"), (docSnap) => {
         if (docSnap.exists() && Array.isArray(docSnap.data()?.players) && docSnap.data().players.length > 0) {
             setTopPlayers(docSnap.data().players);
-        }
-    });
-
-    const unsubPredictor = onSnapshot(doc(db, "leagueData", "predictor_standings"), (docSnap) => {
-        if (docSnap.exists() && Array.isArray(docSnap.data()?.standings)) {
-            setPredictorStandings(docSnap.data().standings);
         }
     });
 
@@ -167,7 +158,7 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
         setAllPlayersDB(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubPredictor(); unsubPolls(); unsubScoring(); unsubPlayersDB(); };
+    return () => { unsubTeams(); unsubHistory(); unsubRecords(); unsubTopPlayers(); unsubPolls(); unsubScoring(); unsubPlayersDB(); };
   }, []);
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'success') => { 
@@ -336,7 +327,6 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
       <div className="bg-black/40 backdrop-blur-xl p-1.5 rounded-2xl border border-white/5 flex max-w-4xl mx-auto shadow-inner overflow-x-auto custom-scrollbar relative z-30">
         <button onClick={() => setActiveSubTab('table')} className={`flex-1 min-w-[70px] md:min-w-[90px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'table' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg border border-blue-500/50' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}><Trophy className="w-3 h-3 md:w-4 md:h-4" /> טבלה</button>
         <button onClick={() => setActiveSubTab('top_players')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'top_players' ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-lg border border-emerald-500/50' : 'text-zinc-500 hover:text-emerald-400/70 hover:bg-white/5'}`}><Star className="w-3 h-3 md:w-4 md:h-4" /> מלכים</button>
-        <button onClick={() => setActiveSubTab('predictor')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'predictor' ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg border border-violet-500/50' : 'text-zinc-500 hover:text-violet-400/70 hover:bg-white/5'}`}><Sparkles className="w-3 h-3 md:w-4 md:h-4" /> נביאים</button>
         <button onClick={() => setActiveSubTab('power')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'power' ? 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg border border-purple-500/50' : 'text-zinc-500 hover:text-purple-400/70 hover:bg-white/5'}`}><TrendingUp className="w-3 h-3 md:w-4 md:h-4" /> עוצמה</button>
         <button onClick={() => setActiveSubTab('rules')} className={`flex-1 min-w-[70px] md:min-w-[90px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'rules' ? 'bg-zinc-800 text-white shadow-lg border border-zinc-700' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}><ScrollText className="w-3 h-3 md:w-4 md:h-4" /> תקנון</button>
         <button onClick={() => setActiveSubTab('hof')} className={`flex-1 min-w-[80px] md:min-w-[100px] py-3 px-2 rounded-xl text-[11px] md:text-sm font-black transition-all flex justify-center items-center gap-1 md:gap-1.5 whitespace-nowrap ${activeSubTab === 'hof' ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 text-black shadow-lg border border-yellow-400' : 'text-zinc-500 hover:text-yellow-500/70 hover:bg-white/5'}`}><Medal className="w-3 h-3 md:w-4 md:h-4" /> תהילה</button>
@@ -348,15 +338,6 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
           teams={teams}
           topPlayers={topPlayers}
           playersMapByName={playersMapByName}
-        />
-      )}
-
-      {activeSubTab === 'predictor' && (
-        <PredictorSubTab
-          predictorStandings={predictorStandings}
-          whatsappPolls={whatsappPolls}
-          selectedPredictorRound={selectedPredictorRound}
-          setSelectedPredictorRound={setSelectedPredictorRound}
         />
       )}
 
@@ -374,6 +355,8 @@ const AdminLeagueManager: React.FC<any> = ({ inline, initialSubTab }) => {
           powerRankedTeams={powerRankedTeams}
           shareTableAsImage={shareTableAsImage}
           setSelectedTeamProfile={setSelectedTeamProfile}
+          selectedSeason={selectedSeason}
+          setSelectedSeason={setSelectedSeason}
         />
       )}
 

@@ -18,11 +18,17 @@ messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
   
   const notificationTitle = payload.notification?.title || payload.data?.title || 'התראה מפנטזי לוזון! ⚽';
+  const customTag = payload.data?.tag || undefined;
+  const isSilentScoreboard = customTag === 'luzon-live-scoreboard';
+
   const notificationOptions = {
     body: payload.notification?.body || payload.data?.body || 'לחץ כאן כדי להיכנס לליגה.',
     icon: '/app-icon.png', 
     badge: '/app-icon.png',
-    data: { url: '/' }
+    dir: 'rtl',
+    lang: 'he',
+    ...(customTag ? { tag: customTag, renotify: !isSilentScoreboard, silent: isSilentScoreboard } : {}),
+    data: { url: payload.data?.url || '/' }
   };
 
   return self.registration.showNotification(notificationTitle, notificationOptions);
@@ -43,4 +49,48 @@ self.addEventListener('notificationclick', function(event) {
       }
     })
   );
+});
+
+// --- Asset & Image Caching Strategy for Maximum Speed ---
+const CACHE_NAME = 'fantasy-luzon-v1';
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico'];
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
+      );
+    }).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Cache images and static media with Stale-While-Revalidate
+  const isImage = IMAGE_EXTENSIONS.some(ext => url.pathname.toLowerCase().endsWith(ext)) || event.request.destination === 'image';
+
+  if (isImage && event.request.method === 'GET') {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          const fetchPromise = fetch(event.request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          }).catch(() => cachedResponse);
+
+          return cachedResponse || fetchPromise;
+        });
+      })
+    );
+  }
 });
